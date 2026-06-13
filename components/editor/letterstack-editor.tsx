@@ -98,7 +98,10 @@ export function LetterStackEditor() {
   // Flyout state: hover previews float; the pinned panel docks full-height.
   const visiblePanel = hoverPanel ?? activePanel;
   const isPreview = hoverPanel !== null && hoverPanel !== activePanel;
-  const isDocked = visiblePanel !== null && !isPreview;
+  // The template only shifts when a panel is *pinned* — never on hover preview,
+  // so the email stays put while the user scrubs across the rail. All panels are
+  // the same width, so which one is pinned doesn't change the offset.
+  const pinnedOffset = activePanel !== null ? 320 : 0;
 
   // When a block is selected and the panel is closed, open it to blocks/inspector
   React.useEffect(() => {
@@ -369,7 +372,7 @@ export function LetterStackEditor() {
       </header>
 
       {/* ── Floating text formatting bubble (Canva-style) ─────────────────── */}
-      <FormattingToolbarOverlay />
+      <FormattingToolbarOverlay pinnedOffset={pinnedOffset} />
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
       <DndContext
@@ -443,7 +446,7 @@ export function LetterStackEditor() {
         <div
           className="min-w-0 flex-1 overflow-auto bg-zinc-100"
           style={{
-            paddingLeft: isDocked ? 320 : 0,
+            paddingLeft: pinnedOffset,
             transition: "padding-left 260ms cubic-bezier(0.22,1,0.36,1)",
           }}
           onClick={(e) => {
@@ -487,15 +490,27 @@ export function LetterStackEditor() {
 }
 
 /**
- * Floating formatting bubble pinned to the top-center of the workspace. Only
- * mounts while a text block is selected — disappears entirely otherwise.
+ * Floating formatting bubble pinned above the email template. Only mounts while
+ * a text block is selected. It mirrors the canvas's own horizontal centering
+ * (nav rail + pinned-panel offset + the canvas `px-8 pr-20` insets) so it sits
+ * directly over the template and slides with it when a panel pins/unpins.
  */
-function FormattingToolbarOverlay() {
+function FormattingToolbarOverlay({ pinnedOffset }: { pinnedOffset: number }) {
   const { activeEditor } = useEditorToolbar();
   if (!activeEditor) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[60px] z-40 flex justify-center">
-      <div className="pointer-events-auto flex max-w-[calc(100%-2rem)] items-center gap-0.5 overflow-x-auto rounded-xl border bg-card px-2 py-1.5 shadow-lg">
+    <div
+      className="pointer-events-none absolute z-40 flex justify-center"
+      style={{
+        left: 56, // nav rail width
+        right: 0,
+        top: 60,
+        paddingLeft: pinnedOffset + 32, // pinned panel + canvas px-8
+        paddingRight: 80, // canvas pr-20
+        transition: "padding-left 260ms cubic-bezier(0.22,1,0.36,1)",
+      }}
+    >
+      <div className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border bg-card px-2 py-1.5 shadow-lg">
         <FormattingToolbar editor={activeEditor} />
       </div>
     </div>
