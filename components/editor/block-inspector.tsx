@@ -19,10 +19,14 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  createColumn,
   updateBlock,
   type ArticleCardBlock,
+  type BorderStyle,
   type ButtonBlock,
+  type ColumnMobile,
   type ColumnsBlock,
+  type ColumnVAlign,
   type EmailBlock,
   type EmailDocument,
   type FooterBlock,
@@ -349,14 +353,182 @@ function ArticleCardBlockFields({
 function ColumnsBlockFields({
   block, onChange,
 }: { block: ColumnsBlock; onChange: (u: (b: EmailBlock) => EmailBlock) => void }) {
-  void onChange;
+  const set = (patch: Partial<ColumnsBlock>) =>
+    onChange((b) => ({ ...b, ...patch }) as ColumnsBlock);
+
+  const setColumnCount = (count: number) =>
+    onChange((b) => {
+      if (b.type !== "columns") return b;
+      const cur = b.columns;
+      let next;
+      if (count > cur.length) {
+        next = [...cur, ...Array.from({ length: count - cur.length }, () => createColumn())];
+      } else {
+        const kept = cur.slice(0, count);
+        const dropped = cur.slice(count).flatMap((c) => c.blocks);
+        next = kept.map((c, i) =>
+          i === kept.length - 1 ? { ...c, blocks: [...c.blocks, ...dropped] } : c,
+        );
+      }
+      return { ...b, columns: next.map((c) => ({ ...c, width: 1 })) } as ColumnsBlock;
+    });
+
+  const first = block.columns[0]?.width ?? 1;
+  const ratio = block.columns.every((c) => c.width === first) ? "equal" : "custom";
+
   return (
-    <Field>
-      <FieldTitle>Content</FieldTitle>
-      <FieldDescription>
-        {block.columns.length} columns. Click the block on the canvas to edit inline.
-      </FieldDescription>
-    </Field>
+    <>
+      <Field>
+        <FieldLabel>Number of columns</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={String(block.columns.length)}
+          onValueChange={(v) => { if (v) setColumnCount(Number(v)); }}
+          variant="outline"
+        >
+          {[1, 2, 3, 4].map((n) => (
+            <ToggleGroupItem key={n} value={String(n)}>{n}</ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </Field>
+
+      <Field>
+        <FieldLabel>Desktop column ratio</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={ratio}
+          onValueChange={(v) => {
+            if (v === "equal")
+              onChange((b) => ({
+                ...b,
+                columns: (b as ColumnsBlock).columns.map((c) => ({ ...c, width: 1 })),
+              }) as ColumnsBlock);
+          }}
+          variant="outline"
+        >
+          <ToggleGroupItem value="equal">Equal</ToggleGroupItem>
+          <ToggleGroupItem value="custom">Custom</ToggleGroupItem>
+        </ToggleGroup>
+        <FieldDescription>Drag the dividers on the canvas to set custom widths.</FieldDescription>
+      </Field>
+
+      <Field>
+        <FieldLabel>Mobile content orientation</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={block.mobile}
+          onValueChange={(v) => { if (v) set({ mobile: v as ColumnMobile }); }}
+          variant="outline"
+        >
+          <ToggleGroupItem value="stack">Stack</ToggleGroupItem>
+          <ToggleGroupItem value="stack-reverse">Reverse</ToggleGroupItem>
+          <ToggleGroupItem value="row">Row</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
+
+      <Field>
+        <FieldLabel>Column background</FieldLabel>
+        <div className="flex items-center gap-2">
+          <div className="grid flex-1 grid-cols-[28px_1fr] items-center gap-2">
+            <input
+              type="color"
+              value={block.columnBackgroundColor ?? "#ffffff"}
+              onChange={(e) => set({ columnBackgroundColor: e.target.value })}
+              className="h-7 w-7 cursor-pointer rounded border p-0.5"
+            />
+            <Input
+              value={block.columnBackgroundColor ?? ""}
+              placeholder="Transparent"
+              onChange={(e) => set({ columnBackgroundColor: e.target.value || undefined })}
+              className="h-7 font-mono text-xs"
+            />
+          </div>
+          {block.columnBackgroundColor && (
+            <Button
+              variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs"
+              onClick={() => set({ columnBackgroundColor: undefined })}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </Field>
+
+      <Field>
+        <FieldLabel>Border</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={block.borderStyle}
+          onValueChange={(v) => { if (v) set({ borderStyle: v as BorderStyle }); }}
+          variant="outline"
+        >
+          <ToggleGroupItem value="none">None</ToggleGroupItem>
+          <ToggleGroupItem value="solid">Solid</ToggleGroupItem>
+          <ToggleGroupItem value="dashed">Dashed</ToggleGroupItem>
+          <ToggleGroupItem value="dotted">Dotted</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
+
+      {block.borderStyle !== "none" && (
+        <Field>
+          <FieldLabel>Border color</FieldLabel>
+          <div className="grid grid-cols-[28px_1fr] items-center gap-2">
+            <input
+              type="color"
+              value={block.borderColor}
+              onChange={(e) => set({ borderColor: e.target.value })}
+              className="h-7 w-7 cursor-pointer rounded border p-0.5"
+            />
+            <Input
+              value={block.borderColor}
+              onChange={(e) => set({ borderColor: e.target.value })}
+              className="h-7 font-mono text-xs"
+            />
+          </div>
+        </Field>
+      )}
+
+      <Field>
+        <FieldLabel>Vertical alignment</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={block.valign}
+          onValueChange={(v) => { if (v) set({ valign: v as ColumnVAlign }); }}
+          variant="outline"
+        >
+          <ToggleGroupItem value="top">Top</ToggleGroupItem>
+          <ToggleGroupItem value="middle">Middle</ToggleGroupItem>
+          <ToggleGroupItem value="bottom">Bottom</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
+
+      <Field>
+        <FieldLabel>Rounded corners</FieldLabel>
+        <FieldContent>
+          <Slider value={[block.borderRadius]} min={0} max={32} step={1}
+            onValueChange={([v]) => set({ borderRadius: v })} />
+          <FieldDescription>{block.borderRadius}px</FieldDescription>
+        </FieldContent>
+      </Field>
+
+      <Field>
+        <FieldLabel>Column gap</FieldLabel>
+        <FieldContent>
+          <Slider value={[block.gap]} min={0} max={40} step={2}
+            onValueChange={([v]) => set({ gap: v })} />
+          <FieldDescription>{block.gap}px between columns</FieldDescription>
+        </FieldContent>
+      </Field>
+
+      <Field>
+        <FieldLabel>Cell padding</FieldLabel>
+        <FieldContent>
+          <Slider value={[block.cellPadding]} min={0} max={40} step={2}
+            onValueChange={([v]) => set({ cellPadding: v })} />
+          <FieldDescription>{block.cellPadding}px inside each column</FieldDescription>
+        </FieldContent>
+      </Field>
+    </>
   );
 }
 

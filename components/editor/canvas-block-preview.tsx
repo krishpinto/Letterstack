@@ -6,11 +6,9 @@ import { cn } from "@/lib/utils";
 import { RichTextEditor } from "./rich-text-editor";
 import {
   type ArticleCardBlock,
-  type ColumnsBlock,
   type EmailBlock,
   type EmailDocument,
   type HeadingBlock,
-  type LogoBlock,
   type ParagraphBlock,
   type TextBlock,
 } from "@/lib/email/document";
@@ -227,7 +225,6 @@ export function CanvasBlockPreview({
     case "columns": {
       // Read-only render — interactive editing lives in <ColumnsCanvas>; this
       // path is used for the drag overlay snapshot.
-      const total = block.columns.reduce((sum, c) => sum + (c.width || 1), 0) || 1;
       const cellBorder =
         block.borderStyle !== "none"
           ? `1px ${block.borderStyle} ${block.borderColor}`

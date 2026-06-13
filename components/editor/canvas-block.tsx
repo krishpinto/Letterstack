@@ -212,7 +212,6 @@ function ColumnCell({
         backgroundColor: columnsBlock.columnBackgroundColor,
         justifyContent: justify,
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       <SortableContext items={column.blocks.map((b) => b.id)} strategy={noShift}>
         {column.blocks.map((b, i) => (

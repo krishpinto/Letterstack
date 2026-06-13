@@ -31,6 +31,13 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="x-apple-disable-message-reformatting">
     <title>${escapeHtml(document.name)}</title>
+    <style>
+      @media only screen and (max-width:480px) {
+        .ls-col { display:block !important; width:100% !important; box-sizing:border-box; }
+        .ls-gap { display:none !important; }
+        .ls-col.ls-row { display:table-cell !important; width:auto !important; }
+      }
+    </style>
   </head>
   <body style="margin:0;padding:0;background:${document.settings.backgroundColor};">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${previewText}</div>
@@ -100,7 +107,7 @@ function renderBlock(block: EmailBlock, document: EmailDocument): string {
             </tr>`;
 }
 
-function renderBlockInner(block: EmailBlock, document: EmailDocument) {
+function renderBlockInner(block: EmailBlock, document: EmailDocument): string {
   switch (block.type) {
     case "text":
       return renderTextBlock(block, document);
@@ -265,7 +272,7 @@ function renderFooterBlock(block: FooterBlock, document: EmailDocument) {
             </tr>`;
 }
 
-function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument) {
+function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): string {
   const p = document.settings.padding;
   const total = block.columns.reduce((sum, c) => sum + (c.width || 1), 0) || 1;
   const valign =
@@ -284,6 +291,9 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument) {
     settings: { ...document.settings, padding: 0 },
   };
 
+  // On mobile, columns stack to full width unless the block opts to stay in a row.
+  const colClass = block.mobile === "row" ? "ls-col ls-row" : "ls-col";
+
   const cells = block.columns
     .map((column) => {
       const widthPct = Math.round(((column.width || 1) / total) * 1000) / 10;
@@ -293,12 +303,12 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument) {
             .join("")}</table>`
         : "&nbsp;";
       return `
-                    <td valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}">
+                    <td class="${colClass}" valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}box-sizing:border-box;">
                       ${inner}
                     </td>`;
     })
     .join(
-      `<td width="${block.gap}" style="width:${block.gap}px;font-size:1px;line-height:1px;">&nbsp;</td>`,
+      `<td class="ls-gap" width="${block.gap}" style="width:${block.gap}px;font-size:1px;line-height:1px;">&nbsp;</td>`,
     );
 
   return `
