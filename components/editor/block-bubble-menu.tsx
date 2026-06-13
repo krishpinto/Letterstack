@@ -3,8 +3,6 @@
 import * as React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowDown01Icon,
-  ArrowUp01Icon,
   Copy01Icon,
   Delete02Icon,
   DragDropVerticalIcon,
@@ -20,26 +18,18 @@ import { BLOCK_LABELS } from "./editor-types";
  */
 export function BlockBubbleMenu({
   block,
-  isFirst,
-  isLast,
   canRemove,
   isDragging,
   dragHandleProps,
-  onMoveUp,
-  onMoveDown,
   onDuplicate,
   onRemove,
   onAlign,
 }: {
   block: EmailBlock;
-  isFirst: boolean;
-  isLast: boolean;
   canRemove: boolean;
   isDragging: boolean;
   /** Spread of dnd-kit `useSortable` attributes + listeners for the drag handle. */
   dragHandleProps: React.HTMLAttributes<HTMLButtonElement>;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
   onAlign: (align: TextAlign) => void;
@@ -49,8 +39,10 @@ export function BlockBubbleMenu({
   return (
     <div
       className={cn(
-        "absolute left-1/2 top-0 z-30 -translate-x-1/2 -translate-y-[calc(100%+8px)]",
-        "flex items-center gap-0.5 rounded-lg border bg-card px-1 py-1 shadow-lg",
+        // Vertical strip pinned just outside the block's right edge, so it no
+        // longer collides with the pinned text formatting toolbar up top.
+        "absolute right-0 top-1 z-30 translate-x-[calc(100%+10px)]",
+        "flex flex-col items-center gap-0.5 rounded-lg border bg-card p-1 shadow-lg",
         // Don't let the floating bar trigger the block's own click handlers
         "pointer-events-auto",
       )}
@@ -61,17 +53,16 @@ export function BlockBubbleMenu({
       <button
         {...dragHandleProps}
         type="button"
-        title="Drag to reorder"
+        title={`Drag to reorder ${BLOCK_LABELS[block.type]}`}
         aria-label="Drag to reorder block"
         className={cn(
-          "flex h-7 items-center gap-1 rounded px-1.5 touch-none select-none",
-          "text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors",
+          "flex h-7 w-7 items-center justify-center rounded touch-none select-none",
+          "text-muted-foreground transition-colors",
           "hover:bg-muted hover:text-foreground",
           isDragging ? "cursor-grabbing bg-primary/10 text-primary" : "cursor-grab",
         )}
       >
-        <HugeiconsIcon icon={DragDropVerticalIcon} strokeWidth={2.5} className="size-3.5 opacity-70" />
-        {BLOCK_LABELS[block.type]}
+        <HugeiconsIcon icon={DragDropVerticalIcon} strokeWidth={2.5} className="size-4 opacity-70" />
       </button>
 
       {align !== undefined && (
@@ -91,12 +82,6 @@ export function BlockBubbleMenu({
 
       <Divider />
 
-      <BubbleButton onClick={onMoveUp} disabled={isFirst} title="Move up">
-        <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-3.5" />
-      </BubbleButton>
-      <BubbleButton onClick={onMoveDown} disabled={isLast} title="Move down">
-        <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-3.5" />
-      </BubbleButton>
       <BubbleButton onClick={onDuplicate} title="Duplicate">
         <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-3.5" />
       </BubbleButton>
@@ -152,7 +137,7 @@ function BubbleButton({
 }
 
 function Divider() {
-  return <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
+  return <div className="my-0.5 h-px w-4 shrink-0 bg-border" />;
 }
 
 // ─── Alignment icons ──────────────────────────────────────────────────────────

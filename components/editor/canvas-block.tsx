@@ -45,16 +45,12 @@ export function InsertIndicator() {
  */
 export function CanvasBlock({
   block,
-  index,
   total,
   containerId,
-  onMove,
 }: {
   block: EmailBlock;
-  index: number;
   total: number;
   containerId: string;
-  onMove: (from: number, to: number) => void;
 }) {
   const ctx = useCanvas();
   const isSelected = ctx.selectedBlockId === block.id;
@@ -105,13 +101,9 @@ export function CanvasBlock({
       {isSelected && (
         <BlockBubbleMenu
           block={block}
-          isFirst={index === 0}
-          isLast={index === total - 1}
           canRemove={canRemove}
           isDragging={isDragging}
           dragHandleProps={{ ...attributes, ...listeners }}
-          onMoveUp={() => { if (index > 0) onMove(index, index - 1); }}
-          onMoveDown={() => { if (index < total - 1) onMove(index, index + 1); }}
           onDuplicate={() => ctx.onDuplicate(block.id)}
           onRemove={() => ctx.onRemove(block.id)}
           onAlign={(align) =>
@@ -219,10 +211,8 @@ function ColumnCell({
             {isInsertHere(ctx.insertTarget, column.id, i) && <InsertIndicator />}
             <CanvasBlock
               block={b}
-              index={i}
               total={column.blocks.length}
               containerId={column.id}
-              onMove={(from, to) => ctx.onReorderColumn(column.id, from, to)}
             />
           </div>
         ))}

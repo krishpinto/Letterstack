@@ -58,6 +58,8 @@ import {
   type InsertTarget,
 } from "./canvas-context";
 import { BLOCK_LABELS, CONTENT_BLOCKS, type ActivePanel } from "./editor-types";
+import { EditorToolbarProvider, useEditorToolbar } from "./editor-toolbar-context";
+import { FormattingToolbar } from "./formatting-toolbar";
 import { GlobalSettingsSheet } from "./settings-sheet";
 import { NavButton } from "./nav-button";
 import { PreviewDialog } from "./preview-dialog";
@@ -319,7 +321,8 @@ export function LetterStackEditor() {
   };
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
+    <EditorToolbarProvider>
+    <main className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {/* ── Top bar ───────────────────────────────────────────────────────── */}
       <header className="grid h-[52px] shrink-0 grid-cols-3 items-center border-b bg-card px-4">
         <div className="flex items-center gap-3">
@@ -357,6 +360,9 @@ export function LetterStackEditor() {
           </Button>
         </div>
       </header>
+
+      {/* ── Floating text formatting bubble (Canva-style) ─────────────────── */}
+      <FormattingToolbarOverlay />
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
       <DndContext
@@ -454,6 +460,23 @@ export function LetterStackEditor() {
         </DragOverlay>
       </DndContext>
     </main>
+    </EditorToolbarProvider>
+  );
+}
+
+/**
+ * Floating formatting bubble pinned to the top-center of the workspace. Only
+ * mounts while a text block is selected — disappears entirely otherwise.
+ */
+function FormattingToolbarOverlay() {
+  const { activeEditor } = useEditorToolbar();
+  if (!activeEditor) return null;
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[60px] z-40 flex justify-center">
+      <div className="pointer-events-auto flex max-w-[calc(100%-2rem)] items-center gap-0.5 overflow-x-auto rounded-xl border bg-card px-2 py-1.5 shadow-lg">
+        <FormattingToolbar editor={activeEditor} />
+      </div>
+    </div>
   );
 }
 

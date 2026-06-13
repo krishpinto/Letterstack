@@ -26,10 +26,8 @@ export function SortableBlockList() {
             {isInsertHere(ctx.insertTarget, CANVAS_ROOT_CONTAINER, index) && <InsertIndicator />}
             <CanvasBlock
               block={block}
-              index={index}
               total={blocks.length}
               containerId={CANVAS_ROOT_CONTAINER}
-              onMove={(from, to) => ctx.onReorderTop(from, to)}
             />
           </div>
         ))}
