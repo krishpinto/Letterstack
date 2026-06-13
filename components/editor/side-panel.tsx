@@ -9,11 +9,23 @@ import { SectionsPanel } from "./sections-panel";
 import { StylesPanel } from "./styles-panel";
 import type { EmailBlock } from "@/lib/email/document";
 
+/** Left edge of the flyout = width of the icon nav rail. */
+const NAV_WIDTH = 56;
+const PANEL_WIDTH = 320;
+const FLYOUT_TRANSITION =
+  "top 260ms cubic-bezier(0.22,1,0.36,1), bottom 260ms cubic-bezier(0.22,1,0.36,1), " +
+  "left 260ms cubic-bezier(0.22,1,0.36,1), border-radius 260ms ease, " +
+  "box-shadow 260ms ease, opacity 180ms ease, transform 220ms cubic-bezier(0.22,1,0.36,1)";
+
 interface SidePanelProps {
-  activePanel: ActivePanel;
+  /** Which panel's content to show (hover preview OR pinned). null = closed. */
+  panel: ActivePanel;
+  /** True while this is a hover preview (floating) rather than pinned (docked). */
+  preview: boolean;
+  /** Pin the currently-previewed panel — fired when the user clicks inside it. */
+  onCommit: () => void;
   document: EmailDocument;
   selectedBlock: EmailBlock | undefined;
-  selectedIndex: number;
   onAdd: (type: EmailBlock["type"]) => void;
   onBack: () => void;
   onMoveUp: () => void;
@@ -22,32 +34,55 @@ interface SidePanelProps {
 }
 
 export function SidePanel({
-  activePanel,
+  panel,
+  preview,
+  onCommit,
   document,
   selectedBlock,
-  selectedIndex,
   onAdd,
   onBack,
   onMoveUp,
   onMoveDown,
   onUpdateDocument,
 }: SidePanelProps) {
-  const showPalette = activePanel === "blocks" && !selectedBlock;
-  const showInspector = activePanel === "blocks" && !!selectedBlock;
+  const open = panel !== null;
+  const mode = !open ? "closed" : preview ? "preview" : "docked";
+
+  const showPalette = panel === "blocks" && !selectedBlock;
+  const showInspector = panel === "blocks" && !!selectedBlock;
 
   return (
     <div
-      className="relative z-10 shrink-0 overflow-hidden rounded-r-2xl bg-card"
+      onClick={onCommit}
+      className="absolute z-30 flex flex-col bg-card"
       style={{
-        width: activePanel !== null ? 320 : 0,
-        transition: "width 200ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 200ms ease",
-        boxShadow: activePanel !== null ? "4px 0 24px rgba(0,0,0,0.07)" : "none",
+        width: PANEL_WIDTH,
+        // Docked: flush to nav, full height, only right corners rounded.
+        // Preview: detached with a gap top/bottom/left and fully rounded — reads
+        // as a temporary floating preview until the user clicks to pin it.
+        left: mode === "docked" ? NAV_WIDTH : NAV_WIDTH + 10,
+        top: mode === "docked" ? 0 : 14,
+        bottom: mode === "docked" ? 0 : 14,
+        borderRadius: mode === "docked" ? "0 16px 16px 0" : 18,
+        boxShadow:
+          mode === "preview"
+            ? "0 24px 70px rgba(0,0,0,0.22)"
+            : mode === "docked"
+            ? "4px 0 24px rgba(0,0,0,0.07)"
+            : "none",
+        opacity: open ? 1 : 0,
+        transform: open ? "translateX(0)" : "translateX(-14px)",
+        pointerEvents: open ? "auto" : "none",
+        overflow: "hidden",
+        transition: FLYOUT_TRANSITION,
       }}
     >
-      <div className="flex h-full w-[320px] flex-col">
-        {showPalette && (
-          <BlockPalette onAdd={onAdd} />
-        )}
+      {/* Keyed so swapping panels (Blocks → Sections) cross-fades cleanly. */}
+      <div
+        key={panel ?? "none"}
+        className="flex h-full flex-col duration-200 animate-in fade-in-0"
+      >
+        {showPalette && <BlockPalette onAdd={onAdd} />}
 
         {showInspector && selectedBlock && (
           <BlockInspector
@@ -60,17 +95,13 @@ export function SidePanel({
           />
         )}
 
-        {activePanel === "sections" && (
-          <SectionsPanel />
-        )}
+        {panel === "sections" && <SectionsPanel />}
 
-        {activePanel === "styles" && (
+        {panel === "styles" && (
           <StylesPanel document={document} onUpdateDocument={onUpdateDocument} />
         )}
 
-        {activePanel === "optimize" && (
-          <OptimizePanel document={document} />
-        )}
+        {panel === "optimize" && <OptimizePanel document={document} />}
       </div>
     </div>
   );

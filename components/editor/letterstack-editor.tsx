@@ -77,6 +77,8 @@ export function LetterStackEditor() {
     initialEmailDocument.blocks[0]?.id ?? "",
   );
   const [activePanel, setActivePanel] = React.useState<ActivePanel>("blocks");
+  // Hover-preview panel. The visible flyout = hover (if any) else the pinned one.
+  const [hoverPanel, setHoverPanel] = React.useState<ActivePanel>(null);
   const [saveStatus, setSaveStatus] = React.useState<"idle" | "saved">("idle");
   const [copied, setCopied] = React.useState(false);
 
@@ -92,6 +94,11 @@ export function LetterStackEditor() {
   const compiled = React.useMemo(() => compileEmailDocument(document), [document]);
   const selectedBlock = findBlock(document.blocks, selectedBlockId);
   const selectedIndex = document.blocks.findIndex((b) => b.id === selectedBlockId);
+
+  // Flyout state: hover previews float; the pinned panel docks full-height.
+  const visiblePanel = hoverPanel ?? activePanel;
+  const isPreview = hoverPanel !== null && hoverPanel !== activePanel;
+  const isDocked = visiblePanel !== null && !isPreview;
 
   // When a block is selected and the panel is closed, open it to blocks/inspector
   React.useEffect(() => {
@@ -373,57 +380,72 @@ export function LetterStackEditor() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
 
-        {/* Icon nav — 56px */}
-        <nav className="z-20 flex w-14 shrink-0 flex-col items-center gap-0.5 border-r bg-card pb-3 pt-2">
-          <NavButton
-            icon={GridViewIcon}
-            label="Blocks"
-            active={activePanel === "blocks"}
-            onClick={() => togglePanel("blocks")}
-          />
-          <NavButton
-            icon={LayersIcon}
-            label="Sections"
-            active={activePanel === "sections"}
-            onClick={() => togglePanel("sections")}
-          />
-          <NavButton
-            icon={PaintBrush01Icon}
-            label="Styles"
-            active={activePanel === "styles"}
-            onClick={() => togglePanel("styles")}
-          />
-          <NavButton
-            icon={Analytics01Icon}
-            label="Optimize"
-            active={activePanel === "optimize"}
-            onClick={() => togglePanel("optimize")}
-          />
-        </nav>
+        {/* Icon nav + floating flyout share one hover region. Leaving it (into
+            the canvas) drops the hover preview; the pinned panel stays docked. */}
+        <div
+          className="relative z-30 shrink-0"
+          onMouseLeave={() => setHoverPanel(null)}
+        >
+          <nav className="flex h-full w-14 flex-col items-center gap-0.5 border-r bg-card pb-3 pt-2">
+            <NavButton
+              icon={GridViewIcon}
+              label="Blocks"
+              active={visiblePanel === "blocks"}
+              onClick={() => togglePanel("blocks")}
+              onHover={() => setHoverPanel("blocks")}
+            />
+            <NavButton
+              icon={LayersIcon}
+              label="Sections"
+              active={visiblePanel === "sections"}
+              onClick={() => togglePanel("sections")}
+              onHover={() => setHoverPanel("sections")}
+            />
+            <NavButton
+              icon={PaintBrush01Icon}
+              label="Styles"
+              active={visiblePanel === "styles"}
+              onClick={() => togglePanel("styles")}
+              onHover={() => setHoverPanel("styles")}
+            />
+            <NavButton
+              icon={Analytics01Icon}
+              label="Optimize"
+              active={visiblePanel === "optimize"}
+              onClick={() => togglePanel("optimize")}
+              onHover={() => setHoverPanel("optimize")}
+            />
+          </nav>
 
-        {/* Flyout panel — 320px */}
-        <SidePanel
-          activePanel={activePanel}
-          document={document}
-          selectedBlock={selectedBlock}
-          selectedIndex={selectedIndex}
-          onAdd={handleAddBlock}
-          onBack={() => setSelectedBlockId("")}
-          onMoveUp={() => {
-            if (selectedIndex > 0) handleReorder(selectedIndex, selectedIndex - 1);
-          }}
-          onMoveDown={() => {
-            if (selectedIndex < document.blocks.length - 1)
-              handleReorder(selectedIndex, selectedIndex + 1);
-          }}
-          onUpdateDocument={updateDocument}
-        />
+          {/* Flyout panel — 320px, floats (preview) or docks (pinned) */}
+          <SidePanel
+            panel={visiblePanel}
+            preview={isPreview}
+            onCommit={() => { if (visiblePanel) setActivePanel(visiblePanel); }}
+            document={document}
+            selectedBlock={selectedBlock}
+            onAdd={handleAddBlock}
+            onBack={() => setSelectedBlockId("")}
+            onMoveUp={() => {
+              if (selectedIndex > 0) handleReorder(selectedIndex, selectedIndex - 1);
+            }}
+            onMoveDown={() => {
+              if (selectedIndex < document.blocks.length - 1)
+                handleReorder(selectedIndex, selectedIndex + 1);
+            }}
+            onUpdateDocument={updateDocument}
+          />
+        </div>
 
-        {/* Canvas */}
+        {/* Canvas — padded to clear the docked flyout; preview floats over it. */}
         <div
           className="min-w-0 flex-1 overflow-auto bg-zinc-100"
+          style={{
+            paddingLeft: isDocked ? 320 : 0,
+            transition: "padding-left 260ms cubic-bezier(0.22,1,0.36,1)",
+          }}
           onClick={(e) => {
             if (e.target === e.currentTarget) setSelectedBlockId("");
           }}
