@@ -27,13 +27,19 @@ export type EmailDocumentSettings = {
 
 export type EmailBlock =
   | TextBlock
+  | HeadingBlock
+  | ParagraphBlock
   | ImageBlock
   | ButtonBlock
   | DividerBlock
   | SpacerBlock
   | ColumnsBlock
   | ArticleCardBlock
-  | RawHtmlBlock;
+  | RawHtmlBlock
+  | VideoBlock
+  | SocialBlock
+  | LogoBlock
+  | FooterBlock;
 
 export type BaseBlock<TType extends string> = {
   id: string;
@@ -47,6 +53,17 @@ export type BaseBlock<TType extends string> = {
 export type TextBlock = BaseBlock<"text"> & {
   eyebrow?: string;
   heading: string;
+  body: string;
+  align: TextAlign;
+};
+
+export type HeadingBlock = BaseBlock<"heading"> & {
+  text: string;
+  level: 1 | 2 | 3;
+  align: TextAlign;
+};
+
+export type ParagraphBlock = BaseBlock<"paragraph"> & {
   body: string;
   align: TextAlign;
 };
@@ -93,6 +110,36 @@ export type RawHtmlBlock = BaseBlock<"rawHtml"> & {
   label: string;
   html: string;
   text: string;
+};
+
+export type VideoBlock = BaseBlock<"video"> & {
+  url: string;
+  caption: string;
+};
+
+export type SocialLink = {
+  id: string;
+  platform: "facebook" | "twitter" | "instagram" | "linkedin" | "youtube";
+  url: string;
+};
+
+export type SocialBlock = BaseBlock<"social"> & {
+  links: SocialLink[];
+  align: TextAlign;
+};
+
+export type LogoBlock = BaseBlock<"logo"> & {
+  src: string;
+  alt: string;
+  width: number;
+  align: TextAlign;
+  href?: string;
+};
+
+export type FooterBlock = BaseBlock<"footer"> & {
+  companyName: string;
+  address: string;
+  unsubscribeText: string;
 };
 
 export type TextAlign = "left" | "center" | "right";
@@ -202,6 +249,21 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
         body: "<p>Write the campaign copy for this section.</p>",
         align: "left",
       };
+    case "heading":
+      return {
+        id: createId(),
+        type: "heading",
+        text: "<p>Section heading</p>",
+        level: 2,
+        align: "left",
+      };
+    case "paragraph":
+      return {
+        id: createId(),
+        type: "paragraph",
+        body: "<p>Write your paragraph text here. Keep it concise and focused on one topic per paragraph.</p>",
+        align: "left",
+      };
     case "image":
       return {
         id: createId(),
@@ -258,6 +320,41 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
         label: "Custom HTML",
         html: "<p>Custom HTML content.</p>",
         text: "Custom HTML content.",
+      };
+    case "video":
+      return {
+        id: createId(),
+        type: "video",
+        url: "",
+        caption: "",
+      };
+    case "social":
+      return {
+        id: createId(),
+        type: "social",
+        links: [
+          { id: createId(), platform: "facebook", url: "" },
+          { id: createId(), platform: "twitter", url: "" },
+          { id: createId(), platform: "instagram", url: "" },
+        ],
+        align: "center",
+      };
+    case "logo":
+      return {
+        id: createId(),
+        type: "logo",
+        src: "",
+        alt: "Logo",
+        width: 40,
+        align: "center",
+      };
+    case "footer":
+      return {
+        id: createId(),
+        type: "footer",
+        companyName: "Your Organization",
+        address: "123 Main St, City, State 12345",
+        unsubscribeText: "Unsubscribe",
       };
   }
 }

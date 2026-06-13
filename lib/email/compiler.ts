@@ -3,8 +3,14 @@ import type {
   ColumnContent,
   EmailBlock,
   EmailDocument,
+  FooterBlock,
+  HeadingBlock,
+  LogoBlock,
+  ParagraphBlock,
   RawHtmlBlock,
+  SocialBlock,
   TextBlock,
+  VideoBlock,
 } from "./document";
 
 export type CompiledEmail = {
@@ -98,6 +104,10 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument) {
   switch (block.type) {
     case "text":
       return renderTextBlock(block, document);
+    case "heading":
+      return renderHeadingBlock(block, document);
+    case "paragraph":
+      return renderParagraphBlock(block, document);
     case "image":
       return `
             <tr>
@@ -130,6 +140,14 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument) {
       return renderArticleCardBlock(block, document);
     case "rawHtml":
       return renderRawHtmlBlock(block, document);
+    case "video":
+      return renderVideoBlock(block, document);
+    case "social":
+      return renderSocialBlock(block, document);
+    case "logo":
+      return renderLogoBlock(block, document);
+    case "footer":
+      return renderFooterBlock(block, document);
   }
 }
 
@@ -151,6 +169,98 @@ function renderTextBlock(block: TextBlock, document: EmailDocument) {
                 ${eyebrow}
                 <h1 style="margin:0 0 12px 0;color:${textColor};font-family:${ff};font-size:30px;line-height:1.14;font-weight:800;letter-spacing:0;">${headingHtml}</h1>
                 <div style="margin:0;color:${textColor};font-family:${ff};font-size:16px;line-height:1.65;">${bodyHtml}</div>
+              </td>
+            </tr>`;
+}
+
+function renderHeadingBlock(block: HeadingBlock, document: EmailDocument) {
+  const textColor = block.textColor ?? document.settings.textColor;
+  const ff = document.settings.fontFamily;
+  const p = document.settings.padding;
+  const sizes: Record<1 | 2 | 3, string> = { 1: "32px", 2: "24px", 3: "18px" };
+  const text = stripOuterP(block.text);
+  return `
+            <tr>
+              <td align="${block.align}" style="padding:24px ${p}px 12px ${p}px;">
+                <h${block.level} style="margin:0;color:${textColor};font-family:${ff};font-size:${sizes[block.level]};line-height:1.2;font-weight:800;">${text}</h${block.level}>
+              </td>
+            </tr>`;
+}
+
+function renderParagraphBlock(block: ParagraphBlock, document: EmailDocument) {
+  const textColor = block.textColor ?? document.settings.textColor;
+  const ff = document.settings.fontFamily;
+  const p = document.settings.padding;
+  const bodyHtml = styleBodyHtml(block.body, textColor, ff, "16px", "1.65");
+  return `
+            <tr>
+              <td align="${block.align}" style="padding:8px ${p}px 16px ${p}px;">
+                <div style="margin:0;color:${textColor};font-family:${ff};font-size:16px;line-height:1.65;">${bodyHtml}</div>
+              </td>
+            </tr>`;
+}
+
+function renderVideoBlock(block: VideoBlock, document: EmailDocument) {
+  const p = document.settings.padding;
+  return `
+            <tr>
+              <td style="padding:16px ${p}px;">
+                <a href="${escapeAttribute(block.url)}" style="display:block;background:#111;text-align:center;padding:48px 24px;text-decoration:none;border-radius:4px;">
+                  <p style="margin:0;color:#ffffff;font-family:${document.settings.fontFamily};font-size:18px;font-weight:700;">&#9654; Watch video</p>
+                </a>
+                ${block.caption ? `<p style="margin:8px 0 0;color:${document.settings.textColor};font-family:${document.settings.fontFamily};font-size:13px;text-align:center;">${escapeHtml(block.caption)}</p>` : ""}
+              </td>
+            </tr>`;
+}
+
+const SOCIAL_DISPLAY: Record<string, string> = {
+  facebook: "Facebook",
+  twitter: "X / Twitter",
+  instagram: "Instagram",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
+};
+
+function renderSocialBlock(block: SocialBlock, document: EmailDocument) {
+  const p = document.settings.padding;
+  const links = block.links
+    .map(
+      (link) =>
+        `<a href="${escapeAttribute(link.url)}" style="display:inline-block;margin:0 6px;color:${document.settings.accentColor};font-family:${document.settings.fontFamily};font-size:13px;font-weight:700;text-decoration:none;">${SOCIAL_DISPLAY[link.platform] ?? link.platform}</a>`
+    )
+    .join("");
+  return `
+            <tr>
+              <td align="${block.align}" style="padding:16px ${p}px;">
+                ${links}
+              </td>
+            </tr>`;
+}
+
+function renderLogoBlock(block: LogoBlock, document: EmailDocument) {
+  const p = document.settings.padding;
+  if (!block.src) {
+    return `<tr><td style="padding:16px ${p}px;height:60px;"></td></tr>`;
+  }
+  const img = `<img src="${escapeAttribute(block.src)}" alt="${escapeAttribute(block.alt)}" style="display:inline-block;width:${block.width}%;max-width:200px;height:auto;border:0;">`;
+  return `
+            <tr>
+              <td align="${block.align}" style="padding:16px ${p}px;">
+                ${block.href ? `<a href="${escapeAttribute(block.href)}" style="display:inline-block;">${img}</a>` : img}
+              </td>
+            </tr>`;
+}
+
+function renderFooterBlock(block: FooterBlock, document: EmailDocument) {
+  const p = document.settings.padding;
+  return `
+            <tr>
+              <td align="center" style="padding:24px ${p}px;border-top:1px solid rgba(0,0,0,0.08);">
+                <p style="margin:0 0 4px 0;font-family:${document.settings.fontFamily};font-size:13px;color:#888;">© ${escapeHtml(block.companyName)}</p>
+                <p style="margin:0 0 10px 0;font-family:${document.settings.fontFamily};font-size:12px;color:#aaa;">${escapeHtml(block.address)}</p>
+                <p style="margin:0;font-family:${document.settings.fontFamily};font-size:12px;">
+                  <a href="{{unsubscribe_url}}" style="color:#aaa;text-decoration:underline;">${escapeHtml(block.unsubscribeText)}</a>
+                </p>
               </td>
             </tr>`;
 }
@@ -239,6 +349,10 @@ function blockToText(block: EmailBlock): string[] {
         stripHtml(block.heading),
         stripHtml(block.body),
       ];
+    case "heading":
+      return [stripHtml(block.text)];
+    case "paragraph":
+      return [stripHtml(block.body)];
     case "image":
       return [block.alt];
     case "button":
@@ -259,6 +373,16 @@ function blockToText(block: EmailBlock): string[] {
       ];
     case "rawHtml":
       return [block.text];
+    case "video":
+      return [block.url ? `Video: ${block.url}` : ""];
+    case "social":
+      return [block.links.map((l) => `${l.platform}: ${l.url}`).join(" | ")];
+    case "logo":
+      return [block.alt];
+    case "footer":
+      return [block.companyName, block.address, `Unsubscribe: {{unsubscribe_url}}`];
+    default:
+      return [];
   }
 }
 
@@ -275,7 +399,6 @@ function escapeAttribute(value: string) {
   return escapeHtml(value).replaceAll("`", "&#096;");
 }
 
-// Strip all HTML tags — used for plain-text fallback of rich-text fields
 export function stripHtml(html: string): string {
   return html
     .replace(/<[^>]*>/g, " ")
@@ -288,7 +411,6 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
-// Remove the wrapping <p>…</p> that TipTap adds to single-line fields
 function stripOuterP(html: string): string {
   const stripped = html
     .replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1")
@@ -296,7 +418,6 @@ function stripOuterP(html: string): string {
   return stripped || html;
 }
 
-// Inject email-safe inline styles into TipTap-produced block elements.
 function styleBodyHtml(
   html: string,
   color: string,
