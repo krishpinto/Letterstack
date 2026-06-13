@@ -17,14 +17,11 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Copy01Icon,
-  Delete02Icon,
-  DragDropVerticalIcon,
-} from "@hugeicons/core-free-icons";
+import { DragDropVerticalIcon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { updateBlock, type EmailBlock, type EmailDocument } from "@/lib/email/document";
 import { BLOCK_LABELS } from "./editor-types";
+import { BlockBubbleMenu } from "./block-bubble-menu";
 import { CanvasBlockPreview } from "./canvas-block-preview";
 
 export function SortableBlockList({
@@ -67,13 +64,19 @@ export function SortableBlockList({
         items={document.blocks.map((b) => b.id)}
         strategy={verticalListSortingStrategy}
       >
-        {document.blocks.map((block) => (
+        {document.blocks.map((block, index) => (
           <SortableBlock
             key={block.id}
             block={block}
             document={document}
+            index={index}
+            total={document.blocks.length}
             isSelected={selectedBlockId === block.id}
             onSelect={() => onSelectBlock(block.id)}
+            onMoveUp={() => { if (index > 0) onReorder(index, index - 1); }}
+            onMoveDown={() => {
+              if (index < document.blocks.length - 1) onReorder(index, index + 1);
+            }}
             onDuplicate={() => onDuplicate(block.id)}
             onRemove={() => onRemove(block.id)}
             onUpdateBlock={(updater) =>
@@ -89,16 +92,24 @@ export function SortableBlockList({
 function SortableBlock({
   block,
   document,
+  index,
+  total,
   isSelected,
   onSelect,
+  onMoveUp,
+  onMoveDown,
   onDuplicate,
   onRemove,
   onUpdateBlock,
 }: {
   block: EmailBlock;
   document: EmailDocument;
+  index: number;
+  total: number;
   isSelected: boolean;
   onSelect: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
   onUpdateBlock: (updater: (b: EmailBlock) => EmailBlock) => void;
@@ -148,27 +159,21 @@ function SortableBlock({
         </button>
       </div>
 
-      {/* Right-side floating actions — selected only */}
+      {/* Canva-style floating bubble menu — selected only */}
       {isSelected && (
-        <div
-          className="absolute right-0 top-0 z-20 flex translate-x-[calc(100%+8px)] flex-col gap-1.5"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground active:scale-[0.93]"
-            onClick={onDuplicate}
-            title="Duplicate"
-          >
-            <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-3.5" />
-          </button>
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded border border-border bg-card text-destructive/60 shadow-sm transition-colors hover:text-destructive active:scale-[0.93]"
-            onClick={onRemove}
-            title="Delete"
-          >
-            <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} className="size-3.5" />
-          </button>
-        </div>
+        <BlockBubbleMenu
+          block={block}
+          isFirst={index === 0}
+          isLast={index === total - 1}
+          canRemove={total > 1}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
+          onDuplicate={onDuplicate}
+          onRemove={onRemove}
+          onAlign={(align) =>
+            onUpdateBlock((b) => ({ ...b, align }) as EmailBlock)
+          }
+        />
       )}
 
       {/* Block content */}

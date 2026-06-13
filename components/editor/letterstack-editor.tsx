@@ -212,7 +212,7 @@ export function LetterStackEditor() {
             if (e.target === e.currentTarget) setSelectedBlockId("");
           }}
         >
-          <div className="flex min-h-full justify-center px-8 pr-20 py-10">
+          <div className="flex min-h-full justify-center px-8 pr-20 pb-10 pt-16">
             <div
               className="relative w-full shadow-sm"
               style={{
