@@ -86,14 +86,27 @@ export type SpacerBlock = BaseBlock<"spacer"> & {
   height: number;
 };
 
+export type ColumnVAlign = "top" | "middle" | "bottom";
+export type ColumnMobile = "stack" | "stack-reverse" | "row";
+export type BorderStyle = "none" | "solid" | "dashed" | "dotted";
+
 export type ColumnsBlock = BaseBlock<"columns"> & {
   columns: ColumnContent[];
+  gap: number;
+  columnBackgroundColor?: string;
+  borderStyle: BorderStyle;
+  borderColor: string;
+  borderRadius: number;
+  valign: ColumnVAlign;
+  mobile: ColumnMobile;
+  cellPadding: number;
 };
 
 export type ColumnContent = {
   id: string;
-  heading: string;
-  body: string;
+  /** Relative weight; widths across the row are normalized to percentages. */
+  width: number;
+  blocks: EmailBlock[];
 };
 
 export type ArticleCardBlock = BaseBlock<"articleCard"> & {
@@ -238,6 +251,10 @@ export function createDocument(
   };
 }
 
+export function createColumn(width = 1): ColumnContent {
+  return { id: createId(), width, blocks: [] };
+}
+
 export function createBlock(type: EmailBlock["type"]): EmailBlock {
   switch (type) {
     case "text":
@@ -288,18 +305,14 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
       return {
         id: createId(),
         type: "columns",
-        columns: [
-          {
-            id: createId(),
-            heading: "<p>First column</p>",
-            body: "<p>Add supporting copy here.</p>",
-          },
-          {
-            id: createId(),
-            heading: "<p>Second column</p>",
-            body: "<p>Add supporting copy here.</p>",
-          },
-        ],
+        columns: [createColumn(), createColumn()],
+        gap: 12,
+        borderStyle: "none",
+        borderColor: "#e5e5e5",
+        borderRadius: 6,
+        valign: "top",
+        mobile: "stack",
+        cellPadding: 12,
       };
     case "articleCard":
       return {
@@ -359,39 +372,67 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
   }
 }
 
+// ─── Tree helpers (blocks can nest one level inside column cells) ──────────────
+
+/** Map over the whole block tree, applying `updater` to the block with `id`. */
+function mapTree(
+  blocks: EmailBlock[],
+  id: string,
+  updater: (block: EmailBlock) => EmailBlock
+): EmailBlock[] {
+  return blocks.map((block) => {
+    if (block.id === id) return updater(block);
+    if (block.type === "columns") {
+      return {
+        ...block,
+        columns: block.columns.map((c) => ({
+          ...c,
+          blocks: mapTree(c.blocks, id, updater),
+        })),
+      };
+    }
+    return block;
+  });
+}
+
+/** Find a block anywhere in the tree (top-level or inside a column). */
+export function findBlock(blocks: EmailBlock[], id: string): EmailBlock | undefined {
+  for (const block of blocks) {
+    if (block.id === id) return block;
+    if (block.type === "columns") {
+      for (const column of block.columns) {
+        const found = findBlock(column.blocks, id);
+        if (found) return found;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** The sibling list + index that contains `id`, for move/duplicate context. */
+export function locateBlock(
+  blocks: EmailBlock[],
+  id: string
+): { siblings: EmailBlock[]; index: number } | undefined {
+  const index = blocks.findIndex((b) => b.id === id);
+  if (index >= 0) return { siblings: blocks, index };
+  for (const block of blocks) {
+    if (block.type === "columns") {
+      for (const column of block.columns) {
+        const found = locateBlock(column.blocks, id);
+        if (found) return found;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function updateBlock(
   document: EmailDocument,
   blockId: string,
   updater: (block: EmailBlock) => EmailBlock
 ): EmailDocument {
-  return touchDocument({
-    ...document,
-    blocks: document.blocks.map((block) =>
-      block.id === blockId ? updater(block) : block
-    ),
-  });
-}
-
-export function moveBlock(
-  document: EmailDocument,
-  blockId: string,
-  direction: -1 | 1
-) {
-  const currentIndex = document.blocks.findIndex(
-    (block) => block.id === blockId
-  );
-  const nextIndex = currentIndex + direction;
-  if (
-    currentIndex < 0 ||
-    nextIndex < 0 ||
-    nextIndex >= document.blocks.length
-  )
-    return document;
-
-  const nextBlocks = [...document.blocks];
-  const [block] = nextBlocks.splice(currentIndex, 1);
-  nextBlocks.splice(nextIndex, 0, block);
-  return touchDocument({ ...document, blocks: nextBlocks });
+  return touchDocument({ ...document, blocks: mapTree(document.blocks, blockId, updater) });
 }
 
 export function reorderBlocks(
@@ -405,28 +446,148 @@ export function reorderBlocks(
   return touchDocument({ ...document, blocks: nextBlocks });
 }
 
-export function duplicateBlock(document: EmailDocument, blockId: string) {
-  const currentIndex = document.blocks.findIndex(
-    (block) => block.id === blockId
-  );
-  if (currentIndex < 0) return document;
-
-  const block = cloneBlock(document.blocks[currentIndex]);
-  const nextBlocks = [...document.blocks];
-  nextBlocks.splice(currentIndex + 1, 0, block);
-  return touchDocument({ ...document, blocks: nextBlocks });
-}
-
-export function removeBlock(document: EmailDocument, blockId: string) {
-  if (document.blocks.length === 1) return document;
+/** Reorder blocks inside a single column cell. */
+export function reorderInColumn(
+  document: EmailDocument,
+  columnId: string,
+  fromIndex: number,
+  toIndex: number
+): EmailDocument {
   return touchDocument({
     ...document,
-    blocks: document.blocks.filter((block) => block.id !== blockId),
+    blocks: document.blocks.map((block) => {
+      if (block.type !== "columns") return block;
+      return {
+        ...block,
+        columns: block.columns.map((c) => {
+          if (c.id !== columnId) return c;
+          const next = [...c.blocks];
+          const [moved] = next.splice(fromIndex, 1);
+          next.splice(toIndex, 0, moved);
+          return { ...c, blocks: next };
+        }),
+      };
+    }),
   });
 }
 
+/** Insert a block into a column cell at a given index. */
+export function insertIntoColumn(
+  document: EmailDocument,
+  columnId: string,
+  index: number,
+  block: EmailBlock
+): EmailDocument {
+  return touchDocument({
+    ...document,
+    blocks: document.blocks.map((b) => {
+      if (b.type !== "columns") return b;
+      if (!b.columns.some((c) => c.id === columnId)) return b;
+      return {
+        ...b,
+        columns: b.columns.map((c) =>
+          c.id === columnId
+            ? { ...c, blocks: [...c.blocks.slice(0, index), block, ...c.blocks.slice(index)] }
+            : c,
+        ),
+      };
+    }),
+  });
+}
+
+/** Insert a new block at a top-level index. */
+export function insertBlockAtIndex(
+  document: EmailDocument,
+  index: number,
+  block: EmailBlock
+): EmailDocument {
+  return touchDocument({
+    ...document,
+    blocks: [...document.blocks.slice(0, index), block, ...document.blocks.slice(index)],
+  });
+}
+
+/** Grow/shrink a columns block to `count` cells, preserving existing content. */
+export function setColumnCount(
+  document: EmailDocument,
+  columnsBlockId: string,
+  count: number
+): EmailDocument {
+  return updateBlock(document, columnsBlockId, (block) => {
+    if (block.type !== "columns") return block;
+    const current = block.columns;
+    let next: ColumnContent[];
+    if (count > current.length) {
+      next = [...current, ...Array.from({ length: count - current.length }, () => createColumn())];
+    } else {
+      // Merge trimmed cells' blocks into the last surviving cell so nothing is lost.
+      const kept = current.slice(0, count);
+      const dropped = current.slice(count).flatMap((c) => c.blocks);
+      next = kept.map((c, i) =>
+        i === kept.length - 1 ? { ...c, blocks: [...c.blocks, ...dropped] } : c,
+      );
+    }
+    return { ...block, columns: next.map((c) => ({ ...c, width: 1 })) };
+  });
+}
+
+export function duplicateBlock(document: EmailDocument, blockId: string) {
+  const dup = (blocks: EmailBlock[]): { blocks: EmailBlock[]; done: boolean } => {
+    const idx = blocks.findIndex((b) => b.id === blockId);
+    if (idx >= 0) {
+      const next = [...blocks];
+      next.splice(idx + 1, 0, cloneBlock(blocks[idx]));
+      return { blocks: next, done: true };
+    }
+    let done = false;
+    const next = blocks.map((b) => {
+      if (done || b.type !== "columns") return b;
+      const columns = b.columns.map((c) => {
+        if (done) return c;
+        const r = dup(c.blocks);
+        if (r.done) {
+          done = true;
+          return { ...c, blocks: r.blocks };
+        }
+        return c;
+      });
+      return done ? { ...b, columns } : b;
+    });
+    return { blocks: next, done };
+  };
+  const result = dup(document.blocks);
+  return result.done ? touchDocument({ ...document, blocks: result.blocks }) : document;
+}
+
+export function removeBlock(document: EmailDocument, blockId: string) {
+  // Never remove the final top-level block.
+  if (document.blocks.length === 1 && document.blocks[0].id === blockId) return document;
+  const prune = (blocks: EmailBlock[]): EmailBlock[] =>
+    blocks
+      .filter((b) => b.id !== blockId)
+      .map((b) =>
+        b.type === "columns"
+          ? { ...b, columns: b.columns.map((c) => ({ ...c, blocks: prune(c.blocks) })) }
+          : b,
+      );
+  return touchDocument({ ...document, blocks: prune(document.blocks) });
+}
+
 export function cloneBlock(block: EmailBlock): EmailBlock {
-  return { ...structuredClone(block), id: createId() } as EmailBlock;
+  return reassignIds(structuredClone(block));
+}
+
+/** Recursively assign fresh ids so duplicated subtrees never collide. */
+function reassignIds(block: EmailBlock): EmailBlock {
+  const next = { ...block, id: createId() } as EmailBlock;
+  if (next.type === "columns") {
+    next.columns = next.columns.map((c) => ({
+      ...c,
+      id: createId(),
+      blocks: c.blocks.map(reassignIds),
+    }));
+  }
+  return next;
 }
 
 export function touchDocument(document: EmailDocument): EmailDocument {
@@ -439,4 +600,45 @@ export function isEmailDocument(value: unknown): value is EmailDocument {
   return Boolean(
     candidate.id && candidate.settings && Array.isArray(candidate.blocks)
   );
+}
+
+// ─── Migration ────────────────────────────────────────────────────────────────
+
+/** Upgrade documents persisted before columns held nested blocks. */
+export function normalizeDocument(document: EmailDocument): EmailDocument {
+  return { ...document, blocks: document.blocks.map(normalizeBlock) };
+}
+
+function normalizeBlock(block: EmailBlock): EmailBlock {
+  if (block.type !== "columns") return block;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = block as any;
+  return {
+    gap: 12,
+    borderStyle: "none",
+    borderColor: "#e5e5e5",
+    borderRadius: 6,
+    valign: "top",
+    mobile: "stack",
+    cellPadding: 12,
+    ...raw,
+    columns: (raw.columns ?? []).map((c: Record<string, unknown>) => ({
+      id: (c.id as string) ?? createId(),
+      width: typeof c.width === "number" ? c.width : 1,
+      blocks: Array.isArray(c.blocks)
+        ? (c.blocks as EmailBlock[]).map(normalizeBlock)
+        : legacyColumnToBlocks(c),
+    })),
+  } as ColumnsBlock;
+}
+
+function legacyColumnToBlocks(column: Record<string, unknown>): EmailBlock[] {
+  const blocks: EmailBlock[] = [];
+  if (typeof column.heading === "string" && column.heading.trim()) {
+    blocks.push({ id: createId(), type: "heading", text: column.heading, level: 3, align: "left" });
+  }
+  if (typeof column.body === "string" && column.body.trim()) {
+    blocks.push({ id: createId(), type: "paragraph", body: column.body, align: "left" });
+  }
+  return blocks;
 }

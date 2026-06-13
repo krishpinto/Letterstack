@@ -1,6 +1,6 @@
 import type {
   ArticleCardBlock,
-  ColumnContent,
+  ColumnsBlock,
   EmailBlock,
   EmailDocument,
   FooterBlock,
@@ -75,7 +75,7 @@ export function compilePlainText(document: EmailDocument) {
     .join("\n\n");
 }
 
-function renderBlock(block: EmailBlock, document: EmailDocument) {
+function renderBlock(block: EmailBlock, document: EmailDocument): string {
   const inner = renderBlockInner(block, document);
   const bg = block.backgroundColor;
   const pt = block.paddingTop ?? 0;
@@ -135,7 +135,7 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument) {
               <td style="height:${block.height}px;line-height:${block.height}px;font-size:1px;">&nbsp;</td>
             </tr>`;
     case "columns":
-      return renderColumnsBlock(block.columns, document);
+      return renderColumnsBlock(block, document);
     case "articleCard":
       return renderArticleCardBlock(block, document);
     case "rawHtml":
@@ -265,30 +265,48 @@ function renderFooterBlock(block: FooterBlock, document: EmailDocument) {
             </tr>`;
 }
 
-function renderColumnsBlock(
-  columns: ColumnContent[],
-  document: EmailDocument
-) {
-  const tc = document.settings.textColor;
-  const ff = document.settings.fontFamily;
+function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument) {
   const p = document.settings.padding;
+  const total = block.columns.reduce((sum, c) => sum + (c.width || 1), 0) || 1;
+  const valign =
+    block.valign === "middle" ? "middle" : block.valign === "bottom" ? "bottom" : "top";
+  const border =
+    block.borderStyle === "none"
+      ? ""
+      : `border:1px ${block.borderStyle} ${block.borderColor};`;
+  const radius = block.borderRadius ? `border-radius:${block.borderRadius}px;` : "";
+  const bg = block.columnBackgroundColor ? `background:${block.columnBackgroundColor};` : "";
+
+  // Nested blocks render with no side padding so they fill the cell; the cell
+  // carries its own padding.
+  const nestedDocument: EmailDocument = {
+    ...document,
+    settings: { ...document.settings, padding: 0 },
+  };
+
+  const cells = block.columns
+    .map((column) => {
+      const widthPct = Math.round(((column.width || 1) / total) * 1000) / 10;
+      const inner = column.blocks.length
+        ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${column.blocks
+            .map((b) => renderBlock(b, nestedDocument))
+            .join("")}</table>`
+        : "&nbsp;";
+      return `
+                    <td valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}">
+                      ${inner}
+                    </td>`;
+    })
+    .join(
+      `<td width="${block.gap}" style="width:${block.gap}px;font-size:1px;line-height:1px;">&nbsp;</td>`,
+    );
 
   return `
             <tr>
               <td style="padding:4px ${p}px 24px ${p}px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    ${columns
-                      .map(
-                        (column) => `
-                    <td valign="top" width="${Math.floor(100 / columns.length)}%" style="padding:12px;border:1px solid rgba(23,33,27,0.1);border-radius:6px;">
-                      <h2 style="margin:0 0 8px 0;color:${tc};font-family:${ff};font-size:16px;line-height:1.3;font-weight:800;">${stripOuterP(column.heading)}</h2>
-                      <div style="margin:0;color:${tc};font-family:${ff};font-size:14px;line-height:1.55;">${styleBodyHtml(column.body, tc, ff, "14px", "1.55")}</div>
-                    </td>`
-                      )
-                      .join(
-                        '<td width="12" style="font-size:1px;line-height:1px;">&nbsp;</td>'
-                      )}
+                    ${cells}
                   </tr>
                 </table>
               </td>
@@ -361,10 +379,7 @@ function blockToText(block: EmailBlock): string[] {
     case "spacer":
       return [];
     case "columns":
-      return block.columns.flatMap((column) => [
-        stripHtml(column.heading),
-        stripHtml(column.body),
-      ]);
+      return block.columns.flatMap((column) => column.blocks.flatMap(blockToText));
     case "articleCard":
       return [
         stripHtml(block.headline),

@@ -7,6 +7,7 @@ import {
   ArrowUp01Icon,
   Copy01Icon,
   Delete02Icon,
+  DragDropVerticalIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { type EmailBlock, type TextAlign } from "@/lib/email/document";
@@ -22,6 +23,8 @@ export function BlockBubbleMenu({
   isFirst,
   isLast,
   canRemove,
+  isDragging,
+  dragHandleProps,
   onMoveUp,
   onMoveDown,
   onDuplicate,
@@ -32,6 +35,9 @@ export function BlockBubbleMenu({
   isFirst: boolean;
   isLast: boolean;
   canRemove: boolean;
+  isDragging: boolean;
+  /** Spread of dnd-kit `useSortable` attributes + listeners for the drag handle. */
+  dragHandleProps: React.HTMLAttributes<HTMLButtonElement>;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
@@ -51,9 +57,22 @@ export function BlockBubbleMenu({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span className="select-none px-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+      {/* Drag handle — the primary dnd affordance */}
+      <button
+        {...dragHandleProps}
+        type="button"
+        title="Drag to reorder"
+        aria-label="Drag to reorder block"
+        className={cn(
+          "flex h-7 items-center gap-1 rounded px-1.5 touch-none select-none",
+          "text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors",
+          "hover:bg-muted hover:text-foreground",
+          isDragging ? "cursor-grabbing bg-primary/10 text-primary" : "cursor-grab",
+        )}
+      >
+        <HugeiconsIcon icon={DragDropVerticalIcon} strokeWidth={2.5} className="size-3.5 opacity-70" />
         {BLOCK_LABELS[block.type]}
-      </span>
+      </button>
 
       {align !== undefined && (
         <>

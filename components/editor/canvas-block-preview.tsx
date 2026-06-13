@@ -224,62 +224,43 @@ export function CanvasBlockPreview({
         </div>
       );
 
-    case "columns":
+    case "columns": {
+      // Read-only render — interactive editing lives in <ColumnsCanvas>; this
+      // path is used for the drag overlay snapshot.
+      const total = block.columns.reduce((sum, c) => sum + (c.width || 1), 0) || 1;
+      const cellBorder =
+        block.borderStyle !== "none"
+          ? `1px ${block.borderStyle} ${block.borderColor}`
+          : undefined;
       return (
         <div style={{ padding: `4px ${s.padding}px 24px` }}>
-          <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: `repeat(${block.columns.length}, 1fr)` }}
-          >
+          <div className="flex items-stretch" style={{ gap: block.gap }}>
             {block.columns.map((column) => (
-              <div key={column.id} className="rounded-md border p-3">
-                {editable ? (
-                  <RichTextEditor
-                    value={column.heading}
-                    onChange={(html) =>
-                      onUpdateBlock!((b) => ({
-                        ...b,
-                        columns: (b as ColumnsBlock).columns.map((c) =>
-                          c.id === column.id ? { ...c, heading: html } : c,
-                        ),
-                      }) as ColumnsBlock)
-                    }
-                    editable
-                    style={{ color: textColor, fontSize: 14, fontWeight: 800, lineHeight: 1.3, marginBottom: 6 }}
-                  />
+              <div
+                key={column.id}
+                className="min-w-0"
+                style={{
+                  flexGrow: column.width,
+                  flexBasis: 0,
+                  padding: block.cellPadding,
+                  border: cellBorder,
+                  borderRadius: block.borderRadius,
+                  backgroundColor: block.columnBackgroundColor,
+                }}
+              >
+                {column.blocks.length ? (
+                  column.blocks.map((nested) => (
+                    <CanvasBlockPreview key={nested.id} block={nested} document={document} />
+                  ))
                 ) : (
-                  <h4
-                    className="mb-1.5 text-sm font-extrabold leading-tight"
-                    style={{ color: textColor }}
-                    dangerouslySetInnerHTML={{ __html: stripOuterP(column.heading) }}
-                  />
-                )}
-                {editable ? (
-                  <RichTextEditor
-                    value={column.body}
-                    onChange={(html) =>
-                      onUpdateBlock!((b) => ({
-                        ...b,
-                        columns: (b as ColumnsBlock).columns.map((c) =>
-                          c.id === column.id ? { ...c, body: html } : c,
-                        ),
-                      }) as ColumnsBlock)
-                    }
-                    editable
-                    style={{ color: textColor, fontSize: 12, lineHeight: 1.55, opacity: 0.8 }}
-                  />
-                ) : (
-                  <div
-                    className="text-xs leading-relaxed"
-                    style={{ color: textColor, opacity: 0.8 }}
-                    dangerouslySetInnerHTML={{ __html: column.body }}
-                  />
+                  <p className="py-6 text-center text-xs text-muted-foreground/60">Empty column</p>
                 )}
               </div>
             ))}
           </div>
         </div>
       );
+    }
 
     case "button":
       return (
