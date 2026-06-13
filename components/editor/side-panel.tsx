@@ -12,6 +12,10 @@ import type { EmailBlock } from "@/lib/email/document";
 /** Left edge of the flyout = width of the icon nav rail. */
 const NAV_WIDTH = 56;
 const PANEL_WIDTH = 320;
+/** Gap between the rail and the floating preview card (visual only — the hit
+ *  area still spans it, so it isn't a hover dead zone). */
+const PREVIEW_GAP_X = 12;
+const PREVIEW_GAP_Y = 14;
 const FLYOUT_TRANSITION =
   "top 260ms cubic-bezier(0.22,1,0.36,1), bottom 260ms cubic-bezier(0.22,1,0.36,1), " +
   "left 260ms cubic-bezier(0.22,1,0.36,1), border-radius 260ms ease, " +
@@ -52,56 +56,69 @@ export function SidePanel({
   const showInspector = panel === "blocks" && !!selectedBlock;
 
   return (
+    // Outer hit area: transparent, flush to the rail and full-height, spanning
+    // the card AND its preview gap. The cursor never crosses a dead zone moving
+    // from the rail to the floating card, so the hover never drops mid-move.
     <div
       onClick={onCommit}
-      className="absolute z-30 flex flex-col bg-card"
+      className="absolute"
       style={{
-        width: PANEL_WIDTH,
-        // Docked: flush to nav, full height, only right corners rounded.
-        // Preview: detached with a gap top/bottom/left and fully rounded — reads
-        // as a temporary floating preview until the user clicks to pin it.
-        left: mode === "docked" ? NAV_WIDTH : NAV_WIDTH + 10,
-        top: mode === "docked" ? 0 : 14,
-        bottom: mode === "docked" ? 0 : 14,
-        borderRadius: mode === "docked" ? "0 16px 16px 0" : 18,
-        boxShadow:
-          mode === "preview"
-            ? "0 24px 70px rgba(0,0,0,0.22)"
-            : mode === "docked"
-            ? "4px 0 24px rgba(0,0,0,0.07)"
-            : "none",
-        opacity: open ? 1 : 0,
-        transform: open ? "translateX(0)" : "translateX(-14px)",
+        left: NAV_WIDTH,
+        top: 0,
+        bottom: 0,
+        width: PANEL_WIDTH + PREVIEW_GAP_X,
         pointerEvents: open ? "auto" : "none",
-        overflow: "hidden",
-        transition: FLYOUT_TRANSITION,
       }}
     >
-      {/* Keyed so swapping panels (Blocks → Sections) cross-fades cleanly. */}
+      {/* Visible card. Docked: flush, full height, right corners rounded.
+          Preview: inset by the gap on all sides, fully rounded, lifted shadow
+          — clearly reads as a temporary floating preview until clicked. */}
       <div
-        key={panel ?? "none"}
-        className="flex h-full flex-col duration-200 animate-in fade-in-0"
+        className="absolute flex flex-col bg-card"
+        style={{
+          width: PANEL_WIDTH,
+          left: mode === "docked" ? 0 : PREVIEW_GAP_X,
+          top: mode === "docked" ? 0 : PREVIEW_GAP_Y,
+          bottom: mode === "docked" ? 0 : PREVIEW_GAP_Y,
+          borderRadius: mode === "docked" ? "0 16px 16px 0" : 18,
+          boxShadow:
+            mode === "preview"
+              ? "0 24px 70px rgba(0,0,0,0.22)"
+              : mode === "docked"
+              ? "4px 0 24px rgba(0,0,0,0.07)"
+              : "none",
+          opacity: open ? 1 : 0,
+          transform: open ? "translateX(0)" : "translateX(-14px)",
+          overflow: "hidden",
+          transition: FLYOUT_TRANSITION,
+        }}
       >
-        {showPalette && <BlockPalette onAdd={onAdd} />}
+        {/* Keyed so swapping panels (Blocks → Sections) cross-fades cleanly. */}
+        <div
+          key={panel ?? "none"}
+          className="flex h-full flex-col duration-200 animate-in fade-in-0"
+        >
+          {showPalette && <BlockPalette onAdd={onAdd} />}
 
-        {showInspector && selectedBlock && (
-          <BlockInspector
-            block={selectedBlock}
-            document={document}
-            onBack={onBack}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            onUpdateDocument={onUpdateDocument}
-          />
-        )}
+          {showInspector && selectedBlock && (
+            <BlockInspector
+              block={selectedBlock}
+              document={document}
+              onBack={onBack}
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              onUpdateDocument={onUpdateDocument}
+            />
+          )}
 
-        {panel === "sections" && <SectionsPanel />}
+          {panel === "sections" && <SectionsPanel />}
 
-        {panel === "styles" && (
-          <StylesPanel document={document} onUpdateDocument={onUpdateDocument} />
-        )}
+          {panel === "styles" && (
+            <StylesPanel document={document} onUpdateDocument={onUpdateDocument} />
+          )}
 
-        {panel === "optimize" && <OptimizePanel document={document} />}
+          {panel === "optimize" && <OptimizePanel document={document} />}
+        </div>
       </div>
     </div>
   );
