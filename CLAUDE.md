@@ -179,7 +179,7 @@ cheap if ever genuinely needed.
 | Icons | HugeIcons |
 | Database | Neon Postgres + Drizzle ORM |
 | Queue | Upstash QStash |
-| Email | Amazon SES via Nodemailer, ap-south-1 (fallback: Resend) |
+| Email | Amazon SES via AWS SDK v3 (SESv2), ap-south-1 (fallback: Resend) |
 | Files/parsing | SheetJS (xlsx), PapaParse (csv) |
 | Image CDN | Vercel Blob (Phase 3) |
 | Auth | Hardcoded login now → NextAuth v5 later |
