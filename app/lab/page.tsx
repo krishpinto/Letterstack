@@ -25,6 +25,7 @@ export default function LabPage() {
 
       <div className="mt-8 space-y-6">
         <SesCourierCard />
+        <DatabaseCard />
       </div>
     </main>
   );
@@ -86,6 +87,65 @@ function SesCourierCard() {
           <div className="mt-1 text-xs text-emerald-700">
             Check your inbox (and spam) — delivery is usually seconds.
           </div>
+        </div>
+      )}
+
+      {result && !result.ok && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ Failed: {result.error}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Box #4 of the mailroom map: the Neon database — here we just prove it connects. */
+function DatabaseCard() {
+  const [status, setStatus] = useState<"idle" | "checking">("idle");
+  const [result, setResult] = useState<
+    { ok: true; time: string } | { ok: false; error: string } | null
+  >(null);
+
+  async function handlePing() {
+    setStatus("checking");
+    setResult(null);
+    try {
+      // A read, so GET (the default fetch method).
+      const res = await fetch("/api/lab/db-ping");
+      setResult(await res.json());
+    } catch {
+      setResult({ ok: false, error: "Could not reach the server endpoint." });
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
+          Box #4
+        </span>
+        <h2 className="font-semibold">The database (Neon)</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Our filing cabinet in the cloud. No drawers (tables) yet — this button
+        just asks Neon for the time to prove the connection works.
+      </p>
+
+      <button
+        onClick={handlePing}
+        disabled={status === "checking"}
+        className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {status === "checking" ? "Checking…" : "Test connection"}
+      </button>
+
+      {result?.ok && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          ✔ Connected. Neon&apos;s clock says:
+          <div className="mt-1 font-mono text-xs text-emerald-700">{result.time}</div>
         </div>
       )}
 
