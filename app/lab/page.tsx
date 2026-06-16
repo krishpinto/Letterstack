@@ -1,6 +1,6 @@
 "use client"; // This page runs in the browser (it has a clickable button + state).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // The shape of what our server endpoint sends back.
 type SendResult =
@@ -26,6 +26,7 @@ export default function LabPage() {
       <div className="mt-8 space-y-6">
         <SesCourierCard />
         <DatabaseCard />
+        <RecipientsCard />
       </div>
     </main>
   );
@@ -95,6 +96,121 @@ function SesCourierCard() {
           ✕ Failed: {result.error}
         </div>
       )}
+    </section>
+  );
+}
+
+/** One row in the recipients table, as it comes back from the database. */
+type Recipient = {
+  id: string;
+  email: string;
+  name: string | null;
+  createdAt: string;
+};
+
+/** The recipients table — write a row (add a person) and read the list back. */
+function RecipientsCard() {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [list, setList] = useState<Recipient[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Read the current list. Runs once when the card first appears, and again
+  // after each successful add.
+  async function load() {
+    const res = await fetch("/api/lab/recipients");
+    const data = await res.json();
+    if (data.ok) setList(data.recipients);
+    else setError(data.error);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleAdd() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/lab/recipients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setError(data.error);
+        return;
+      }
+      setEmail("");
+      setName("");
+      await load(); // re-read so the new row shows up
+    } catch {
+      setError("Could not reach the server endpoint.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
+          Box #4 · drawer 1
+        </span>
+        <h2 className="font-semibold">The recipients table</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Add a person below (a <em>write</em>), and the list underneath re-reads
+        from the database (a <em>read</em>). This is real data living in Neon.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@example.com"
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name (optional)"
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={saving}
+          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Add"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ {error}
+        </div>
+      )}
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          {list.length} {list.length === 1 ? "recipient" : "recipients"}
+        </div>
+        <ul className="mt-2 divide-y divide-zinc-100">
+          {list.map((r) => (
+            <li key={r.id} className="flex justify-between py-2 text-sm">
+              <span className="font-medium text-zinc-800">{r.email}</span>
+              <span className="text-zinc-500">{r.name || "—"}</span>
+            </li>
+          ))}
+          {list.length === 0 && (
+            <li className="py-2 text-sm text-zinc-400">No recipients yet.</li>
+          )}
+        </ul>
+      </div>
     </section>
   );
 }
