@@ -27,6 +27,7 @@ export default function LabPage() {
         <SesCourierCard />
         <DatabaseCard />
         <RecipientsCard />
+        <CampaignCard />
       </div>
     </main>
   );
@@ -88,6 +89,86 @@ function SesCourierCard() {
           <div className="mt-1 text-xs text-emerald-700">
             Check your inbox (and spam) — delivery is usually seconds.
           </div>
+        </div>
+      )}
+
+      {result && !result.ok && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ Failed: {result.error}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The result the campaign endpoint returns after sending to the whole list. */
+type SendSummary = {
+  total: number;
+  sent: number;
+  failed: number;
+  failures: { email: string; error: string }[];
+};
+
+/** Box #1 (the milestone): send the newsletter to EVERYONE in the table. */
+function CampaignCard() {
+  const [status, setStatus] = useState<"idle" | "sending">("idle");
+  const [result, setResult] = useState<
+    { ok: true; summary: SendSummary } | { ok: false; error: string } | null
+  >(null);
+
+  async function handleSend() {
+    setStatus("sending");
+    setResult(null);
+    try {
+      const res = await fetch("/api/lab/send-campaign", { method: "POST" });
+      setResult(await res.json());
+    } catch {
+      setResult({ ok: false, error: "Could not reach the server endpoint." });
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+          Campaign
+        </span>
+        <h2 className="font-semibold">Send to the whole list</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Reads every row in the recipients table and sends the newsletter to each
+        one. Real emails go out — keep only addresses you control in the list
+        while testing.
+      </p>
+
+      <button
+        onClick={handleSend}
+        disabled={status === "sending"}
+        className="mt-4 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {status === "sending" ? "Sending…" : "Send campaign"}
+      </button>
+
+      {result?.ok && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          ✔ Done. Sent <strong>{result.summary.sent}</strong> of{" "}
+          {result.summary.total}
+          {result.summary.failed > 0 && (
+            <span>, {result.summary.failed} failed</span>
+          )}
+          .
+          {result.summary.failures.length > 0 && (
+            <ul className="mt-2 list-disc pl-5 text-xs text-emerald-700">
+              {result.summary.failures.map((f) => (
+                <li key={f.email}>
+                  {f.email}: {f.error}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
