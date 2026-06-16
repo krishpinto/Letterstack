@@ -49,6 +49,7 @@ import {
   type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document";
+import { getEmailContainerShadow } from "@/lib/email/shadow";
 
 import { CanvasBlockPreview } from "./canvas-block-preview";
 import {
@@ -376,6 +377,7 @@ export function LetterStackEditor() {
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
       <DndContext
+        id="letterstack-editor-dnd"
         sensors={sensors}
         collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
@@ -455,11 +457,12 @@ export function LetterStackEditor() {
         >
           <div className="flex min-h-full justify-center px-8 pr-20 pb-10 pt-16">
             <div
-              className="relative w-full shadow-sm"
+              className="relative w-full"
               style={{
                 maxWidth: document.settings.maxWidth,
                 borderRadius: document.settings.radius,
                 backgroundColor: document.settings.contentColor,
+                boxShadow: getEmailContainerShadow(document.settings),
               }}
             >
               <CanvasProvider value={canvasValue}>
@@ -510,7 +513,7 @@ function FormattingToolbarOverlay({ pinnedOffset }: { pinnedOffset: number }) {
         transition: "padding-left 260ms cubic-bezier(0.22,1,0.36,1)",
       }}
     >
-      <div className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border bg-card px-2 py-1.5 shadow-lg">
+      <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-3xl border border-white/10 bg-zinc-950 px-3 py-2 text-zinc-100 shadow-2xl">
         <FormattingToolbar editor={activeEditor} />
       </div>
     </div>

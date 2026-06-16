@@ -14,11 +14,23 @@ export type EmailDocumentSettings = {
   backgroundColor: string;
   contentColor: string;
   accentColor: string;
+  linkColor: string;
   textColor: string;
   fontFamily: string;
   maxWidth: number;
   padding: number;
   radius: number;
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  shadowSpread: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  buttonBackgroundColor: string;
+  buttonTextColor: string;
+  secondaryButtonBackgroundColor: string;
+  secondaryButtonTextColor: string;
   buttonRadius: number;
   buttonPaddingY: number;
   buttonPaddingX: number;
@@ -78,7 +90,13 @@ export type ButtonBlock = BaseBlock<"button"> & {
   label: string;
   href: string;
   align: TextAlign;
+  variant: ButtonVariant;
+  secondaryLabel?: string;
+  secondaryHref?: string;
+  secondaryVariant?: ButtonVariant;
 };
+
+export type ButtonVariant = "primary" | "secondary";
 
 export type DividerBlock = BaseBlock<"divider">;
 
@@ -106,6 +124,16 @@ export type ColumnContent = {
   id: string;
   /** Relative weight; widths across the row are normalized to percentages. */
   width: number;
+  eyebrow?: string;
+  heading: string;
+  body: string;
+  imageSrc: string;
+  imageAlt: string;
+  linkLabel: string;
+  linkUrl: string;
+  showImage: boolean;
+  showCta: boolean;
+  /** Kept for older saved documents; /editor-new renders preset column content. */
   blocks: EmailBlock[];
 };
 
@@ -115,9 +143,13 @@ export type ArticleCardBlock = BaseBlock<"articleCard"> & {
   imageSrc: string;
   imageAlt: string;
   imagePosition: "left" | "right";
+  showCta: boolean;
+  ctaStyle: ArticleCtaStyle;
   linkUrl: string;
   linkLabel: string;
 };
+
+export type ArticleCtaStyle = "link" | "button";
 
 export type RawHtmlBlock = BaseBlock<"rawHtml"> & {
   label: string;
@@ -174,11 +206,23 @@ export const initialEmailDocument: EmailDocument = {
     backgroundColor: "#f0ece8",
     contentColor: "#ffffff",
     accentColor: "#E05C3A",
+    linkColor: "#E05C3A",
     textColor: "#1a1a1a",
     fontFamily: "Arial, Helvetica, sans-serif",
     maxWidth: 600,
     padding: 24,
     radius: 8,
+    shadowEnabled: true,
+    shadowColor: "#000000",
+    shadowOpacity: 10,
+    shadowBlur: 28,
+    shadowSpread: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 14,
+    buttonBackgroundColor: "#E05C3A",
+    buttonTextColor: "#ffffff",
+    secondaryButtonBackgroundColor: "#ffffff",
+    secondaryButtonTextColor: "#E05C3A",
     buttonRadius: 6,
     buttonPaddingY: 14,
     buttonPaddingX: 18,
@@ -201,6 +245,8 @@ export const initialEmailDocument: EmailDocument = {
       imageSrc: ARTICLE_PLACEHOLDER_IMAGE,
       imageAlt: "Article image",
       imagePosition: "right",
+      showCta: true,
+      ctaStyle: "link",
       linkUrl: "https://example.com",
       linkLabel: "Read more",
     },
@@ -210,6 +256,7 @@ export const initialEmailDocument: EmailDocument = {
       label: "Read the full newsletter",
       href: "https://example.com",
       align: "left",
+      variant: "primary",
     },
   ],
 };
@@ -236,11 +283,23 @@ export function createDocument(
       backgroundColor: "#f0ece8",
       contentColor: "#ffffff",
       accentColor: "#E05C3A",
+      linkColor: "#E05C3A",
       textColor: "#1a1a1a",
       fontFamily: "Arial, Helvetica, sans-serif",
       maxWidth: 600,
       padding: 24,
       radius: 8,
+      shadowEnabled: true,
+      shadowColor: "#000000",
+      shadowOpacity: 10,
+      shadowBlur: 28,
+      shadowSpread: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 14,
+      buttonBackgroundColor: "#E05C3A",
+      buttonTextColor: "#ffffff",
+      secondaryButtonBackgroundColor: "#ffffff",
+      secondaryButtonTextColor: "#E05C3A",
       buttonRadius: 6,
       buttonPaddingY: 14,
       buttonPaddingX: 18,
@@ -252,7 +311,20 @@ export function createDocument(
 }
 
 export function createColumn(width = 1): ColumnContent {
-  return { id: createId(), width, blocks: [] };
+  return {
+    id: createId(),
+    width,
+    eyebrow: "",
+    heading: "<p>Column headline</p>",
+    body: "<p>Add a short description for this offer, story, or feature.</p>",
+    imageSrc: "",
+    imageAlt: "Column image",
+    linkLabel: "Learn more",
+    linkUrl: "https://example.com",
+    showImage: true,
+    showCta: true,
+    blocks: [],
+  };
 }
 
 export function createBlock(type: EmailBlock["type"]): EmailBlock {
@@ -296,6 +368,7 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
         label: "Call to action",
         href: "",
         align: "left",
+        variant: "primary",
       };
     case "divider":
       return { id: createId(), type: "divider" };
@@ -318,12 +391,14 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
       return {
         id: createId(),
         type: "articleCard",
-        headline: "<p>Article headline</p>",
-        body: "<p>Write a short summary of this story or update.</p>",
-        imageSrc: "",
+        headline: "<p>Your first article headline</p>",
+        body: "<p>Write a short summary of the story here. Keep it punchy — two or three sentences is ideal.</p>",
+        imageSrc: ARTICLE_PLACEHOLDER_IMAGE,
         imageAlt: "Article image",
         imagePosition: "right",
-        linkUrl: "",
+        showCta: true,
+        ctaStyle: "link",
+        linkUrl: "https://example.com",
         linkLabel: "Read more",
       };
     case "rawHtml":
@@ -606,10 +681,52 @@ export function isEmailDocument(value: unknown): value is EmailDocument {
 
 /** Upgrade documents persisted before columns held nested blocks. */
 export function normalizeDocument(document: EmailDocument): EmailDocument {
-  return { ...document, blocks: document.blocks.map(normalizeBlock) };
+  const settings = {
+    ...document.settings,
+    linkColor: document.settings.linkColor ?? document.settings.accentColor,
+    buttonBackgroundColor:
+      document.settings.buttonBackgroundColor ?? document.settings.accentColor,
+    buttonTextColor: document.settings.buttonTextColor ?? "#ffffff",
+    secondaryButtonBackgroundColor:
+      document.settings.secondaryButtonBackgroundColor ??
+      document.settings.contentColor,
+    secondaryButtonTextColor:
+      document.settings.secondaryButtonTextColor ?? document.settings.accentColor,
+    shadowEnabled: document.settings.shadowEnabled ?? true,
+    shadowColor: document.settings.shadowColor ?? "#000000",
+    shadowOpacity: document.settings.shadowOpacity ?? 10,
+    shadowBlur: document.settings.shadowBlur ?? 28,
+    shadowSpread: document.settings.shadowSpread ?? 0,
+    shadowOffsetX: document.settings.shadowOffsetX ?? 0,
+    shadowOffsetY: document.settings.shadowOffsetY ?? 14,
+  };
+
+  return {
+    ...document,
+    settings,
+    blocks: document.blocks.map(normalizeBlock),
+  };
 }
 
 function normalizeBlock(block: EmailBlock): EmailBlock {
+  if (block.type === "button") {
+    return {
+      ...block,
+      variant: block.variant ?? "primary",
+      secondaryVariant: block.secondaryLabel
+        ? block.secondaryVariant ?? "secondary"
+        : block.secondaryVariant,
+    };
+  }
+
+  if (block.type === "articleCard") {
+    return {
+      ...block,
+      showCta: block.showCta ?? Boolean(block.linkUrl),
+      ctaStyle: block.ctaStyle ?? "link",
+    };
+  }
+
   if (block.type !== "columns") return block;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = block as any;
@@ -622,14 +739,54 @@ function normalizeBlock(block: EmailBlock): EmailBlock {
     mobile: "stack",
     cellPadding: 12,
     ...raw,
-    columns: (raw.columns ?? []).map((c: Record<string, unknown>) => ({
-      id: (c.id as string) ?? createId(),
-      width: typeof c.width === "number" ? c.width : 1,
-      blocks: Array.isArray(c.blocks)
-        ? (c.blocks as EmailBlock[]).map(normalizeBlock)
-        : legacyColumnToBlocks(c),
-    })),
+    columns: (raw.columns ?? []).map(normalizeColumn),
   } as ColumnsBlock;
+}
+
+function normalizeColumn(column: Record<string, unknown>): ColumnContent {
+  const blocks = Array.isArray(column.blocks)
+    ? (column.blocks as EmailBlock[]).map(normalizeBlock)
+    : legacyColumnToBlocks(column);
+  const legacyHeading = blocks.find((block): block is HeadingBlock => block.type === "heading");
+  const legacyParagraph = blocks.find((block): block is ParagraphBlock => block.type === "paragraph");
+  const legacyImage = blocks.find((block): block is ImageBlock => block.type === "image");
+  const legacyButton = blocks.find((block): block is ButtonBlock => block.type === "button");
+
+  return {
+    id: (column.id as string) ?? createId(),
+    width: typeof column.width === "number" ? column.width : 1,
+    eyebrow: typeof column.eyebrow === "string" ? column.eyebrow : "",
+    heading:
+      typeof column.heading === "string"
+        ? column.heading
+        : legacyHeading?.text ?? "<p>Column headline</p>",
+    body:
+      typeof column.body === "string"
+        ? column.body
+        : legacyParagraph?.body ?? "<p>Add a short description for this offer, story, or feature.</p>",
+    imageSrc: typeof column.imageSrc === "string" ? column.imageSrc : legacyImage?.src ?? "",
+    imageAlt:
+      typeof column.imageAlt === "string"
+        ? column.imageAlt
+        : legacyImage?.alt ?? "Column image",
+    linkLabel:
+      typeof column.linkLabel === "string"
+        ? column.linkLabel
+        : legacyButton?.label ?? "Learn more",
+    linkUrl:
+      typeof column.linkUrl === "string"
+        ? column.linkUrl
+        : legacyButton?.href ?? "https://example.com",
+    showImage:
+      typeof column.showImage === "boolean"
+        ? column.showImage
+        : Boolean(legacyImage?.src),
+    showCta:
+      typeof column.showCta === "boolean"
+        ? column.showCta
+        : Boolean(legacyButton?.label || legacyButton?.href),
+    blocks,
+  };
 }
 
 function legacyColumnToBlocks(column: Record<string, unknown>): EmailBlock[] {

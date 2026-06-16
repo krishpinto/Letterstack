@@ -1,5 +1,7 @@
 import type {
   ArticleCardBlock,
+  ButtonBlock,
+  ButtonVariant,
   ColumnsBlock,
   EmailBlock,
   EmailDocument,
@@ -12,6 +14,7 @@ import type {
   TextBlock,
   VideoBlock,
 } from "./document";
+import { getEmailContainerShadow } from "./shadow";
 
 export type CompiledEmail = {
   html: string;
@@ -44,7 +47,7 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${document.settings.backgroundColor};width:100%;">
       <tr>
         <td align="center" style="padding:${document.settings.padding}px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:${document.settings.maxWidth}px;background:${document.settings.contentColor};border-radius:${document.settings.radius}px;overflow:hidden;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:${document.settings.maxWidth}px;background:${document.settings.contentColor};border-radius:${document.settings.radius}px;overflow:hidden;box-shadow:${getEmailContainerShadow(document.settings)};">
             ${body}
             <tr>
               <td style="padding:24px ${document.settings.padding}px;" align="center">
@@ -123,17 +126,12 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument): string {
               </td>
             </tr>`;
     case "button":
-      return `
-            <tr>
-              <td align="${block.align}" style="padding:4px ${document.settings.padding}px 28px ${document.settings.padding}px;">
-                <a href="${escapeAttribute(block.href)}" style="display:inline-block;background:${document.settings.accentColor};color:#ffffff;text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(block.label)}</a>
-              </td>
-            </tr>`;
+      return renderButtonBlock(block, document);
     case "divider":
       return `
             <tr>
               <td style="padding:8px ${document.settings.padding}px 28px ${document.settings.padding}px;">
-                <div style="height:1px;background:rgba(23,33,27,0.14);line-height:1px;font-size:1px;">&nbsp;</div>
+                <div style="height:1px;background:${block.textColor ?? document.settings.textColor};opacity:0.24;line-height:1px;font-size:1px;">&nbsp;</div>
               </td>
             </tr>`;
     case "spacer":
@@ -233,7 +231,7 @@ function renderSocialBlock(block: SocialBlock, document: EmailDocument) {
   const links = block.links
     .map(
       (link) =>
-        `<a href="${escapeAttribute(link.url)}" style="display:inline-block;margin:0 6px;color:${document.settings.accentColor};font-family:${document.settings.fontFamily};font-size:13px;font-weight:700;text-decoration:none;">${SOCIAL_DISPLAY[link.platform] ?? link.platform}</a>`
+        `<a href="${escapeAttribute(link.url)}" style="display:inline-block;margin:0 6px;color:${document.settings.linkColor};font-family:${document.settings.fontFamily};font-size:13px;font-weight:700;text-decoration:none;">${SOCIAL_DISPLAY[link.platform] ?? link.platform}</a>`
     )
     .join("");
   return `
@@ -284,24 +282,33 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
   const radius = block.borderRadius ? `border-radius:${block.borderRadius}px;` : "";
   const bg = block.columnBackgroundColor ? `background:${block.columnBackgroundColor};` : "";
 
-  // Nested blocks render with no side padding so they fill the cell; the cell
-  // carries its own padding.
-  const nestedDocument: EmailDocument = {
-    ...document,
-    settings: { ...document.settings, padding: 0 },
-  };
-
   // On mobile, columns stack to full width unless the block opts to stay in a row.
   const colClass = block.mobile === "row" ? "ls-col ls-row" : "ls-col";
+  const ff = document.settings.fontFamily;
+  const textColor = document.settings.textColor;
 
   const cells = block.columns
     .map((column) => {
       const widthPct = Math.round(((column.width || 1) / total) * 1000) / 10;
-      const inner = column.blocks.length
-        ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${column.blocks
-            .map((b) => renderBlock(b, nestedDocument))
-            .join("")}</table>`
-        : "&nbsp;";
+      const image = column.showImage
+        ? column.imageSrc
+          ? `<img src="${escapeAttribute(column.imageSrc)}" alt="${escapeAttribute(column.imageAlt)}" width="100%" style="display:block;width:100%;height:auto;border:0;border-radius:${Math.max(4, block.borderRadius)}px;margin:0 0 14px 0;">`
+          : `<div style="height:132px;border-radius:${Math.max(4, block.borderRadius)}px;background:#e8e8e8;color:#888;font-family:${ff};font-size:18px;font-weight:700;line-height:132px;text-align:center;margin:0 0 14px 0;">Image</div>`
+        : "";
+      const eyebrow = column.eyebrow
+        ? `<p style="margin:0 0 6px 0;color:${document.settings.accentColor};font-family:${ff};font-size:11px;font-weight:700;letter-spacing:0;text-transform:uppercase;">${escapeHtml(column.eyebrow)}</p>`
+        : "";
+      const bodyHtml = styleBodyHtml(column.body, textColor, ff, "14px", "1.55");
+      const cta =
+        column.showCta && (column.linkLabel || column.linkUrl)
+          ? `<a href="${escapeAttribute(column.linkUrl)}" style="color:${document.settings.linkColor};font-family:${ff};font-size:13px;font-weight:700;text-decoration:none;">${escapeHtml(column.linkLabel || "Learn more")} →</a>`
+          : "";
+      const inner = `
+                        ${image}
+                        ${eyebrow}
+                        <h3 style="margin:0 0 8px 0;color:${textColor};font-family:${ff};font-size:18px;line-height:1.25;font-weight:800;">${stripOuterP(column.heading)}</h3>
+                        <div style="margin:0 0 ${cta ? "12px" : "0"} 0;color:${textColor};font-family:${ff};font-size:14px;line-height:1.55;">${bodyHtml}</div>
+                        ${cta}`;
       return `
                     <td class="${colClass}" valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}box-sizing:border-box;">
                       ${inner}
@@ -335,12 +342,20 @@ function renderArticleCardBlock(
   const textColor = block.textColor ?? document.settings.textColor;
   const ff = document.settings.fontFamily;
   const bodyHtml = styleBodyHtml(block.body, textColor, ff, "14px", "1.6");
+  const showCta = block.showCta ?? Boolean(block.linkUrl);
+  const ctaStyle = block.ctaStyle ?? "link";
+  const cta =
+    showCta && (block.linkLabel || block.linkUrl)
+      ? ctaStyle === "button"
+        ? `<a href="${escapeAttribute(block.linkUrl)}" style="display:inline-block;background:${document.settings.buttonBackgroundColor};color:${document.settings.buttonTextColor};border:1px solid transparent;text-decoration:none;font-family:${ff};font-size:${Math.max(12, document.settings.buttonFontSize - 2)}px;font-weight:700;line-height:1;padding:${Math.max(7, document.settings.buttonPaddingY - 5)}px ${Math.max(12, document.settings.buttonPaddingX - 6)}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(block.linkLabel || "Read more")}</a>`
+        : `<a href="${escapeAttribute(block.linkUrl)}" style="color:${document.settings.linkColor};font-family:${ff};font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(block.linkLabel || "Read more")} →</a>`
+      : "";
 
   const textCell = `
                     <td width="60%" valign="top" style="padding:0 0 0 ${block.imagePosition === "left" ? "16" : "0"}px;">
                       <h2 style="margin:0 0 10px 0;color:${textColor};font-family:${ff};font-size:18px;line-height:1.3;font-weight:800;">${stripOuterP(block.headline)}</h2>
                       <div style="margin:0 0 14px 0;color:${textColor};font-family:${ff};font-size:14px;line-height:1.6;">${bodyHtml}</div>
-                      ${block.linkUrl ? `<a href="${escapeAttribute(block.linkUrl)}" style="color:${document.settings.accentColor};font-family:${ff};font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(block.linkLabel || "Read more")} →</a>` : ""}
+                      ${cta}
                     </td>`;
 
   const leftCell =
@@ -384,17 +399,23 @@ function blockToText(block: EmailBlock): string[] {
     case "image":
       return [block.alt];
     case "button":
-      return [`${block.label}: ${block.href}`];
+      return getButtonItems(block).map((button) => `${button.label}: ${button.href}`);
     case "divider":
     case "spacer":
       return [];
     case "columns":
-      return block.columns.flatMap((column) => column.blocks.flatMap(blockToText));
+      return block.columns.flatMap((column) => [
+        stripHtml(column.heading),
+        stripHtml(column.body),
+        column.showCta ? column.linkLabel : "",
+      ]);
     case "articleCard":
       return [
         stripHtml(block.headline),
         stripHtml(block.body),
-        block.linkUrl ? `${block.linkLabel}: ${block.linkUrl}` : "",
+        (block.showCta ?? Boolean(block.linkUrl)) && block.linkUrl
+          ? `${block.linkLabel}: ${block.linkUrl}`
+          : "",
       ];
     case "rawHtml":
       return [block.text];
@@ -505,4 +526,62 @@ function mergeStyle(tag: string, baseStyle: string, attrs: string): string {
     return `<${tag}${attrs.replace(/style="[^"]*"/, `style="${baseStyle}${styleMatch[1]}"`)}>`;
   }
   return `<${tag} style="${baseStyle}"${attrs}>`;
+}
+
+function getButtonColors(
+  variant: ButtonVariant | undefined,
+  document: EmailDocument,
+) {
+  if (variant === "secondary") {
+    return {
+      backgroundColor: document.settings.secondaryButtonBackgroundColor,
+      color: document.settings.secondaryButtonTextColor,
+    };
+  }
+
+  return {
+    backgroundColor: document.settings.buttonBackgroundColor,
+    color: document.settings.buttonTextColor,
+  };
+}
+
+function getButtonItems(block: ButtonBlock) {
+  return [
+    {
+      label: block.label,
+      href: block.href,
+      variant: block.variant ?? "primary",
+    },
+    block.secondaryLabel
+      ? {
+          label: block.secondaryLabel,
+          href: block.secondaryHref ?? "",
+          variant: block.secondaryVariant ?? "secondary",
+        }
+      : null,
+  ].filter(Boolean) as {
+    label: string;
+    href: string;
+    variant: ButtonVariant;
+  }[];
+}
+
+function renderButtonBlock(block: ButtonBlock, document: EmailDocument) {
+  const buttons = getButtonItems(block)
+    .map((button) => {
+      const colors = getButtonColors(button.variant, document);
+      const border =
+        button.variant === "secondary"
+          ? `border:1px solid ${document.settings.secondaryButtonTextColor};`
+          : "border:1px solid transparent;";
+      return `<a href="${escapeAttribute(button.href)}" style="display:inline-block;background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;margin:0 6px 8px 0;">${escapeHtml(button.label)}</a>`;
+    })
+    .join("");
+
+  return `
+            <tr>
+              <td align="${block.align}" style="padding:4px ${document.settings.padding}px 28px ${document.settings.padding}px;">
+                ${buttons}
+              </td>
+            </tr>`;
 }

@@ -3,9 +3,15 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CodeIcon, Image01Icon, Video01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_FONT_SIZE_BY_TEXT_TYPE,
+  type FormattingTextType,
+} from "./formatting-options";
 import { RichTextEditor } from "./rich-text-editor";
 import {
   type ArticleCardBlock,
+  type ButtonBlock,
+  type ButtonVariant,
   type EmailBlock,
   type EmailDocument,
   type HeadingBlock,
@@ -25,6 +31,48 @@ const SOCIAL_CHARS: Record<string, string> = {
   linkedin:  "in",
   youtube:   "yt",
 };
+
+function getButtonColors(
+  variant: ButtonVariant | undefined,
+  settings: EmailDocument["settings"],
+) {
+  if (variant === "secondary") {
+    return {
+      backgroundColor: settings.secondaryButtonBackgroundColor,
+      color: settings.secondaryButtonTextColor,
+    };
+  }
+
+  return {
+    backgroundColor: settings.buttonBackgroundColor,
+    color: settings.buttonTextColor,
+  };
+}
+
+function getButtonItems(block: ButtonBlock) {
+  return [
+    {
+      label: block.label,
+      href: block.href,
+      variant: block.variant ?? "primary",
+    },
+    block.secondaryLabel
+      ? {
+          label: block.secondaryLabel,
+          href: block.secondaryHref ?? "",
+          variant: block.secondaryVariant ?? "secondary",
+        }
+      : null,
+  ].filter(Boolean) as {
+    label: string;
+    href: string;
+    variant: ButtonVariant;
+  }[];
+}
+
+function getHeadingTextType(level: HeadingBlock["level"]): FormattingTextType {
+  return level === 1 ? "h1" : level === 2 ? "h2" : "h3";
+}
 
 export function CanvasBlockPreview({
   block,
@@ -87,6 +135,8 @@ export function CanvasBlockPreview({
               value={block.text}
               onChange={(html) => onUpdateBlock!((b) => ({ ...b, text: html }) as HeadingBlock)}
               editable
+              defaultTextType={getHeadingTextType(block.level)}
+              defaultFontSize={DEFAULT_FONT_SIZE_BY_TEXT_TYPE[getHeadingTextType(block.level)]}
               style={{ color: textColor, fontSize: block.level === 1 ? 32 : block.level === 2 ? 24 : 18, fontWeight: 800, lineHeight: 1.2 }}
             />
           ) : (
@@ -107,6 +157,8 @@ export function CanvasBlockPreview({
               value={block.body}
               onChange={(html) => onUpdateBlock!((b) => ({ ...b, body: html }) as ParagraphBlock)}
               editable
+              defaultTextType="p"
+              defaultFontSize={DEFAULT_FONT_SIZE_BY_TEXT_TYPE.p}
               style={{ color: textColor, fontSize: 15, lineHeight: 1.65 }}
             />
           ) : (
@@ -146,6 +198,8 @@ export function CanvasBlockPreview({
               value={block.heading}
               onChange={(html) => onUpdateBlock!((b) => ({ ...b, heading: html }) as TextBlock)}
               editable
+              defaultTextType="h2"
+              defaultFontSize="26px"
               style={{ color: textColor, fontSize: 26, fontWeight: 800, lineHeight: 1.14, marginBottom: 12 }}
             />
           ) : (
@@ -160,6 +214,8 @@ export function CanvasBlockPreview({
               value={block.body}
               onChange={(html) => onUpdateBlock!((b) => ({ ...b, body: html }) as TextBlock)}
               editable
+              defaultTextType="p"
+              defaultFontSize="14px"
               style={{ color: textColor, fontSize: 14, lineHeight: 1.65 }}
             />
           ) : (
@@ -172,28 +228,66 @@ export function CanvasBlockPreview({
         </div>
       );
 
-    case "articleCard":
+    case "articleCard": {
+      const showCta = block.showCta ?? Boolean(block.linkUrl);
+      const ctaStyle = block.ctaStyle ?? "link";
+      const articleImage = (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={block.imageSrc || "https://placehold.co/280x180/e8e8e8/888888?text=Image"}
+          alt={block.imageAlt}
+          className="aspect-[4/3] w-full rounded-md object-cover"
+        />
+      );
+      const articleCta =
+        showCta && (block.linkLabel || block.linkUrl) ? (
+          ctaStyle === "button" ? (
+            <span
+              className="inline-block self-start"
+              style={{
+                backgroundColor: s.buttonBackgroundColor,
+                border: "1px solid transparent",
+                borderRadius: s.buttonRadius,
+                color: s.buttonTextColor,
+                fontSize: Math.max(12, s.buttonFontSize - 2),
+                fontWeight: 700,
+                lineHeight: 1,
+                padding: `${Math.max(7, s.buttonPaddingY - 5)}px ${Math.max(12, s.buttonPaddingX - 6)}px`,
+              }}
+            >
+              {block.linkLabel || "Read more"}
+            </span>
+          ) : (
+            <span className="text-xs font-bold" style={{ color: s.linkColor }}>
+              {block.linkLabel || "Read more"} →
+            </span>
+          )
+        ) : null;
+
       return (
-        <div style={{ padding: `16px ${s.padding}px`, fontFamily: s.fontFamily }}>
-          <div className={cn("flex gap-4", block.imagePosition === "right" && "flex-row-reverse")}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={block.imageSrc || "https://placehold.co/280x180/e8e8e8/888888?text=Image"}
-              alt={block.imageAlt}
-              className="rounded object-cover"
-              style={{ width: "40%", height: "auto", flexShrink: 0 }}
-            />
+        <div style={{ padding: `18px ${s.padding}px 22px`, fontFamily: s.fontFamily }}>
+          <div
+            className={cn(
+              "grid items-start gap-5",
+              block.imagePosition === "left"
+                ? "grid-cols-[40%_minmax(0,1fr)]"
+                : "grid-cols-[minmax(0,1fr)_40%]",
+            )}
+          >
+            {block.imagePosition === "left" && articleImage}
             <div className="flex min-w-0 flex-col justify-start">
               {editable ? (
                 <RichTextEditor
                   value={block.headline}
                   onChange={(html) => onUpdateBlock!((b) => ({ ...b, headline: html }) as ArticleCardBlock)}
                   editable
-                  style={{ color: textColor, fontSize: 14, fontWeight: 800, lineHeight: 1.3, marginBottom: 8 }}
+                  defaultTextType="h3"
+                  defaultFontSize="16px"
+                  style={{ color: textColor, fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginBottom: 8 }}
                 />
               ) : (
                 <h3
-                  className="mb-2 text-sm font-extrabold leading-snug"
+                  className="mb-2 text-base font-extrabold leading-tight"
                   style={{ color: textColor }}
                   dangerouslySetInnerHTML={{ __html: stripOuterP(block.headline) }}
                 />
@@ -203,24 +297,24 @@ export function CanvasBlockPreview({
                   value={block.body}
                   onChange={(html) => onUpdateBlock!((b) => ({ ...b, body: html }) as ArticleCardBlock)}
                   editable
-                  style={{ color: textColor, fontSize: 12, lineHeight: 1.6, opacity: 0.8, marginBottom: 12 }}
+                  defaultTextType="p"
+                  defaultFontSize="13px"
+                  style={{ color: textColor, fontSize: 13, lineHeight: 1.6, opacity: 0.82, marginBottom: showCta ? 14 : 0 }}
                 />
               ) : (
                 <div
-                  className="mb-3 text-xs leading-relaxed"
-                  style={{ color: textColor, opacity: 0.8 }}
+                  className={cn("text-[13px] leading-relaxed", showCta && "mb-3")}
+                  style={{ color: textColor, opacity: 0.82 }}
                   dangerouslySetInnerHTML={{ __html: block.body }}
                 />
               )}
-              {block.linkUrl && (
-                <span className="text-xs font-bold" style={{ color: s.accentColor }}>
-                  {block.linkLabel || "Read more"} →
-                </span>
-              )}
+              {articleCta}
             </div>
+            {block.imagePosition === "right" && articleImage}
           </div>
         </div>
       );
+    }
 
     case "columns": {
       // Read-only render — interactive editing lives in <ColumnsCanvas>; this
@@ -231,27 +325,58 @@ export function CanvasBlockPreview({
           : undefined;
       return (
         <div style={{ padding: `4px ${s.padding}px 24px` }}>
-          <div className="flex items-stretch" style={{ gap: block.gap }}>
+          <div
+            className="grid items-stretch"
+            style={{
+              gap: block.gap,
+              gridTemplateColumns: block.columns.map((column) => `${column.width || 1}fr`).join(" "),
+            }}
+          >
             {block.columns.map((column) => (
               <div
                 key={column.id}
                 className="min-w-0"
                 style={{
-                  flexGrow: column.width,
-                  flexBasis: 0,
                   padding: block.cellPadding,
                   border: cellBorder,
                   borderRadius: block.borderRadius,
                   backgroundColor: block.columnBackgroundColor,
                 }}
               >
-                {column.blocks.length ? (
-                  column.blocks.map((nested) => (
-                    <CanvasBlockPreview key={nested.id} block={nested} document={document} />
-                  ))
-                ) : (
-                  <p className="py-6 text-center text-xs text-muted-foreground/60">Empty column</p>
-                )}
+                {column.showImage ? (
+                  column.imageSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={column.imageSrc}
+                      alt={column.imageAlt}
+                      className="mb-3 aspect-[4/3] w-full rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className="mb-3 flex aspect-[4/3] w-full items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground">
+                      Image
+                    </div>
+                  )
+                ) : null}
+                {column.eyebrow ? (
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wider" style={{ color: s.accentColor }}>
+                    {column.eyebrow}
+                  </p>
+                ) : null}
+                <h3
+                  className="mb-2 text-lg font-extrabold leading-tight"
+                  style={{ color: textColor }}
+                  dangerouslySetInnerHTML={{ __html: stripOuterP(column.heading) }}
+                />
+                <div
+                  className={cn("text-sm leading-relaxed", column.showCta && "mb-3")}
+                  style={{ color: textColor, opacity: 0.82 }}
+                  dangerouslySetInnerHTML={{ __html: column.body }}
+                />
+                {column.showCta ? (
+                  <span className="text-xs font-bold" style={{ color: s.linkColor }}>
+                    {column.linkLabel || "Learn more"} →
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>
@@ -262,18 +387,27 @@ export function CanvasBlockPreview({
     case "button":
       return (
         <div style={{ padding: `4px ${s.padding}px 28px`, textAlign: block.align, fontFamily: s.fontFamily }}>
-          <span
-            className="inline-block text-white"
-            style={{
-              backgroundColor: s.accentColor,
-              borderRadius: s.buttonRadius,
-              fontSize: s.buttonFontSize,
-              fontWeight: 700,
-              lineHeight: 1,
-              padding: `${s.buttonPaddingY}px ${s.buttonPaddingX}px`,
-            }}
-          >
-            {block.label}
+          <span className="inline-flex flex-wrap gap-2 align-top">
+            {getButtonItems(block).map((button, index) => (
+              <span
+                key={`${button.label}-${index}`}
+                className="inline-block"
+                style={{
+                  ...getButtonColors(button.variant, s),
+                  border:
+                    button.variant === "secondary"
+                      ? `1px solid ${s.secondaryButtonTextColor}`
+                      : "1px solid transparent",
+                  borderRadius: s.buttonRadius,
+                  fontSize: s.buttonFontSize,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  padding: `${s.buttonPaddingY}px ${s.buttonPaddingX}px`,
+                }}
+              >
+                {button.label}
+              </span>
+            ))}
           </span>
         </div>
       );
@@ -281,7 +415,7 @@ export function CanvasBlockPreview({
     case "divider":
       return (
         <div style={{ padding: `8px ${s.padding}px 28px` }}>
-          <div className="h-px bg-foreground/10" />
+          <div className="h-px" style={{ backgroundColor: textColor, opacity: 0.24 }} />
         </div>
       );
 
@@ -327,7 +461,7 @@ export function CanvasBlockPreview({
               <div
                 key={link.id}
                 className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                style={{ backgroundColor: s.accentColor }}
+                style={{ backgroundColor: s.linkColor }}
               >
                 {SOCIAL_CHARS[link.platform] ?? link.platform[0].toUpperCase()}
               </div>

@@ -1,31 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, useSortable } from "@dnd-kit/sortable";
+import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, DragDropVerticalIcon } from "@hugeicons/core-free-icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DragDropVerticalIcon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import type { ColumnsBlock, EmailBlock } from "@/lib/email/document";
-import { BLOCK_LABELS, CONTENT_BLOCKS } from "./editor-types";
+import { BLOCK_LABELS } from "./editor-types";
 import { BlockBubbleMenu } from "./block-bubble-menu";
 import { CanvasBlockPreview } from "./canvas-block-preview";
-import { ColumnResizer } from "./column-resizer";
+import { RichTextEditor } from "./rich-text-editor";
 import {
   CANVAS_ROOT_CONTAINER,
-  isInsertHere,
   useCanvas,
 } from "./canvas-context";
-
-// Disable dnd-kit sibling shifting; the insertion line is the drop cue.
-const noShift = () => null;
 
 /** Horizontal line showing where a dragged block will land. */
 export function InsertIndicator() {
@@ -64,21 +53,25 @@ export function CanvasBlock({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("group/block relative", isDragging && "opacity-30")}
+      className={cn(
+        "group/block relative",
+        isSelected && "z-20",
+        isDragging && "opacity-30",
+      )}
     >
       {/* Hover / selection ring */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-0 z-10",
+          "pointer-events-none absolute inset-0 z-10 transition-[background-color,box-shadow] duration-150",
           isSelected
-            ? "shadow-[inset_0_0_0_2px_hsl(var(--primary))]"
+            ? "ls-selected-block-highlight bg-primary/5 shadow-[inset_0_0_0_2px_var(--primary)]"
             : "group-hover/block:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]",
         )}
       />
 
       {/* Hover drag handle — un-selected blocks */}
       {!isSelected && (
-        <div className="absolute left-0 top-0 z-20 flex items-center opacity-0 transition-opacity duration-150 group-hover/block:opacity-100">
+        <div className="ls-hover-drag-handle absolute left-0 top-0 z-20 flex items-center opacity-0 transition-opacity duration-150 group-hover/block:opacity-100">
           <button
             {...attributes}
             {...listeners}
@@ -147,35 +140,43 @@ export function CanvasBlock({
 function ColumnsCanvas({ block }: { block: ColumnsBlock }) {
   const ctx = useCanvas();
   const p = ctx.document.settings.padding;
+  const isSelected = ctx.selectedBlockId === block.id;
 
   return (
     <div style={{ padding: `4px ${p}px 24px` }}>
-      <div className="flex items-stretch">
-        {block.columns.map((column, ci) => (
-          <React.Fragment key={column.id}>
-            <ColumnCell column={column} columnsBlock={block} />
-            {ci < block.columns.length - 1 && (
-              <ColumnResizer columnsBlock={block} leftIndex={ci} gap={block.gap} />
-            )}
-          </React.Fragment>
+      <div
+        className="grid items-stretch"
+        style={{
+          gridTemplateColumns: block.columns
+            .map((column) => `${column.width || 1}fr`)
+            .join(" "),
+          gap: block.gap,
+        }}
+      >
+        {block.columns.map((column) => (
+          <ColumnPresetCell
+            key={column.id}
+            column={column}
+            columnsBlock={block}
+            editable={isSelected}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function ColumnCell({
+function ColumnPresetCell({
   column,
   columnsBlock,
+  editable,
 }: {
   column: ColumnsBlock["columns"][number];
   columnsBlock: ColumnsBlock;
+  editable: boolean;
 }) {
   const ctx = useCanvas();
-  const { setNodeRef, isOver } = useDroppable({
-    id: column.id,
-    data: { kind: "cell", columnId: column.id },
-  });
+  const s = ctx.document.settings;
 
   const border =
     columnsBlock.borderStyle !== "none"
@@ -187,121 +188,111 @@ function ColumnCell({
       : columnsBlock.valign === "bottom"
       ? "flex-end"
       : "flex-start";
+  const textColor = columnsBlock.textColor ?? s.textColor;
+
+  const updateColumn = (patch: Partial<ColumnsBlock["columns"][number]>) => {
+    ctx.onUpdateBlock(columnsBlock.id, (block) => {
+      if (block.type !== "columns") return block;
+      return {
+        ...block,
+        columns: block.columns.map((item) =>
+          item.id === column.id ? { ...item, ...patch } : item,
+        ),
+      };
+    });
+  };
+
+  const image =
+    column.showImage ? (
+      column.imageSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={column.imageSrc}
+          alt={column.imageAlt}
+          className="mb-3 aspect-[4/3] w-full rounded-md object-cover"
+        />
+      ) : (
+        <div className="mb-3 flex aspect-[4/3] w-full items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground">
+          Image
+        </div>
+      )
+    ) : null;
 
   return (
     <div
-      ref={setNodeRef}
       className={cn(
         "flex min-w-0 flex-col transition-colors",
-        isOver && "bg-primary/5",
+        editable && "outline outline-1 outline-dashed outline-transparent focus-within:outline-primary/35",
       )}
       style={{
-        flexGrow: column.width,
-        flexBasis: 0,
         padding: columnsBlock.cellPadding,
         border,
         borderRadius: columnsBlock.borderRadius,
         backgroundColor: columnsBlock.columnBackgroundColor,
         justifyContent: justify,
+        fontFamily: s.fontFamily,
       }}
     >
-      <SortableContext items={column.blocks.map((b) => b.id)} strategy={noShift}>
-        {column.blocks.map((b, i) => (
-          <div key={b.id}>
-            {isInsertHere(ctx.insertTarget, column.id, i) && <InsertIndicator />}
-            <CanvasBlock
-              block={b}
-              total={column.blocks.length}
-              containerId={column.id}
-            />
-          </div>
-        ))}
-        {isInsertHere(ctx.insertTarget, column.id, column.blocks.length) && <InsertIndicator />}
-      </SortableContext>
-
-      <AddBlockZone
-        columnId={column.id}
-        index={column.blocks.length}
-        empty={column.blocks.length === 0}
-        highlighted={isOver}
-      />
+      {image}
+      {column.eyebrow ? (
+        <p className="mb-1 text-[11px] font-bold uppercase tracking-wider" style={{ color: s.accentColor }}>
+          {column.eyebrow}
+        </p>
+      ) : null}
+      {editable ? (
+        <RichTextEditor
+          value={column.heading}
+          onChange={(heading) => updateColumn({ heading })}
+          editable
+          defaultTextType="h3"
+          defaultFontSize="18px"
+          style={{
+            color: textColor,
+            fontSize: 18,
+            fontWeight: 800,
+            lineHeight: 1.25,
+            marginBottom: 8,
+          }}
+        />
+      ) : (
+        <h3
+          className="mb-2 text-lg font-extrabold leading-tight"
+          style={{ color: textColor }}
+          dangerouslySetInnerHTML={{ __html: stripOuterP(column.heading) }}
+        />
+      )}
+      {editable ? (
+        <RichTextEditor
+          value={column.body}
+          onChange={(body) => updateColumn({ body })}
+          editable
+          defaultTextType="p"
+          defaultFontSize="14px"
+          style={{
+            color: textColor,
+            fontSize: 14,
+            lineHeight: 1.55,
+            marginBottom: column.showCta ? 12 : 0,
+            opacity: 0.82,
+          }}
+        />
+      ) : (
+        <div
+          className={cn("text-sm leading-relaxed", column.showCta && "mb-3")}
+          style={{ color: textColor, opacity: 0.82 }}
+          dangerouslySetInnerHTML={{ __html: column.body }}
+        />
+      )}
+      {column.showCta ? (
+        <span className="text-xs font-bold" style={{ color: s.linkColor }}>
+          {column.linkLabel || "Learn more"} →
+        </span>
+      ) : null}
     </div>
   );
 }
 
-function AddBlockZone({
-  columnId,
-  index,
-  empty,
-  highlighted,
-}: {
-  columnId: string;
-  index: number;
-  empty: boolean;
-  highlighted: boolean;
-}) {
-  const addable = CONTENT_BLOCKS.filter((b) => b.type !== "columns");
-
-  if (empty) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={cn(
-              "flex min-h-[88px] w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed text-center transition-colors",
-              highlighted
-                ? "border-primary bg-primary/5 text-primary"
-                : "border-muted-foreground/30 text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-            )}
-          >
-            <span className="flex items-center gap-1 text-xs font-medium">
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-3.5" />
-              Add block
-            </span>
-            <span className="text-[10px] opacity-70">or drop content here</span>
-          </button>
-        </DropdownMenuTrigger>
-        <AddBlockMenu columnId={columnId} index={index} addable={addable} />
-      </DropdownMenu>
-    );
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          className="mt-1 flex w-full items-center justify-center gap-1 rounded border border-transparent py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/block:opacity-100"
-        >
-          <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-3" />
-          Add block
-        </button>
-      </DropdownMenuTrigger>
-      <AddBlockMenu columnId={columnId} index={index} addable={addable} />
-    </DropdownMenu>
-  );
-}
-
-function AddBlockMenu({
-  columnId,
-  index,
-  addable,
-}: {
-  columnId: string;
-  index: number;
-  addable: typeof CONTENT_BLOCKS;
-}) {
-  const ctx = useCanvas();
-  return (
-    <DropdownMenuContent align="center" className="max-h-72 w-44 overflow-auto">
-      {addable.map(({ type, label, icon }) => (
-        <DropdownMenuItem
-          key={`${type}-${label}`}
-          onSelect={() => ctx.onAddToColumn(columnId, index, type)}
-        >
-          <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4 text-muted-foreground" />
-          {label}
-        </DropdownMenuItem>
-      ))}
-    </DropdownMenuContent>
-  );
+function stripOuterP(html: string): string {
+  const stripped = html.replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1").trim();
+  return stripped || html;
 }
