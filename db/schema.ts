@@ -27,3 +27,20 @@ export const recipients = pgTable("recipients", {
   // When the row was added. Filled in automatically with the current time.
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * The do-not-mail list. Any email here is NEVER sent to again — checked before
+ * every send. Bounces and complaints land here automatically (Step 3b); manual
+ * unsubscribes land here too.
+ */
+export const suppressedEmails = pgTable("suppressed_emails", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  // The address to never email. unique() = the same address can't be added twice.
+  email: text("email").notNull().unique(),
+
+  // Why it's suppressed: "bounce" | "complaint" | "manual".
+  reason: text("reason").notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

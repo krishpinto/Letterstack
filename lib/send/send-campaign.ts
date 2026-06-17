@@ -1,6 +1,7 @@
 import { compileEmailDocument } from "@/lib/email/compiler";
 import type { EmailDocument } from "@/lib/email/document";
 import { listUnsentRecipients, markRecipientSent } from "@/db/recipients";
+import { isSuppressed } from "@/db/suppression";
 import { sendEmail } from "./ses";
 import { qstash } from "./qstash";
 
@@ -42,9 +43,16 @@ export type CampaignQueueSummary = {
 export async function sendBatch(content: FrozenContent, people: BatchRecipient[]) {
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
   const failures: { email: string; error: string }[] = [];
 
   for (const person of people) {
+    // Do-not-mail check: never send to a bounced/complained/unsubscribed address.
+    if (await isSuppressed(person.email)) {
+      suppressed++;
+      continue;
+    }
+
     try {
       await sendEmail({
         to: person.email,
@@ -65,7 +73,7 @@ export async function sendBatch(content: FrozenContent, people: BatchRecipient[]
     }
   }
 
-  return { sent, failed, failures };
+  return { sent, failed, suppressed, failures };
 }
 
 // ── TRIGGER ─────────────────────────────────────────────────────────────────

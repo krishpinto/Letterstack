@@ -49,9 +49,10 @@ export async function POST(request: Request) {
     const result = await sendBatch(content, people);
 
     console.log(
-      `worker: batch done — sent ${result.sent}, failed ${result.failed}, skipped ${
-        (recipientIds?.length ?? 0) - people.length
-      } (already sent)`,
+      `worker: batch done — sent ${result.sent}, suppressed ${result.suppressed}, ` +
+        `failed ${result.failed}, skipped ${
+          (recipientIds?.length ?? 0) - people.length
+        } (already sent)`,
     );
 
     return NextResponse.json({ ok: true, ...result });

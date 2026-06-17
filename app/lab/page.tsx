@@ -27,6 +27,7 @@ export default function LabPage() {
         <SesCourierCard />
         <DatabaseCard />
         <RecipientsCard />
+        <SuppressionCard />
         <CampaignCard />
         <QStashCard />
       </div>
@@ -98,6 +99,110 @@ function SesCourierCard() {
           ✕ Failed: {result.error}
         </div>
       )}
+    </section>
+  );
+}
+
+/** One row on the do-not-mail list. */
+type Suppressed = {
+  id: string;
+  email: string;
+  reason: string;
+  createdAt: string;
+};
+
+/** Box #6: the do-not-mail list. Anything here is never emailed. */
+function SuppressionCard() {
+  const [email, setEmail] = useState("");
+  const [list, setList] = useState<Suppressed[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    const res = await fetch("/api/lab/suppression");
+    const data = await res.json();
+    if (data.ok) setList(data.suppressed);
+    else setError(data.error);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleAdd() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/lab/suppression", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setError(data.error);
+        return;
+      }
+      setEmail("");
+      await load();
+    } catch {
+      setError("Could not reach the server endpoint.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+          Box #6
+        </span>
+        <h2 className="font-semibold">The do-not-mail list (suppression)</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Any address here is <strong>never sent to</strong> — the worker checks
+        this before every email. Add one of your recipient addresses below, then
+        run a campaign and watch it get skipped (it won&apos;t get a &quot;sent&quot;
+        badge and no email arrives).
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@example.com"
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={saving}
+          className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {saving ? "Adding…" : "Suppress"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ {error}
+        </div>
+      )}
+
+      <ul className="mt-4 divide-y divide-zinc-100">
+        {list.map((s) => (
+          <li key={s.id} className="flex items-center justify-between py-2 text-sm">
+            <span className="font-medium text-zinc-800">{s.email}</span>
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
+              {s.reason}
+            </span>
+          </li>
+        ))}
+        {list.length === 0 && (
+          <li className="py-2 text-sm text-zinc-400">List is empty.</li>
+        )}
+      </ul>
     </section>
   );
 }
