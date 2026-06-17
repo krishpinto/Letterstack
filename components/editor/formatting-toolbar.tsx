@@ -2,9 +2,33 @@
 
 import * as React from "react";
 import type { Editor } from "@tiptap/react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  AiEraserIcon,
+  Link01Icon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+} from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-
-const FONT_SIZES = ["12px", "14px", "16px", "18px", "20px", "24px", "28px", "32px"];
+import {
+  FORMATTING_FONT_SIZES,
+  FORMATTING_TEXT_TYPES,
+  getCurrentFontSize,
+  getCurrentTextType,
+  setFormattingTextTypeOverride,
+  type FormattingTextType,
+} from "./formatting-options";
 
 /**
  * Canva-style text formatting toolbar, pinned permanently to the top of the
@@ -12,17 +36,22 @@ const FONT_SIZES = ["12px", "14px", "16px", "18px", "20px", "24px", "28px", "32p
  * When nothing editable is selected it shows a muted hint instead.
  */
 export function FormattingToolbar({ editor }: { editor: Editor | null }) {
-  // The editor lives in a different React tree, so subscribe to its updates to
-  // keep active states (bold, alignment, colour, …) live in this toolbar.
   const [, force] = React.useReducer((x) => x + 1, 0);
+
   React.useEffect(() => {
     if (!editor) return;
+
     const update = () => force();
     editor.on("transaction", update);
     editor.on("selectionUpdate", update);
+    editor.on("update", update);
+    editor.on("focus", update);
+
     return () => {
       editor.off("transaction", update);
       editor.off("selectionUpdate", update);
+      editor.off("update", update);
+      editor.off("focus", update);
     };
   }, [editor]);
 
@@ -34,149 +63,264 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
     );
   }
 
-  const currentNodeType = editor.isActive("heading", { level: 2 })
-    ? "h2"
-    : editor.isActive("heading", { level: 3 })
-    ? "h3"
-    : editor.isActive("blockquote")
-    ? "quote"
-    : "p";
+  const currentNodeType = getCurrentTextType(editor);
+  const currentFontSize = getCurrentFontSize(editor, currentNodeType);
 
-  const applyNodeType = (type: string) => {
+  const applyNodeType = (type: FormattingTextType) => {
+    const chain = editor.chain().focus();
+    setFormattingTextTypeOverride(editor, type);
+
+    if (editor.isActive("blockquote") && type !== "quote") {
+      chain.toggleBlockquote();
+    }
+
     switch (type) {
-      case "p":     editor.chain().focus().setParagraph().run(); break;
-      case "h2":    editor.chain().focus().setHeading({ level: 2 }).run(); break;
-      case "h3":    editor.chain().focus().setHeading({ level: 3 }).run(); break;
-      case "quote": editor.chain().focus().toggleBlockquote().run(); break;
+      case "p":
+        chain.setParagraph().run();
+        break;
+      case "h1":
+        chain.setHeading({ level: 1 }).run();
+        break;
+      case "h2":
+        chain.setHeading({ level: 2 }).run();
+        break;
+      case "h3":
+        chain.setHeading({ level: 3 }).run();
+        break;
+      case "quote":
+        if (!editor.isActive("blockquote")) chain.toggleBlockquote();
+        chain.run();
+        break;
     }
   };
 
   const toggleLink = () => {
     if (editor.isActive("link")) {
       editor.chain().focus().unsetLink().run();
-    } else {
-      const url = window.prompt("Enter URL:");
-      if (url) editor.chain().focus().setLink({ href: url }).run();
+      return;
     }
+
+    const url = window.prompt("Enter URL:");
+    if (url) editor.chain().focus().setLink({ href: url }).run();
   };
 
   return (
-    <div className="flex items-center gap-0.5">
-      {/* Node type */}
-      <select
-        className="h-6 cursor-pointer rounded border border-border/50 bg-card px-1 text-[11px] font-medium outline-none"
+    <div className="flex items-center gap-1">
+      <Select
         value={currentNodeType}
-        onChange={(e) => applyNodeType(e.target.value)}
+        onValueChange={(value) => applyNodeType(value as FormattingTextType)}
       >
-        <option value="p">Text</option>
-        <option value="h2">Heading 2</option>
-        <option value="h3">Heading 3</option>
-        <option value="quote">Quote</option>
-      </select>
+        <SelectTrigger
+          size="sm"
+          className="h-7 w-[116px] border-white/10 bg-zinc-900 text-xs text-zinc-100 hover:bg-zinc-800"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="min-w-[140px]">
+          <SelectGroup>
+            {FORMATTING_TEXT_TYPES.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
 
-      <Divider />
+      <ToolbarSeparator />
 
-      {/* Link */}
       <ToolbarButton
         active={editor.isActive("link")}
-        onMouseDown={(e) => { e.preventDefault(); toggleLink(); }}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          toggleLink();
+        }}
         title="Link"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4.5 7.5 7.5 4.5"/>
-          <path d="M5.5 3.5 6.5 2.5a2.828 2.828 0 1 1 4 4L9.5 7.5"/>
-          <path d="M6.5 8.5 5.5 9.5a2.828 2.828 0 1 1-4-4L2.5 4.5"/>
-        </svg>
+        <HugeiconsIcon icon={Link01Icon} strokeWidth={2} data-icon="icon" />
       </ToolbarButton>
 
-      <Divider />
+      <ToolbarSeparator />
 
-      <ToolbarButton active={editor.isActive("bold")} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleBold().run(); }} className="font-bold" title="Bold">B</ToolbarButton>
-      <ToolbarButton active={editor.isActive("italic")} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleItalic().run(); }} className="italic" title="Italic">I</ToolbarButton>
-      <ToolbarButton active={editor.isActive("underline")} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleUnderline().run(); }} className="underline" title="Underline">U</ToolbarButton>
-      <ToolbarButton active={editor.isActive("strike")} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleStrike().run(); }} className="line-through" title="Strikethrough">S</ToolbarButton>
-      <ToolbarButton active={editor.isActive("code")} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleCode().run(); }} className="font-mono text-[10px]" title="Code">&lt;/&gt;</ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("bold")}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleBold().run();
+        }}
+        className="font-bold"
+        title="Bold"
+      >
+        B
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("italic")}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleItalic().run();
+        }}
+        className="italic"
+        title="Italic"
+      >
+        I
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("underline")}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleUnderline().run();
+        }}
+        className="underline"
+        title="Underline"
+      >
+        U
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("strike")}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleStrike().run();
+        }}
+        className="line-through"
+        title="Strikethrough"
+      >
+        S
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("code")}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleCode().run();
+        }}
+        className="font-mono text-[10px]"
+        title="Code"
+      >
+        &lt;/&gt;
+      </ToolbarButton>
 
-      <Divider />
+      <ToolbarSeparator />
 
-      {/* Font size */}
-      <select
-        className="h-6 cursor-pointer rounded border border-border/50 bg-card px-1 text-[11px] outline-none"
-        value={editor.getAttributes("textStyle").fontSize || ""}
-        onChange={(e) => {
-          if (e.target.value) {
-            editor.chain().focus().setMark("textStyle", { fontSize: e.target.value }).run();
-          } else {
-            editor.chain().focus().setMark("textStyle", { fontSize: null }).run();
-          }
+      <Select
+        value={FORMATTING_FONT_SIZES.includes(currentFontSize) ? currentFontSize : "custom"}
+        onValueChange={(value) => {
+          if (value === "custom") return;
+          editor.chain().focus().setMark("textStyle", { fontSize: value }).run();
         }}
       >
-        <option value="">size</option>
-        {FONT_SIZES.map((s) => (
-          <option key={s} value={s}>{s.replace("px", "")}</option>
-        ))}
-      </select>
+        <SelectTrigger
+          size="sm"
+          className="h-7 w-[76px] border-white/10 bg-zinc-900 text-xs text-zinc-100 hover:bg-zinc-800"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <SelectValue>
+            {currentFontSize === "custom" ? "size" : currentFontSize.replace("px", "")}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent className="min-w-[88px]">
+          <SelectGroup>
+            {!FORMATTING_FONT_SIZES.includes(currentFontSize) && (
+              <SelectItem value="custom">{currentFontSize.replace("px", "")}</SelectItem>
+            )}
+            {FORMATTING_FONT_SIZES.map((size) => (
+              <SelectItem key={size} value={size}>
+                {size.replace("px", "")}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
 
-      <Divider />
+      <ToolbarSeparator />
 
-      {/* Text color */}
-      <label className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-muted" title="Text color">
+      <ColorButton
+        title="Text color"
+        value={editor.getAttributes("textStyle").color || "#000000"}
+        onChange={(value) => editor.chain().focus().setColor(value).run()}
+      >
         <span
-          className="select-none text-[11px] font-extrabold"
-          style={{
-            color: editor.getAttributes("textStyle").color || "currentColor",
-            textDecoration: "underline",
-            textDecorationThickness: "2.5px",
-          }}
-        >A</span>
-        <input
-          type="color"
-          className="sr-only"
-          value={editor.getAttributes("textStyle").color || "#000000"}
-          onInput={(e) => editor.chain().focus().setColor(e.currentTarget.value).run()}
-        />
-      </label>
+          className="select-none text-[11px] font-extrabold underline decoration-[2.5px] underline-offset-2"
+          style={{ color: editor.getAttributes("textStyle").color || "currentColor" }}
+        >
+          A
+        </span>
+      </ColorButton>
 
-      {/* Highlight */}
-      <label className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-muted" title="Highlight">
+      <ColorButton
+        title="Highlight"
+        value={
+          editor.isActive("highlight")
+            ? editor.getAttributes("highlight").color ?? "#fef08a"
+            : "#fef08a"
+        }
+        onChange={(value) => editor.chain().focus().setHighlight({ color: value }).run()}
+      >
         <span
           className="select-none rounded-sm px-0.5 text-[11px] font-extrabold leading-tight"
           style={{
             backgroundColor: editor.isActive("highlight")
-              ? (editor.getAttributes("highlight").color ?? "#fef08a")
+              ? editor.getAttributes("highlight").color ?? "#fef08a"
               : "#fef08a",
             color: "#1a1a1a",
           }}
-        >H</span>
-        <input
-          type="color"
-          className="sr-only"
-          value={editor.isActive("highlight") ? (editor.getAttributes("highlight").color ?? "#fef08a") : "#fef08a"}
-          onInput={(e) => editor.chain().focus().setHighlight({ color: e.currentTarget.value }).run()}
-        />
-      </label>
+        >
+          H
+        </span>
+      </ColorButton>
 
-      <Divider />
+      <ToolbarSeparator />
 
-      {/* Alignment */}
-      <ToolbarButton active={editor.isActive({ textAlign: "left" })}   onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().setTextAlign("left").run(); }} title="Align left"><AlignLeftIcon /></ToolbarButton>
-      <ToolbarButton active={editor.isActive({ textAlign: "center" })} onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().setTextAlign("center").run(); }} title="Align center"><AlignCenterIcon /></ToolbarButton>
-      <ToolbarButton active={editor.isActive({ textAlign: "right" })}  onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().setTextAlign("right").run(); }} title="Align right"><AlignRightIcon /></ToolbarButton>
-
-      <Divider />
-
-      {/* Clear formatting */}
       <ToolbarButton
-        active={false}
-        onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().clearNodes().unsetAllMarks().run(); }}
-        className="text-muted-foreground"
+        active={editor.isActive({ textAlign: "left" })}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().setTextAlign("left").run();
+        }}
+        title="Align left"
+      >
+        <HugeiconsIcon icon={TextAlignLeftIcon} strokeWidth={2} data-icon="icon" />
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive({ textAlign: "center" })}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().setTextAlign("center").run();
+        }}
+        title="Align center"
+      >
+        <HugeiconsIcon icon={TextAlignCenterIcon} strokeWidth={2} data-icon="icon" />
+      </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive({ textAlign: "right" })}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().setTextAlign("right").run();
+        }}
+        title="Align right"
+      >
+        <HugeiconsIcon icon={TextAlignRightIcon} strokeWidth={2} data-icon="icon" />
+      </ToolbarButton>
+
+      <ToolbarSeparator />
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
         title="Clear formatting"
-      >✕</ToolbarButton>
+        onMouseDown={(event) => {
+          event.preventDefault();
+          setFormattingTextTypeOverride(editor, "p");
+          editor.chain().focus().clearNodes().unsetAllMarks().run();
+        }}
+      >
+        <HugeiconsIcon icon={AiEraserIcon} strokeWidth={2} data-icon="inline-start" />
+        Clear
+      </Button>
     </div>
   );
 }
-
-// ─── Primitives ───────────────────────────────────────────────────────────────
 
 function ToolbarButton({
   active,
@@ -186,59 +330,60 @@ function ToolbarButton({
   children,
 }: {
   active: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
+  onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   title?: string;
   children: React.ReactNode;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant={active ? "default" : "ghost"}
+      size="icon-xs"
       onMouseDown={onMouseDown}
       title={title}
       className={cn(
-        "flex h-6 min-w-[24px] items-center justify-center rounded px-1 text-[11px] transition-colors",
-        active ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+        "text-[11px]",
+        !active && "text-zinc-100 hover:bg-white/10 hover:text-zinc-100",
         className,
       )}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
-function Divider() {
-  return <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
+function ToolbarSeparator() {
+  return <Separator orientation="vertical" className="mx-0.5 data-vertical:h-5" />;
 }
 
-// ─── Alignment icons ──────────────────────────────────────────────────────────
-
-function AlignLeftIcon() {
+function ColorButton({
+  title,
+  value,
+  onChange,
+  children,
+}: {
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-      <rect x="0" y="1.5" width="12" height="1.5" rx="0.5" />
-      <rect x="0" y="5"   width="7"  height="1.5" rx="0.5" />
-      <rect x="0" y="8.5" width="10" height="1.5" rx="0.5" />
-    </svg>
-  );
-}
-
-function AlignCenterIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-      <rect x="0"   y="1.5" width="12" height="1.5" rx="0.5" />
-      <rect x="2.5" y="5"   width="7"  height="1.5" rx="0.5" />
-      <rect x="1"   y="8.5" width="10" height="1.5" rx="0.5" />
-    </svg>
-  );
-}
-
-function AlignRightIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-      <rect x="0" y="1.5" width="12" height="1.5" rx="0.5" />
-      <rect x="5" y="5"   width="7"  height="1.5" rx="0.5" />
-      <rect x="2" y="8.5" width="10" height="1.5" rx="0.5" />
-    </svg>
+    <Button
+      asChild
+      variant="ghost"
+      size="icon-xs"
+      className="relative text-zinc-100 hover:bg-white/10 hover:text-zinc-100"
+    >
+      <label title={title}>
+        {children}
+        <input
+          type="color"
+          className="sr-only"
+          value={value}
+          onInput={(event) => onChange(event.currentTarget.value)}
+        />
+      </label>
+    </Button>
   );
 }

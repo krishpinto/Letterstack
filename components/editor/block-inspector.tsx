@@ -22,8 +22,10 @@ import {
   createColumn,
   updateBlock,
   type ArticleCardBlock,
+  type ArticleCtaStyle,
   type BorderStyle,
   type ButtonBlock,
+  type ButtonVariant,
   type ColumnMobile,
   type ColumnsBlock,
   type ColumnVAlign,
@@ -298,24 +300,128 @@ function ImageBlockFields({
 function ButtonBlockFields({
   block, onChange,
 }: { block: ButtonBlock; onChange: (u: (b: EmailBlock) => EmailBlock) => void }) {
+  const setButton = (patch: Partial<ButtonBlock>) =>
+    onChange((b) => ({ ...b, ...patch }) as ButtonBlock);
+
   return (
     <>
       <Field>
+        <FieldTitle>Primary button</FieldTitle>
+      </Field>
+      <Field>
         <FieldLabel htmlFor="btn-label">Label</FieldLabel>
-        <Input id="btn-label" value={block.label} onChange={(e) => onChange((b) => ({ ...b, label: e.target.value }) as ButtonBlock)} />
+        <Input id="btn-label" value={block.label} onChange={(e) => setButton({ label: e.target.value })} />
       </Field>
       <Field>
         <FieldLabel htmlFor="btn-href">Link URL</FieldLabel>
-        <Input id="btn-href" value={block.href} onChange={(e) => onChange((b) => ({ ...b, href: e.target.value }) as ButtonBlock)} />
+        <Input id="btn-href" value={block.href} onChange={(e) => setButton({ href: e.target.value })} />
+      </Field>
+      <ButtonVariantField
+        value={block.variant ?? "primary"}
+        onChange={(variant) => setButton({ variant })}
+      />
+
+      {block.secondaryLabel ? (
+        <>
+          <Separator />
+          <Field>
+            <div className="flex items-center justify-between gap-2">
+              <FieldTitle>Secondary button</FieldTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() =>
+                  setButton({
+                    secondaryLabel: undefined,
+                    secondaryHref: undefined,
+                    secondaryVariant: undefined,
+                  })
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="btn-secondary-label">Label</FieldLabel>
+            <Input
+              id="btn-secondary-label"
+              value={block.secondaryLabel}
+              onChange={(e) => setButton({ secondaryLabel: e.target.value })}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="btn-secondary-href">Link URL</FieldLabel>
+            <Input
+              id="btn-secondary-href"
+              value={block.secondaryHref ?? ""}
+              onChange={(e) => setButton({ secondaryHref: e.target.value })}
+            />
+          </Field>
+          <ButtonVariantField
+            value={block.secondaryVariant ?? "secondary"}
+            onChange={(variant) => setButton({ secondaryVariant: variant })}
+          />
+        </>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 justify-start"
+          onClick={() =>
+            setButton({
+              secondaryLabel: "Learn more",
+              secondaryHref: "",
+              secondaryVariant: "secondary",
+            })
+          }
+        >
+          Add secondary button
+        </Button>
+      )}
+
+      <Field>
+        <FieldTitle>Layout</FieldTitle>
       </Field>
       <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as ButtonBlock)} />
     </>
   );
 }
 
+function ButtonVariantField({
+  value,
+  onChange,
+}: {
+  value: ButtonVariant;
+  onChange: (variant: ButtonVariant) => void;
+}) {
+  return (
+    <Field>
+      <FieldLabel>Button type</FieldLabel>
+      <ToggleGroup
+        type="single"
+        value={value}
+        onValueChange={(v) => {
+          if (v) onChange(v as ButtonVariant);
+        }}
+        variant="outline"
+      >
+        <ToggleGroupItem value="primary">Primary</ToggleGroupItem>
+        <ToggleGroupItem value="secondary">Secondary</ToggleGroupItem>
+      </ToggleGroup>
+    </Field>
+  );
+}
+
 function ArticleCardBlockFields({
   block, onChange,
 }: { block: ArticleCardBlock; onChange: (u: (b: EmailBlock) => EmailBlock) => void }) {
+  const setArticle = (patch: Partial<ArticleCardBlock>) =>
+    onChange((b) => ({ ...b, ...patch }) as ArticleCardBlock);
+
   return (
     <>
       <Field>
@@ -324,27 +430,74 @@ function ArticleCardBlockFields({
       </Field>
       <Field>
         <FieldLabel htmlFor="article-img">Image URL</FieldLabel>
-        <Input id="article-img" value={block.imageSrc} onChange={(e) => onChange((b) => ({ ...b, imageSrc: e.target.value }) as ArticleCardBlock)} />
+        <Input id="article-img" value={block.imageSrc} onChange={(e) => setArticle({ imageSrc: e.target.value })} />
       </Field>
       <Field>
         <FieldLabel>Image position</FieldLabel>
         <ToggleGroup
           type="single"
           value={block.imagePosition}
-          onValueChange={(v) => { if (v) onChange((b) => ({ ...b, imagePosition: v }) as ArticleCardBlock); }}
+          onValueChange={(v) => { if (v) setArticle({ imagePosition: v as ArticleCardBlock["imagePosition"] }); }}
           variant="outline"
         >
           <ToggleGroupItem value="left">Image left</ToggleGroupItem>
           <ToggleGroupItem value="right">Image right</ToggleGroupItem>
         </ToggleGroup>
       </Field>
+
+      <Separator />
+
+      <Field>
+        <FieldLabel>Read more CTA</FieldLabel>
+        <ToggleGroup
+          type="single"
+          value={block.showCta ? "on" : "off"}
+          onValueChange={(value) => {
+            if (value) setArticle({ showCta: value === "on" });
+          }}
+          variant="outline"
+          className="grid grid-cols-2"
+        >
+          <ToggleGroupItem value="on">On</ToggleGroupItem>
+          <ToggleGroupItem value="off">Off</ToggleGroupItem>
+        </ToggleGroup>
+        <FieldDescription>Show or hide the article action.</FieldDescription>
+      </Field>
+
+      {block.showCta && (
+        <Field>
+          <FieldLabel>CTA type</FieldLabel>
+          <ToggleGroup
+            type="single"
+            value={block.ctaStyle}
+            onValueChange={(v) => {
+              if (v) setArticle({ ctaStyle: v as ArticleCtaStyle });
+            }}
+            variant="outline"
+          >
+            <ToggleGroupItem value="link">Link</ToggleGroupItem>
+            <ToggleGroupItem value="button">Button</ToggleGroupItem>
+          </ToggleGroup>
+        </Field>
+      )}
+
       <Field>
         <FieldLabel htmlFor="article-link-label">Link label</FieldLabel>
-        <Input id="article-link-label" value={block.linkLabel} onChange={(e) => onChange((b) => ({ ...b, linkLabel: e.target.value }) as ArticleCardBlock)} />
+        <Input
+          id="article-link-label"
+          value={block.linkLabel}
+          disabled={!block.showCta}
+          onChange={(e) => setArticle({ linkLabel: e.target.value })}
+        />
       </Field>
       <Field>
         <FieldLabel htmlFor="article-link-url">Link URL</FieldLabel>
-        <Input id="article-link-url" value={block.linkUrl} onChange={(e) => onChange((b) => ({ ...b, linkUrl: e.target.value }) as ArticleCardBlock)} />
+        <Input
+          id="article-link-url"
+          value={block.linkUrl}
+          disabled={!block.showCta}
+          onChange={(e) => setArticle({ linkUrl: e.target.value })}
+        />
       </Field>
     </>
   );
@@ -364,17 +517,24 @@ function ColumnsBlockFields({
       if (count > cur.length) {
         next = [...cur, ...Array.from({ length: count - cur.length }, () => createColumn())];
       } else {
-        const kept = cur.slice(0, count);
-        const dropped = cur.slice(count).flatMap((c) => c.blocks);
-        next = kept.map((c, i) =>
-          i === kept.length - 1 ? { ...c, blocks: [...c.blocks, ...dropped] } : c,
-        );
+        next = cur.slice(0, count);
       }
       return { ...b, columns: next.map((c) => ({ ...c, width: 1 })) } as ColumnsBlock;
     });
 
-  const first = block.columns[0]?.width ?? 1;
-  const ratio = block.columns.every((c) => c.width === first) ? "equal" : "custom";
+  const setColumn = (
+    columnId: string,
+    patch: Partial<ColumnsBlock["columns"][number]>,
+  ) =>
+    onChange((b) => {
+      if (b.type !== "columns") return b;
+      return {
+        ...b,
+        columns: b.columns.map((column) =>
+          column.id === columnId ? { ...column, ...patch } : column,
+        ),
+      } as ColumnsBlock;
+    });
 
   return (
     <>
@@ -386,30 +546,11 @@ function ColumnsBlockFields({
           onValueChange={(v) => { if (v) setColumnCount(Number(v)); }}
           variant="outline"
         >
-          {[1, 2, 3, 4].map((n) => (
+          {[2, 3, 4].map((n) => (
             <ToggleGroupItem key={n} value={String(n)}>{n}</ToggleGroupItem>
           ))}
         </ToggleGroup>
-      </Field>
-
-      <Field>
-        <FieldLabel>Desktop column ratio</FieldLabel>
-        <ToggleGroup
-          type="single"
-          value={ratio}
-          onValueChange={(v) => {
-            if (v === "equal")
-              onChange((b) => ({
-                ...b,
-                columns: (b as ColumnsBlock).columns.map((c) => ({ ...c, width: 1 })),
-              }) as ColumnsBlock);
-          }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="equal">Equal</ToggleGroupItem>
-          <ToggleGroupItem value="custom">Custom</ToggleGroupItem>
-        </ToggleGroup>
-        <FieldDescription>Drag the dividers on the canvas to set custom widths.</FieldDescription>
+        <FieldDescription>Preset email columns. Inner block dropping is disabled.</FieldDescription>
       </Field>
 
       <Field>
@@ -528,8 +669,98 @@ function ColumnsBlockFields({
           <FieldDescription>{block.cellPadding}px inside each column</FieldDescription>
         </FieldContent>
       </Field>
+
+      <Separator />
+
+      <FieldGroup>
+        {block.columns.map((column, index) => (
+          <Field key={column.id} className="gap-3">
+            <FieldTitle>Column {index + 1}</FieldTitle>
+            <div className="grid gap-2">
+              <Input
+                value={plainFromHtml(column.heading)}
+                placeholder="Column headline"
+                onChange={(e) => setColumn(column.id, { heading: htmlFromPlain(e.target.value) })}
+              />
+              <Textarea
+                rows={3}
+                value={plainFromHtml(column.body)}
+                placeholder="Column description"
+                onChange={(e) => setColumn(column.id, { body: htmlFromPlain(e.target.value) })}
+              />
+            </div>
+
+            <Field>
+              <FieldLabel>Image</FieldLabel>
+              <ToggleGroup
+                type="single"
+                value={column.showImage ? "on" : "off"}
+                onValueChange={(v) => {
+                  if (v) setColumn(column.id, { showImage: v === "on" });
+                }}
+                variant="outline"
+              >
+                <ToggleGroupItem value="on">On</ToggleGroupItem>
+                <ToggleGroupItem value="off">Off</ToggleGroupItem>
+              </ToggleGroup>
+            </Field>
+            {column.showImage && (
+              <Field>
+                <FieldLabel>Image URL</FieldLabel>
+                <Input
+                  value={column.imageSrc}
+                  placeholder="https://..."
+                  onChange={(e) => setColumn(column.id, { imageSrc: e.target.value })}
+                />
+              </Field>
+            )}
+
+            <Field>
+              <FieldLabel>CTA</FieldLabel>
+              <ToggleGroup
+                type="single"
+                value={column.showCta ? "on" : "off"}
+                onValueChange={(v) => {
+                  if (v) setColumn(column.id, { showCta: v === "on" });
+                }}
+                variant="outline"
+              >
+                <ToggleGroupItem value="on">On</ToggleGroupItem>
+                <ToggleGroupItem value="off">Off</ToggleGroupItem>
+              </ToggleGroup>
+            </Field>
+            {column.showCta && (
+              <div className="grid gap-2">
+                <Input
+                  value={column.linkLabel}
+                  placeholder="CTA label"
+                  onChange={(e) => setColumn(column.id, { linkLabel: e.target.value })}
+                />
+                <Input
+                  value={column.linkUrl}
+                  placeholder="https://..."
+                  onChange={(e) => setColumn(column.id, { linkUrl: e.target.value })}
+                />
+              </div>
+            )}
+          </Field>
+        ))}
+      </FieldGroup>
     </>
   );
+}
+
+function plainFromHtml(html: string) {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+
+function htmlFromPlain(value: string) {
+  const text = value.trim();
+  return text ? `<p>${text}</p>` : "<p></p>";
 }
 
 function SpacerBlockFields({

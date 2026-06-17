@@ -11,6 +11,10 @@ import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
 import Link from "@tiptap/extension-link";
 import { cn } from "@/lib/utils";
+import {
+  type FormattingTextType,
+  toFontSizeValue,
+} from "./formatting-options";
 import { useEditorToolbar } from "./editor-toolbar-context";
 import {
   createSlashExtension,
@@ -52,12 +56,16 @@ export function RichTextEditor({
   editable = false,
   className,
   style,
+  defaultTextType = "p",
+  defaultFontSize,
 }: {
   value: string;
   onChange?: (html: string) => void;
   editable?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  defaultTextType?: FormattingTextType;
+  defaultFontSize?: string;
 }) {
   // Slash menu state
   const [slashMenu, setSlashMenu] = React.useState<SlashMenuState | null>(null);
@@ -114,7 +122,7 @@ export function RichTextEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading:         { levels: [2, 3] },
+        heading:         { levels: [1, 2, 3] },
         codeBlock:       false,
         horizontalRule:  false,
       }),
@@ -160,8 +168,17 @@ export function RichTextEditor({
     return () => setActiveEditor((cur) => (cur === editor ? null : cur));
   }, [editable, editor, setActiveEditor]);
 
+  const resolvedDefaultFontSize =
+    defaultFontSize ?? toFontSizeValue(style?.fontSize);
+
   return (
-    <div className={cn("relative", className)} style={style}>
+    <div
+      data-letterstack-rich-text
+      data-default-text-type={defaultTextType}
+      data-default-font-size={resolvedDefaultFontSize}
+      className={cn("relative", className)}
+      style={style}
+    >
       <EditorContent
         editor={editor}
         className={cn(
