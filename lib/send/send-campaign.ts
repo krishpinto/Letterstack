@@ -5,7 +5,7 @@ import { isSuppressed } from "@/db/suppression";
 import { getCampaign, markCampaignSending } from "@/db/campaigns";
 import { freezeAudience, markCampaignRecipient } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
-import { qstash } from "./qstash";
+import { qstash, appBaseUrl } from "./qstash";
 
 /**
  * The send engine, now backed by QStash.
@@ -174,7 +174,7 @@ export async function startCampaign(campaignId: string) {
     fromEmail: campaign.fromEmail,
   };
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = appBaseUrl();
   const batches = chunk(audience, BATCH_SIZE);
 
   await Promise.all(
