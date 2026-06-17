@@ -2,23 +2,24 @@ import { compileEmailDocument } from "@/lib/email/compiler";
 import type { EmailDocument } from "@/lib/email/document";
 import { listUnsentRecipients, markRecipientSent } from "@/db/recipients";
 import { sendEmail } from "./ses";
+import { qstash } from "./qstash";
 
 /**
- * The send engine, in the "trigger → batches → worker" shape.
+ * The send engine, now backed by QStash.
  *
  *   runCampaign()  = the TRIGGER. Freezes the email, splits the list into
- *                    batches, and dispatches each batch.
- *   sendBatch()    = the WORKER. Sends ONE batch (with the sent-checklist).
- *   the for-loop   = a STAND-IN for QStash. In Step 2 we replace it with real
- *                    QStash, but sendBatch() won't change at all.
+ *                    batches, and hands each batch to QStash. Returns at once.
+ *   sendBatch()    = the WORKER logic. Sends ONE batch (with the checklist).
+ *                    Called by the worker endpoint (app/api/send/worker) each
+ *                    time QStash delivers a batch.
  */
 
-// Real value will be 50 (SES allows 14 emails/sec). Tiny here so that a few
-// test addresses form several batches you can actually watch happen.
+// Real value will be 50 (SES allows 14 emails/sec). Tiny here so a few test
+// addresses form several batches you can watch.
 const BATCH_SIZE = 2;
 
 /** The frozen email content every worker sends — same for the whole campaign. */
-type FrozenContent = {
+export type FrozenContent = {
   subject: string;
   html: string;
   text: string;
@@ -29,18 +30,15 @@ type FrozenContent = {
 /** The minimal info the worker needs about each person in its batch. */
 type BatchRecipient = { id: string; email: string };
 
-export type CampaignSummary = {
+/** What the trigger reports back: how much work it handed to QStash. */
+export type CampaignQueueSummary = {
   totalUnsent: number;
   batches: number;
-  sent: number;
-  failed: number;
-  failures: { email: string; error: string }[];
 };
 
-// ── WORKER ──────────────────────────────────────────────────────────────────
-// Sends ONE batch. This is the piece that later becomes the worker endpoint.
-// It's idempotent: it stamps each person only after a successful send, so a
-// retry of this same batch skips anyone already done.
+// ── WORKER LOGIC ──────────────────────────────────────────────────────────────
+// Sends ONE batch. Called by the worker endpoint when QStash delivers a batch.
+// Idempotent: stamps each person only after a successful send.
 export async function sendBatch(content: FrozenContent, people: BatchRecipient[]) {
   let sent = 0;
   let failed = 0;
@@ -71,9 +69,11 @@ export async function sendBatch(content: FrozenContent, people: BatchRecipient[]
 }
 
 // ── TRIGGER ─────────────────────────────────────────────────────────────────
-// Freezes the email, splits unsent people into batches, dispatches each batch.
-export async function runCampaign(doc: EmailDocument): Promise<CampaignSummary> {
-  // Freeze the content once — this is the snapshot every worker sends.
+// Freezes the email, splits unsent people into batches, and hands each batch to
+// QStash as its own job. Returns as soon as everything is enqueued — the actual
+// sending happens in the background as QStash calls the worker endpoint.
+export async function runCampaign(doc: EmailDocument): Promise<CampaignQueueSummary> {
+  // Freeze the content once — the snapshot every worker sends.
   const { html, text } = compileEmailDocument(doc);
   const content: FrozenContent = {
     subject: doc.subject,
@@ -83,38 +83,28 @@ export async function runCampaign(doc: EmailDocument): Promise<CampaignSummary> 
     fromEmail: doc.fromEmail,
   };
 
-  // Only people not already emailed, split into batches of BATCH_SIZE.
+  // Only people not already emailed, split into batches.
   const people = await listUnsentRecipients();
   const batches = chunk(people, BATCH_SIZE);
 
-  const summary: CampaignSummary = {
-    totalUnsent: people.length,
-    batches: batches.length,
-    sent: 0,
-    failed: 0,
-    failures: [],
-  };
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 
-  // ⬇⬇⬇ THIS LOOP IS THE STAND-IN FOR QSTASH ⬇⬇⬇
-  // In Step 2, instead of calling sendBatch() directly here, we hand each batch
-  // to QStash and QStash calls the worker endpoint. The worker (sendBatch) is
-  // identical either way — only this dispatch step changes.
-  for (let i = 0; i < batches.length; i++) {
-    const result = await sendBatch(content, batches[i]);
-    summary.sent += result.sent;
-    summary.failed += result.failed;
-    summary.failures.push(...result.failures);
+  // Hand each batch to QStash. It will call our worker endpoint once per batch,
+  // paced and retried. We send only the recipient IDs — the worker re-checks
+  // the checklist itself, so a retried batch never double-sends.
+  await Promise.all(
+    batches.map((batch) =>
+      qstash.publishJSON({
+        url: `${appUrl}/api/send/worker`,
+        body: { content, recipientIds: batch.map((p) => p.id) },
+      }),
+    ),
+  );
 
-    // Pace the batches out. Real spacing is ~4s (derived from SES's 14/sec);
-    // short here just so you can see batches happen one after another.
-    if (i < batches.length - 1) await sleep(800);
-  }
-  // ⬆⬆⬆ QStash will own this dispatch+pacing+retry later ⬆⬆⬆
-
-  return summary;
+  return { totalUnsent: people.length, batches: batches.length };
 }
 
-// ── tiny helpers ──────────────────────────────────────────────────────────────
+// ── tiny helper ───────────────────────────────────────────────────────────────
 
 /** Split an array into chunks of `size`: [1,2,3,4,5] → [[1,2],[3,4],[5]]. */
 function chunk<T>(items: T[], size: number): T[][] {
@@ -123,8 +113,4 @@ function chunk<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

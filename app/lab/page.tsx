@@ -28,6 +28,7 @@ export default function LabPage() {
         <DatabaseCard />
         <RecipientsCard />
         <CampaignCard />
+        <QStashCard />
       </div>
     </main>
   );
@@ -101,13 +102,101 @@ function SesCourierCard() {
   );
 }
 
-/** The result the campaign endpoint returns after sending to the whole list. */
+/** Box #3 (the dispatcher): prove QStash can call back into your app. */
+function QStashCard() {
+  const [status, setStatus] = useState<"idle" | "working">("idle");
+  const [published, setPublished] = useState<string | null>(null);
+  const [ring, setRing] = useState<{ at: string; payload: unknown } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRing() {
+    setStatus("working");
+    setPublished(null);
+    setRing(null);
+    setError(null);
+    const clickedAt = Date.now();
+
+    try {
+      // 1. Ask our trigger to hand QStash a job.
+      const res = await fetch("/api/lab/qstash-test", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) {
+        setError(data.error);
+        return;
+      }
+      setPublished(data.messageId);
+
+      // 2. QStash delivers a beat later, so check the doorbell a few times
+      //    until we see a ring newer than our click.
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 600));
+        const d = await (await fetch("/api/lab/qstash-doorbell")).json();
+        if (d.ring && new Date(d.ring.at).getTime() >= clickedAt) {
+          setRing(d.ring);
+          break;
+        }
+      }
+    } catch {
+      setError("Could not reach the server endpoint.");
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">
+          Box #3
+        </span>
+        <h2 className="font-semibold">The dispatcher (QStash)</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Hands QStash one job, then waits for QStash to <strong>ring your app
+        back</strong>. Proves the round-trip works — the part we were unsure
+        about. (No emails involved.) The local QStash dev server must be running.
+      </p>
+
+      <button
+        onClick={handleRing}
+        disabled={status === "working"}
+        className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {status === "working" ? "Working…" : "Ring my app through QStash"}
+      </button>
+
+      {published && !ring && !error && (
+        <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+          Published to QStash (id: <span className="font-mono text-xs">{published}</span>).
+          Waiting for the callback…
+        </div>
+      )}
+
+      {ring && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          🔔 QStash called your doorbell at{" "}
+          <span className="font-mono text-xs">{ring.at}</span> with payload:
+          <pre className="mt-1 overflow-x-auto rounded bg-emerald-100/60 p-2 text-xs">
+            {JSON.stringify(ring.payload, null, 2)}
+          </pre>
+          That&apos;s the full round-trip working.
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ Failed: {error}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** What the trigger returns now: how many batches it queued to QStash. */
 type SendSummary = {
   totalUnsent: number;
   batches: number;
-  sent: number;
-  failed: number;
-  failures: { email: string; error: string }[];
 };
 
 /** Box #1 (the milestone): send the newsletter to EVERYONE in the table. */
@@ -145,9 +234,10 @@ function CampaignCard() {
       </div>
 
       <p className="mt-2 text-sm text-zinc-600">
-        Splits the unsent people into small batches and sends them one batch at a
-        time (the loop standing in for QStash). Still skips anyone already
-        emailed. Real emails go out — keep only addresses you control here.
+        Splits the unsent people into batches and hands each to <strong>QStash</strong>,
+        which calls the worker endpoint to send them — in the background. The
+        button returns right away; refresh the recipients list to watch the
+        &quot;sent&quot; badges appear. (QStash dev server must be running.)
       </p>
 
       <div className="mt-4 flex gap-2">
@@ -176,23 +266,11 @@ function CampaignCard() {
 
       {result?.ok && result.summary.totalUnsent > 0 && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-          ✔ Done. Sent <strong>{result.summary.sent}</strong> of{" "}
-          {result.summary.totalUnsent} unsent, across{" "}
-          <strong>{result.summary.batches}</strong>{" "}
-          {result.summary.batches === 1 ? "batch" : "batches"}
-          {result.summary.failed > 0 && (
-            <span>, {result.summary.failed} failed</span>
-          )}
-          .
-          {result.summary.failures.length > 0 && (
-            <ul className="mt-2 list-disc pl-5 text-xs text-emerald-700">
-              {result.summary.failures.map((f) => (
-                <li key={f.email}>
-                  {f.email}: {f.error}
-                </li>
-              ))}
-            </ul>
-          )}
+          ✔ Queued <strong>{result.summary.batches}</strong>{" "}
+          {result.summary.batches === 1 ? "batch" : "batches"} (
+          {result.summary.totalUnsent} people) to QStash. Sending now in the
+          background — <strong>refresh the page</strong> to watch the
+          &quot;sent&quot; badges appear on the recipients above.
         </div>
       )}
 

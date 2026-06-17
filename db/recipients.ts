@@ -1,4 +1,4 @@
-import { desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "./client";
 import { recipients } from "./schema";
 
@@ -29,6 +29,19 @@ export async function listUnsentRecipients() {
     .from(recipients)
     .where(isNull(recipients.sentAt)) // the WHERE clause: "where sent_at is empty"
     .orderBy(desc(recipients.createdAt));
+}
+
+/**
+ * Read: of a specific set of people (one QStash batch), which are STILL unsent.
+ * The worker calls this before sending, so a retried batch skips anyone already
+ * done — that's what makes QStash's retries safe.
+ */
+export async function listUnsentByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(recipients)
+    .where(and(inArray(recipients.id, ids), isNull(recipients.sentAt)));
 }
 
 /** Write: tick one person off the checklist by stamping them with the time. */
