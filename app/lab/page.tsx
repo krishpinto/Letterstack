@@ -28,6 +28,7 @@ export default function LabPage() {
         <DatabaseCard />
         <RecipientsCard />
         <SuppressionCard />
+        <WebhookCard />
         <CampaignCard />
         <QStashCard />
       </div>
@@ -99,6 +100,120 @@ function SesCourierCard() {
           ✕ Failed: {result.error}
         </div>
       )}
+    </section>
+  );
+}
+
+/** One SES event row. */
+type EmailEvent = { id: string; email: string; type: string; createdAt: string };
+
+/** Box #5: the SES events webhook — bounces/complaints auto-suppress. */
+function WebhookCard() {
+  const [email, setEmail] = useState("");
+  const [events, setEvents] = useState<EmailEvent[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function loadEvents() {
+    const data = await (await fetch("/api/lab/events")).json();
+    if (data.ok) setEvents(data.events);
+  }
+
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  // Fire a fake SES event at the real webhook (in prod, SNS sends this shape).
+  async function simulate(type: "Bounce" | "Complaint") {
+    if (!email.trim()) {
+      setNote("Enter an email first.");
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const body =
+        type === "Bounce"
+          ? { notificationType: "Bounce", bounce: { bouncedRecipients: [{ emailAddress: email }] }, mail: { destination: [email] } }
+          : { notificationType: "Complaint", complaint: { complainedRecipients: [{ emailAddress: email }] }, mail: { destination: [email] } };
+
+      await fetch("/api/webhooks/ses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setNote(`Sent a fake ${type} for ${email}. It should now be on the do-not-mail list.`);
+      setEmail("");
+      await loadEvents();
+    } catch {
+      setNote("Could not reach the webhook.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+          Box #5
+        </span>
+        <h2 className="font-semibold">SES events webhook</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        In production SES → SNS calls this. Simulate a bounce/complaint below: the
+        webhook records the event <em>and auto-adds the address to the do-not-mail
+        list</em> (refresh to see it appear in the suppression card above).
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@example.com"
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+        />
+        <button
+          onClick={() => simulate("Bounce")}
+          disabled={busy}
+          className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Simulate bounce
+        </button>
+        <button
+          onClick={() => simulate("Complaint")}
+          disabled={busy}
+          className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Simulate complaint
+        </button>
+      </div>
+
+      {note && (
+        <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+          {note}
+        </div>
+      )}
+
+      <div className="mt-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          Recent events
+        </div>
+        <ul className="mt-2 divide-y divide-zinc-100">
+          {events.map((ev) => (
+            <li key={ev.id} className="flex items-center justify-between py-2 text-sm">
+              <span className="font-medium text-zinc-800">{ev.email}</span>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                {ev.type}
+              </span>
+            </li>
+          ))}
+          {events.length === 0 && (
+            <li className="py-2 text-sm text-zinc-400">No events yet.</li>
+          )}
+        </ul>
+      </div>
     </section>
   );
 }

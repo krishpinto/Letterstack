@@ -44,3 +44,15 @@ export const suppressedEmails = pgTable("suppressed_emails", {
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Every event SES reports back about an email: Delivery, Bounce, Complaint,
+ * Open, Click… Fed by the webhook (SES → SNS → /api/webhooks/ses). Later the
+ * analytics dashboard reads aggregates from this table.
+ */
+export const emailEvents = pgTable("email_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull(),
+  type: text("type").notNull(), // "Bounce" | "Complaint" | "Delivery" | ...
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
