@@ -17,10 +17,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Bad payload" }, { status: 400 });
   }
 
-  // SNS sends a one-time confirmation when you first subscribe. In production
-  // you'd fetch raw.SubscribeURL to confirm; for now just acknowledge it.
+  // SNS sends a one-time confirmation when you first subscribe. We confirm it
+  // automatically by fetching the SubscribeURL SNS provides — then the
+  // subscription goes active and real events start flowing.
   if (raw.Type === "SubscriptionConfirmation") {
-    console.log("SNS subscription confirm URL:", raw.SubscribeURL);
+    if (raw.SubscribeURL) await fetch(raw.SubscribeURL).catch(() => {});
     return NextResponse.json({ ok: true });
   }
 
