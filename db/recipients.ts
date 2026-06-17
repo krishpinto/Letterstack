@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 import { db } from "./client";
 import { recipients } from "./schema";
 
@@ -20,4 +20,26 @@ export async function addRecipient(input: { email: string; name?: string }) {
 /** Read: get everyone, newest first. */
 export async function listRecipients() {
   return db.select().from(recipients).orderBy(desc(recipients.createdAt));
+}
+
+/** Read: only people we HAVEN'T emailed yet (sentAt is still null). */
+export async function listUnsentRecipients() {
+  return db
+    .select()
+    .from(recipients)
+    .where(isNull(recipients.sentAt)) // the WHERE clause: "where sent_at is empty"
+    .orderBy(desc(recipients.createdAt));
+}
+
+/** Write: tick one person off the checklist by stamping them with the time. */
+export async function markRecipientSent(id: string) {
+  await db
+    .update(recipients)
+    .set({ sentAt: new Date() })
+    .where(eq(recipients.id, id)); // only this one person (matched by id)
+}
+
+/** Write: clear every stamp — a testing helper so we can re-send the demo. */
+export async function resetSentFlags() {
+  await db.update(recipients).set({ sentAt: null });
 }

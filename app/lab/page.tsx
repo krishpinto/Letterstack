@@ -103,7 +103,8 @@ function SesCourierCard() {
 
 /** The result the campaign endpoint returns after sending to the whole list. */
 type SendSummary = {
-  total: number;
+  totalUnsent: number;
+  batches: number;
   sent: number;
   failed: number;
   failures: { email: string; error: string }[];
@@ -129,6 +130,11 @@ function CampaignCard() {
     }
   }
 
+  async function handleReset() {
+    await fetch("/api/lab/reset-sent", { method: "POST" });
+    setResult(null);
+  }
+
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-center gap-2">
@@ -139,23 +145,41 @@ function CampaignCard() {
       </div>
 
       <p className="mt-2 text-sm text-zinc-600">
-        Reads every row in the recipients table and sends the newsletter to each
-        one. Real emails go out — keep only addresses you control in the list
-        while testing.
+        Splits the unsent people into small batches and sends them one batch at a
+        time (the loop standing in for QStash). Still skips anyone already
+        emailed. Real emails go out — keep only addresses you control here.
       </p>
 
-      <button
-        onClick={handleSend}
-        disabled={status === "sending"}
-        className="mt-4 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
-        {status === "sending" ? "Sending…" : "Send campaign"}
-      </button>
+      <div className="mt-4 flex gap-2">
+        <button
+          onClick={handleSend}
+          disabled={status === "sending"}
+          className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {status === "sending" ? "Sending…" : "Send campaign"}
+        </button>
+        <button
+          onClick={handleReset}
+          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+        >
+          Reset sent flags
+        </button>
+      </div>
 
-      {result?.ok && (
+      {result?.ok && result.summary.totalUnsent === 0 && (
+        <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+          Nothing to send — everyone has already received it. That&apos;s the
+          checklist working: no double-sends. (Hit <em>Reset sent flags</em> to
+          replay.)
+        </div>
+      )}
+
+      {result?.ok && result.summary.totalUnsent > 0 && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           ✔ Done. Sent <strong>{result.summary.sent}</strong> of{" "}
-          {result.summary.total}
+          {result.summary.totalUnsent} unsent, across{" "}
+          <strong>{result.summary.batches}</strong>{" "}
+          {result.summary.batches === 1 ? "batch" : "batches"}
           {result.summary.failed > 0 && (
             <span>, {result.summary.failed} failed</span>
           )}
@@ -186,6 +210,7 @@ type Recipient = {
   id: string;
   email: string;
   name: string | null;
+  sentAt: string | null;
   createdAt: string;
 };
 
@@ -282,9 +307,16 @@ function RecipientsCard() {
         </div>
         <ul className="mt-2 divide-y divide-zinc-100">
           {list.map((r) => (
-            <li key={r.id} className="flex justify-between py-2 text-sm">
+            <li key={r.id} className="flex items-center justify-between py-2 text-sm">
               <span className="font-medium text-zinc-800">{r.email}</span>
-              <span className="text-zinc-500">{r.name || "—"}</span>
+              <span className="flex items-center gap-2 text-zinc-500">
+                {r.name || "—"}
+                {r.sentAt && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                    sent
+                  </span>
+                )}
+              </span>
             </li>
           ))}
           {list.length === 0 && (

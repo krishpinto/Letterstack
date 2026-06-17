@@ -18,6 +18,12 @@ export const recipients = pgTable("recipients", {
   // Their name — optional (no .notNull()), so it can be left blank.
   name: text("name"),
 
+  // The "sent checklist": when this person was last emailed.
+  // null = not sent yet. A timestamp = already sent, so we skip them.
+  // (Simplification for now: this tracks one implicit campaign. When we add a
+  //  real `campaigns` table, sent-tracking moves to a per-campaign record.)
+  sentAt: timestamp("sent_at"),
+
   // When the row was added. Filled in automatically with the current time.
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

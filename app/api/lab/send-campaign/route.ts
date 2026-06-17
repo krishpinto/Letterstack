@@ -3,7 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { initialEmailDocument } from "@/lib/email/document";
-import { sendCampaignToAll } from "@/lib/send/send-campaign";
+import { runCampaign } from "@/lib/send/send-campaign";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,7 @@ export async function POST() {
       fromEmail,
     };
 
-    const summary = await sendCampaignToAll(doc);
+    const summary = await runCampaign(doc);
     return NextResponse.json({ ok: true, summary });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
