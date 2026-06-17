@@ -1,37 +1,33 @@
-// Create a campaign from the current email and immediately start sending it.
-// Returns the new campaign id so the UI can jump to the live monitor.
-// (Content is the sample doc for now; the editor → campaign seam is a later step.)
+// Create a campaign from the email composed in the editor and start sending it.
+// The browser sends the editor's current document (read from localStorage); we
+// compile + freeze it into a campaign. Falls back to the sample if none given.
 
 import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
-import { initialEmailDocument } from "@/lib/email/document";
+import { initialEmailDocument, isEmailDocument, normalizeDocument } from "@/lib/email/document";
 import { createCampaign } from "@/db/campaigns";
 import { startCampaign } from "@/lib/send/send-campaign";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: Request) {
   const fromEmail = process.env.MAIL_FROM;
   if (!fromEmail) {
     return NextResponse.json({ ok: false, error: "MAIL_FROM missing" }, { status: 400 });
   }
 
   try {
-    const doc = {
-      ...initialEmailDocument,
-      name: `Campaign ${new Date().toLocaleString()}`,
-      subject: "LetterStack newsletter",
-      fromName: "LetterStack",
-      fromEmail,
-    };
+    const body = await request.json().catch(() => null);
+    const raw = body?.document;
+    // Use the editor's document if it's valid; otherwise the sample.
+    const doc = isEmailDocument(raw) ? normalizeDocument(raw) : initialEmailDocument;
 
-    // Freeze the content into a campaign, then fire the send.
     const { html, text } = compileEmailDocument(doc);
     const campaign = await createCampaign({
-      name: doc.name,
-      subject: doc.subject,
-      fromName: doc.fromName,
-      fromEmail,
+      name: doc.name || "Untitled campaign",
+      subject: doc.subject || "Newsletter",
+      fromName: doc.fromName || "LetterStack",
+      fromEmail, // always the verified sender, whatever the editor set
       html,
       text,
     });

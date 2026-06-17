@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { STORAGE_KEY } from "@/lib/email/document";
 
 // The Send workspace — the product version of the recipients / campaign /
 // suppression lab cards. It reuses the same backend endpoints (/api/lab/*),
@@ -105,7 +106,22 @@ function CampaignSection() {
     setStatus("starting");
     setError(null);
     try {
-      const data = await (await fetch("/api/campaigns/send-now", { method: "POST" })).json();
+      // Pull the email you composed in the editor (it autosaves to localStorage).
+      let document: unknown = null;
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) document = JSON.parse(saved);
+      } catch {
+        // ignore parse errors — server falls back to the sample doc
+      }
+
+      const data = await (
+        await fetch("/api/campaigns/send-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document }),
+        })
+      ).json();
       if (!data.ok) {
         setError(data.error);
         setStatus("idle");
@@ -122,9 +138,12 @@ function CampaignSection() {
   return (
     <Card title="Send campaign" subtitle="Goes out in batches through QStash → SES">
       <p className="text-sm text-zinc-500">
-        Creates a campaign from the current newsletter and sends it to all
-        non-suppressed recipients, in batches. You&apos;ll be taken to the live
-        monitor to watch it go out.
+        Sends the newsletter you composed in the{" "}
+        <a href="/editor-new" className="font-medium text-zinc-900 underline">
+          editor
+        </a>{" "}
+        to all non-suppressed recipients, in batches. You&apos;ll be taken to the
+        live monitor to watch it go out.
       </p>
       <div className="mt-4">
         <button onClick={send} disabled={status === "starting"} className={btnAmber}>
