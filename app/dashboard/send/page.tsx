@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 // The Send workspace — the product version of the recipients / campaign /
 // suppression lab cards. It reuses the same backend endpoints (/api/lab/*),
@@ -14,7 +15,6 @@ type Recipient = {
   createdAt: string;
 };
 type Suppressed = { id: string; email: string; reason: string; createdAt: string };
-type Summary = { totalUnsent: number; batches: number };
 
 export default function SendPage() {
   return (
@@ -85,10 +85,7 @@ function RecipientsSection() {
         {list.map((r) => (
           <li key={r.id} className="flex items-center justify-between py-2 text-sm">
             <span className="font-medium text-zinc-800">{r.email}</span>
-            <span className="flex items-center gap-2 text-zinc-500">
-              {r.name || "—"}
-              {r.sentAt && <Badge tone="green">sent</Badge>}
-            </span>
+            <span className="text-zinc-500">{r.name || "—"}</span>
           </li>
         ))}
         {list.length === 0 && <li className="py-2 text-sm text-zinc-400">No recipients yet.</li>}
@@ -100,51 +97,40 @@ function RecipientsSection() {
 // ── Campaign ──────────────────────────────────────────────────────────────────
 
 function CampaignSection() {
-  const [status, setStatus] = useState<"idle" | "sending">("idle");
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const router = useRouter();
+  const [status, setStatus] = useState<"idle" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function send() {
-    setStatus("sending");
-    setSummary(null);
+    setStatus("starting");
     setError(null);
     try {
-      const data = await (await fetch("/api/lab/send-campaign", { method: "POST" })).json();
-      if (!data.ok) setError(data.error);
-      else setSummary(data.summary);
-    } finally {
+      const data = await (await fetch("/api/campaigns/send-now", { method: "POST" })).json();
+      if (!data.ok) {
+        setError(data.error);
+        setStatus("idle");
+        return;
+      }
+      // Jump straight to the live monitor for this campaign.
+      router.push(`/dashboard/campaigns/${data.id}`);
+    } catch {
+      setError("Could not reach the server.");
       setStatus("idle");
     }
-  }
-
-  async function reset() {
-    await fetch("/api/lab/reset-sent", { method: "POST" });
-    setSummary(null);
   }
 
   return (
     <Card title="Send campaign" subtitle="Goes out in batches through QStash → SES">
       <p className="text-sm text-zinc-500">
-        Sends the newsletter to everyone not already emailed (skipping suppressed
-        addresses). Refresh to watch the &quot;sent&quot; badges fill in above.
+        Creates a campaign from the current newsletter and sends it to all
+        non-suppressed recipients, in batches. You&apos;ll be taken to the live
+        monitor to watch it go out.
       </p>
-      <div className="mt-4 flex gap-2">
-        <button onClick={send} disabled={status === "sending"} className={btnAmber}>
-          {status === "sending" ? "Sending…" : "Send campaign"}
-        </button>
-        <button onClick={reset} className={btnGhost}>
-          Reset sent flags
+      <div className="mt-4">
+        <button onClick={send} disabled={status === "starting"} className={btnAmber}>
+          {status === "starting" ? "Starting…" : "Create & send campaign"}
         </button>
       </div>
-      {summary && summary.totalUnsent === 0 && (
-        <InfoBox>Nothing to send — everyone has already received it.</InfoBox>
-      )}
-      {summary && summary.totalUnsent > 0 && (
-        <SuccessBox>
-          Queued <strong>{summary.batches}</strong> batch{summary.batches === 1 ? "" : "es"} (
-          {summary.totalUnsent} people). Sending in the background — refresh to watch.
-        </SuccessBox>
-      )}
       {error && <ErrorBox>{error}</ErrorBox>}
     </Card>
   );
@@ -216,7 +202,6 @@ const inputCls =
 const btnDark = "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
 const btnAmber = "rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
 const btnRose = "rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
-const btnGhost = "rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50";
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
@@ -237,10 +222,4 @@ function Badge({ tone, children }: { tone: "green" | "zinc"; children: React.Rea
 
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">✕ {children}</div>;
-}
-function SuccessBox({ children }: { children: React.ReactNode }) {
-  return <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">✔ {children}</div>;
-}
-function InfoBox({ children }: { children: React.ReactNode }) {
-  return <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">{children}</div>;
 }

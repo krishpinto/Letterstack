@@ -36,3 +36,11 @@ export async function getCampaign(id: string) {
   const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
   return row ?? null;
 }
+
+/** Flip a campaign to "sending" and stamp when the send started. */
+export async function markCampaignSending(id: string) {
+  await db
+    .update(campaigns)
+    .set({ status: "sending", sentAt: new Date() })
+    .where(eq(campaigns.id, id));
+}

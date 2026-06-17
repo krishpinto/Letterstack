@@ -2,6 +2,8 @@ import { compileEmailDocument } from "@/lib/email/compiler";
 import type { EmailDocument } from "@/lib/email/document";
 import { listUnsentRecipients, markRecipientSent } from "@/db/recipients";
 import { isSuppressed } from "@/db/suppression";
+import { getCampaign, markCampaignSending } from "@/db/campaigns";
+import { freezeAudience, markCampaignRecipient } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { qstash } from "./qstash";
 
@@ -110,6 +112,81 @@ export async function runCampaign(doc: EmailDocument): Promise<CampaignQueueSumm
   );
 
   return { totalUnsent: people.length, batches: batches.length };
+}
+
+// ── PER-CAMPAIGN FLOW (the real one — writes status into campaign_recipients) ──
+
+type CampaignBatchRow = { id: string; email: string };
+
+/**
+ * WORKER LOGIC for a campaign batch. Sends each person and records their
+ * outcome in campaign_recipients (sent / failed). Suppressed addresses are
+ * recorded as failed (they shouldn't be here — freezeAudience excludes them —
+ * but this catches anyone suppressed after the freeze).
+ */
+export async function sendCampaignBatch(content: FrozenContent, rows: CampaignBatchRow[]) {
+  let sent = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    if (await isSuppressed(row.email)) {
+      await markCampaignRecipient(row.id, "failed", "suppressed");
+      failed++;
+      continue;
+    }
+    try {
+      await sendEmail({
+        to: row.email,
+        subject: content.subject,
+        html: content.html,
+        text: content.text,
+        fromName: content.fromName,
+        fromEmail: content.fromEmail,
+      });
+      await markCampaignRecipient(row.id, "sent");
+      sent++;
+    } catch (err) {
+      await markCampaignRecipient(row.id, "failed", err instanceof Error ? err.message : "Unknown error");
+      failed++;
+    }
+  }
+
+  return { sent, failed };
+}
+
+/**
+ * TRIGGER for a campaign. Freezes the audience, flips the campaign to "sending",
+ * then hands each batch of campaign_recipients to QStash. Returns immediately.
+ */
+export async function startCampaign(campaignId: string) {
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) throw new Error("Campaign not found");
+
+  // Freeze WHO it goes to (non-suppressed) as pending rows.
+  const audience = await freezeAudience(campaignId);
+  await markCampaignSending(campaignId);
+
+  const content: FrozenContent = {
+    subject: campaign.subject,
+    html: campaign.htmlSnapshot,
+    text: campaign.textSnapshot,
+    fromName: campaign.fromName,
+    fromEmail: campaign.fromEmail,
+  };
+
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const batches = chunk(audience, BATCH_SIZE);
+
+  await Promise.all(
+    batches.map((batch) =>
+      qstash.publishJSON({
+        url: `${appUrl}/api/send/campaign-worker`,
+        body: { content, campaignRecipientIds: batch.map((r) => r.id) },
+      }),
+    ),
+  );
+
+  return { total: audience.length, batches: batches.length };
 }
 
 // ── tiny helper ───────────────────────────────────────────────────────────────
