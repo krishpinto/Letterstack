@@ -29,6 +29,7 @@ export default function LabPage() {
         <RecipientsCard />
         <SuppressionCard />
         <WebhookCard />
+        <CampaignsCard />
         <CampaignCard />
         <QStashCard />
       </div>
@@ -100,6 +101,96 @@ function SesCourierCard() {
           ✕ Failed: {result.error}
         </div>
       )}
+    </section>
+  );
+}
+
+/** One campaign row. */
+type Campaign = {
+  id: string;
+  name: string;
+  subject: string;
+  status: string;
+  createdAt: string;
+};
+
+/** Box #7: campaigns — create a frozen draft (content snapshot). */
+function CampaignsCard() {
+  const [list, setList] = useState<Campaign[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    const data = await (await fetch("/api/lab/campaigns")).json();
+    if (data.ok) setList(data.campaigns);
+    else setError(data.error);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleCreate() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await (await fetch("/api/lab/campaigns", { method: "POST" })).json();
+      if (!data.ok) setError(data.error);
+      else await load();
+    } catch {
+      setError("Could not reach the server endpoint.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+          Box #7
+        </span>
+        <h2 className="font-semibold">Campaigns</h2>
+      </div>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        Creating a campaign <strong>freezes</strong> the compiled email into a
+        draft — locking in exactly what will be sent. (Later this comes from the
+        editor; for now it&apos;s the sample email.)
+      </p>
+
+      <button
+        onClick={handleCreate}
+        disabled={busy}
+        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      >
+        {busy ? "Creating…" : "Create draft campaign"}
+      </button>
+
+      {error && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          ✕ {error}
+        </div>
+      )}
+
+      <ul className="mt-4 divide-y divide-zinc-100">
+        {list.map((c) => (
+          <li key={c.id} className="flex items-center justify-between py-2 text-sm">
+            <span className="font-medium text-zinc-800">{c.name}</span>
+            <span className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-zinc-400">
+                {c.id.slice(0, 8)}
+              </span>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                {c.status}
+              </span>
+            </span>
+          </li>
+        ))}
+        {list.length === 0 && (
+          <li className="py-2 text-sm text-zinc-400">No campaigns yet.</li>
+        )}
+      </ul>
     </section>
   );
 }
