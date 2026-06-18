@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { isEmailDocument, normalizeDocument } from "@/lib/email/document";
-import { getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
+import { deleteCampaign, getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -21,6 +21,19 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
   }
   return NextResponse.json({ ok: true, campaign });
+}
+
+export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+  const ok = await deleteCampaign(id, userId);
+  if (!ok) {
+    return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
 }
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {

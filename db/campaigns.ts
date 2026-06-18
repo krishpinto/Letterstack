@@ -122,6 +122,15 @@ export async function getCampaignForUser(id: string, userId: string) {
   return row ?? null;
 }
 
+/** Delete a campaign (and its frozen recipients, via cascade). Owner-scoped. */
+export async function deleteCampaign(id: string, userId: string): Promise<boolean> {
+  const rows = await db
+    .delete(campaigns)
+    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)))
+    .returning({ id: campaigns.id });
+  return rows.length > 0;
+}
+
 /** Flip a campaign to "sending" and stamp when the send started. */
 export async function markCampaignSending(id: string) {
   await db
