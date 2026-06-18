@@ -39,14 +39,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { content, recipientIds } = JSON.parse(body) as {
+    const { content, userId, recipientIds } = JSON.parse(body) as {
       content: FrozenContent;
+      userId: string;
       recipientIds: string[];
     };
 
     // Only the people in this batch who are STILL unsent (retry-safe).
     const people = await listUnsentByIds(recipientIds ?? []);
-    const result = await sendBatch(content, people);
+    const result = await sendBatch(content, people, userId);
 
     console.log(
       `worker: batch done — sent ${result.sent}, suppressed ${result.suppressed}, ` +

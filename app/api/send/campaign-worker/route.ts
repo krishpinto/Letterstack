@@ -27,14 +27,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { content, campaignRecipientIds } = JSON.parse(body) as {
+    const { content, userId, campaignRecipientIds } = JSON.parse(body) as {
       content: FrozenContent;
+      userId: string;
       campaignRecipientIds: string[];
     };
 
     // Only the rows still pending — a retried batch skips ones already done.
     const rows = await listPendingByIds(campaignRecipientIds ?? []);
-    const result = await sendCampaignBatch(content, rows);
+    const result = await sendCampaignBatch(content, rows, userId);
 
     console.log(`campaign-worker: batch done — sent ${result.sent}, failed ${result.failed}`);
     return NextResponse.json({ ok: true, ...result });

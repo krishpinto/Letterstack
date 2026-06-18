@@ -4,10 +4,15 @@
 import { NextResponse } from "next/server";
 import { initialEmailDocument } from "@/lib/email/document";
 import { runCampaign } from "@/lib/send/send-campaign";
+import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function POST() {
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   const fromEmail = process.env.MAIL_FROM;
   if (!fromEmail) {
     return NextResponse.json(
@@ -24,7 +29,7 @@ export async function POST() {
       fromEmail,
     };
 
-    const summary = await runCampaign(doc);
+    const summary = await runCampaign(doc, userId);
     return NextResponse.json({ ok: true, summary });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { recordEvent } from "@/db/events";
 import { suppressEmail } from "@/db/suppression";
+import { userIdsForEmail } from "@/db/campaign-recipients";
 
 export const runtime = "nodejs";
 
@@ -42,8 +43,13 @@ export async function POST(request: Request) {
   if (email) {
     await recordEvent(email, type);
     // Hard bounces and complaints are permanent — never email them again.
+    // Suppression is per-user, so attribute it to every account that actually
+    // mailed this address (found via campaign_recipients → campaigns).
     if (type === "Bounce" || type === "Complaint") {
-      await suppressEmail(email, type.toLowerCase());
+      const userIds = await userIdsForEmail(email);
+      await Promise.all(
+        userIds.map((userId) => suppressEmail(userId, email, type.toLowerCase())),
+      );
     }
   }
 

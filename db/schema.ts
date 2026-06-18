@@ -1,49 +1,67 @@
-import { pgTable, uuid, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-/**
- * The shape of our database, described in TypeScript. This file is the
- * BLUEPRINT — it holds no data. `drizzle-kit push` reads it and builds the
- * matching tables inside Neon.
- *
- * First table: `recipients` — the people who receive a newsletter.
- * One row = one person.
- */
-export const recipients = pgTable("recipients", {
-  // A unique id for each person, generated automatically by the database.
+// ── Users ────────────────────────────────────────────────────────────────────
+
+export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
-
-  // Their email address. notNull() = every row MUST have one.
-  email: text("email").notNull(),
-
-  // Their name — optional (no .notNull()), so it can be left blank.
+  email: text("email").notNull().unique(),
   name: text("name"),
-
-  // The "sent checklist": when this person was last emailed.
-  // null = not sent yet. A timestamp = already sent, so we skip them.
-  // (Simplification for now: this tracks one implicit campaign. When we add a
-  //  real `campaigns` table, sent-tracking moves to a per-campaign record.)
-  sentAt: timestamp("sent_at"),
-
-  // When the row was added. Filled in automatically with the current time.
+  passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ── Recipients ───────────────────────────────────────────────────────────────
+
+export const recipients = pgTable(
+  "recipients",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    // Every recipient belongs to exactly one account. Cascade: deleting the
+    // user removes their whole audience.
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    name: text("name"),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // The same address can't be added twice BY THE SAME USER — but two
+    // different users can each have it in their own list.
+    unique("recipients_user_email_unq").on(t.userId, t.email),
+  ],
+);
 
 /**
  * The do-not-mail list. Any email here is NEVER sent to again — checked before
  * every send. Bounces and complaints land here automatically (Step 3b); manual
  * unsubscribes land here too.
  */
-export const suppressedEmails = pgTable("suppressed_emails", {
-  id: uuid("id").defaultRandom().primaryKey(),
+export const suppressedEmails = pgTable(
+  "suppressed_emails",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
 
-  // The address to never email. unique() = the same address can't be added twice.
-  email: text("email").notNull().unique(),
+    // Whose do-not-mail list this entry belongs to. Each account keeps its own.
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
 
-  // Why it's suppressed: "bounce" | "complaint" | "manual".
-  reason: text("reason").notNull(),
+    // The address to never email.
+    email: text("email").notNull(),
 
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+    // Why it's suppressed: "bounce" | "complaint" | "manual".
+    reason: text("reason").notNull(),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // The same address can't be suppressed twice for the SAME user — but each
+    // user has their own independent list.
+    unique("suppressed_user_email_unq").on(t.userId, t.email),
+  ],
+);
 
 /**
  * Every event SES reports back about an email: Delivery, Bounce, Complaint,
@@ -64,6 +82,10 @@ export const emailEvents = pgTable("email_events", {
  */
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
+  // Which account owns this campaign — used to scope the campaigns list.
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   subject: text("subject").notNull(),
   fromName: text("from_name").notNull(),

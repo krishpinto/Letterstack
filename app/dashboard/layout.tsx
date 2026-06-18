@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
-// The dashboard's own simple shell: a left nav + a content area. Separate from
-// the partner's editor sidebar so the two halves don't collide.
 const NAV = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/contacts", label: "Contacts" },
@@ -16,12 +15,13 @@ const NAV = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
 
   return (
     <div className="flex min-h-dvh bg-zinc-50 text-zinc-900">
-      <aside className="w-56 shrink-0 border-r border-zinc-200 bg-white p-4">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-200 bg-white p-4">
         <div className="px-2 text-sm font-bold tracking-tight">LetterStack</div>
-        <nav className="mt-6 flex flex-col gap-1">
+        <nav className="mt-6 flex flex-1 flex-col gap-1">
           {NAV.map((item) => {
             const active =
               item.href === "/dashboard"
@@ -43,6 +43,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
         </nav>
+
+        {session?.user && (
+          <div className="mt-auto border-t border-zinc-200 pt-4">
+            <div className="truncate px-2 text-sm font-medium text-zinc-800">
+              {session.user.name || session.user.email}
+            </div>
+            <div className="truncate px-2 text-xs text-zinc-400">
+              {session.user.email}
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="mt-2 w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </aside>
 
       <main className="min-w-0 flex-1">{children}</main>

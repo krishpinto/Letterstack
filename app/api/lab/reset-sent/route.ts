@@ -3,12 +3,17 @@
 
 import { NextResponse } from "next/server";
 import { resetSentFlags } from "@/db/recipients";
+import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function POST() {
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   try {
-    await resetSentFlags();
+    await resetSentFlags(userId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

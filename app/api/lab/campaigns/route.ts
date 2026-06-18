@@ -5,12 +5,17 @@ import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { initialEmailDocument } from "@/lib/email/document";
 import { createCampaign, listCampaigns } from "@/db/campaigns";
+import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   try {
-    const campaigns = await listCampaigns();
+    const campaigns = await listCampaigns(userId);
     return NextResponse.json({ ok: true, campaigns });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -19,6 +24,10 @@ export async function GET() {
 }
 
 export async function POST() {
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   const fromEmail = process.env.MAIL_FROM;
   if (!fromEmail) {
     return NextResponse.json({ ok: false, error: "MAIL_FROM missing" }, { status: 400 });
@@ -35,7 +44,7 @@ export async function POST() {
     };
     // Compile ONCE here, then freeze the result into the campaign.
     const { html, text } = compileEmailDocument(doc);
-    const campaign = await createCampaign({
+    const campaign = await createCampaign(userId, {
       name: doc.name,
       subject: doc.subject,
       fromName: doc.fromName,

@@ -42,15 +42,20 @@ export type CampaignQueueSummary = {
 // ── WORKER LOGIC ──────────────────────────────────────────────────────────────
 // Sends ONE batch. Called by the worker endpoint when QStash delivers a batch.
 // Idempotent: stamps each person only after a successful send.
-export async function sendBatch(content: FrozenContent, people: BatchRecipient[]) {
+export async function sendBatch(
+  content: FrozenContent,
+  people: BatchRecipient[],
+  userId: string,
+) {
   let sent = 0;
   let failed = 0;
   let suppressed = 0;
   const failures: { email: string; error: string }[] = [];
 
   for (const person of people) {
-    // Do-not-mail check: never send to a bounced/complained/unsubscribed address.
-    if (await isSuppressed(person.email)) {
+    // Do-not-mail check: never send to a bounced/complained/unsubscribed address
+    // on THIS owner's list.
+    if (await isSuppressed(userId, person.email)) {
       suppressed++;
       continue;
     }
@@ -82,7 +87,10 @@ export async function sendBatch(content: FrozenContent, people: BatchRecipient[]
 // Freezes the email, splits unsent people into batches, and hands each batch to
 // QStash as its own job. Returns as soon as everything is enqueued — the actual
 // sending happens in the background as QStash calls the worker endpoint.
-export async function runCampaign(doc: EmailDocument): Promise<CampaignQueueSummary> {
+export async function runCampaign(
+  doc: EmailDocument,
+  userId: string,
+): Promise<CampaignQueueSummary> {
   // Freeze the content once — the snapshot every worker sends.
   const { html, text } = compileEmailDocument(doc);
   const content: FrozenContent = {
@@ -93,8 +101,8 @@ export async function runCampaign(doc: EmailDocument): Promise<CampaignQueueSumm
     fromEmail: doc.fromEmail,
   };
 
-  // Only people not already emailed, split into batches.
-  const people = await listUnsentRecipients();
+  // Only THIS user's people not already emailed, split into batches.
+  const people = await listUnsentRecipients(userId);
   const batches = chunk(people, BATCH_SIZE);
 
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
@@ -106,7 +114,7 @@ export async function runCampaign(doc: EmailDocument): Promise<CampaignQueueSumm
     batches.map((batch) =>
       qstash.publishJSON({
         url: `${appUrl}/api/send/worker`,
-        body: { content, recipientIds: batch.map((p) => p.id) },
+        body: { content, userId, recipientIds: batch.map((p) => p.id) },
       }),
     ),
   );
@@ -124,12 +132,16 @@ type CampaignBatchRow = { id: string; email: string };
  * recorded as failed (they shouldn't be here — freezeAudience excludes them —
  * but this catches anyone suppressed after the freeze).
  */
-export async function sendCampaignBatch(content: FrozenContent, rows: CampaignBatchRow[]) {
+export async function sendCampaignBatch(
+  content: FrozenContent,
+  rows: CampaignBatchRow[],
+  userId: string,
+) {
   let sent = 0;
   let failed = 0;
 
   for (const row of rows) {
-    if (await isSuppressed(row.email)) {
+    if (await isSuppressed(userId, row.email)) {
       await markCampaignRecipient(row.id, "failed", "suppressed");
       failed++;
       continue;
@@ -162,8 +174,8 @@ export async function startCampaign(campaignId: string) {
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
 
-  // Freeze WHO it goes to (non-suppressed) as pending rows.
-  const audience = await freezeAudience(campaignId);
+  // Freeze WHO it goes to: the campaign owner's non-suppressed contacts.
+  const audience = await freezeAudience(campaignId, campaign.userId);
   await markCampaignSending(campaignId);
 
   const content: FrozenContent = {
@@ -181,7 +193,7 @@ export async function startCampaign(campaignId: string) {
     batches.map((batch) =>
       qstash.publishJSON({
         url: `${appUrl}/api/send/campaign-worker`,
-        body: { content, campaignRecipientIds: batch.map((r) => r.id) },
+        body: { content, userId: campaign.userId, campaignRecipientIds: batch.map((r) => r.id) },
       }),
     ),
   );

@@ -1,17 +1,22 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaignRecipients, recipients, suppressedEmails } from "./schema";
+import { campaignRecipients, campaigns, recipients } from "./schema";
+import { listSuppressedSet } from "./suppression";
 
 /** Operations on the campaign↔recipient bridge — the per-campaign send status. */
 
 /**
- * Freeze the audience: create one `pending` row per NON-suppressed recipient.
- * This locks in WHO this campaign goes to (the snapshot of the list at send time).
+ * Freeze the audience: create one `pending` row per NON-suppressed recipient
+ * OWNED BY `userId` (the campaign's owner). This locks in WHO this campaign goes
+ * to — only the owner's contacts, minus the owner's do-not-mail list.
  */
-export async function freezeAudience(campaignId: string) {
-  const people = await db.select().from(recipients);
-  const supp = await db.select({ email: suppressedEmails.email }).from(suppressedEmails);
-  const blocked = new Set(supp.map((s) => s.email));
+export async function freezeAudience(campaignId: string, userId: string) {
+  const people = await db
+    .select()
+    .from(recipients)
+    .where(eq(recipients.userId, userId));
+  // The owner's own do-not-mail list.
+  const blocked = await listSuppressedSet(userId);
   const targets = people.filter((p) => !blocked.has(p.email));
 
   if (targets.length === 0) return [];
@@ -48,6 +53,20 @@ export async function markCampaignRecipient(
     .update(campaignRecipients)
     .set({ status, sentAt: status === "sent" ? new Date() : null, error: error ?? null })
     .where(eq(campaignRecipients.id, id));
+}
+
+/**
+ * Which users have mailed this address (via any campaign). The SES webhook uses
+ * this to attribute a bounce/complaint: the address gets suppressed for every
+ * account that actually sent to it, so a bad address removes itself from each.
+ */
+export async function userIdsForEmail(email: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: campaigns.userId })
+    .from(campaignRecipients)
+    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
+    .where(eq(campaignRecipients.email, email));
+  return rows.map((r) => r.userId);
 }
 
 /** Every recipient row for one campaign (for the recipients table). */

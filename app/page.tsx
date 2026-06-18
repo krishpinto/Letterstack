@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-// Landing page. No auth yet — just a front door into the dashboard.
 export default function Landing() {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-zinc-50 px-6 text-center">
@@ -16,16 +15,16 @@ export default function Landing() {
       </p>
       <div className="mt-8 flex gap-3">
         <Link
-          href="/dashboard"
+          href="/signup"
           className="rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800"
         >
-          Open dashboard
+          Get started free
         </Link>
         <Link
-          href="/editor-new"
+          href="/login"
           className="rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
         >
-          Open editor
+          Sign in
         </Link>
       </div>
     </main>

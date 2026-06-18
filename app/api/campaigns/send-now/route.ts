@@ -7,10 +7,15 @@ import { compileEmailDocument } from "@/lib/email/compiler";
 import { initialEmailDocument, isEmailDocument, normalizeDocument } from "@/lib/email/document";
 import { createCampaign } from "@/db/campaigns";
 import { startCampaign } from "@/lib/send/send-campaign";
+import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   const fromEmail = process.env.MAIL_FROM;
   if (!fromEmail) {
     return NextResponse.json({ ok: false, error: "MAIL_FROM missing" }, { status: 400 });
@@ -33,7 +38,7 @@ export async function POST(request: Request) {
         : doc.fromName || "LetterStack";
 
     const { html, text } = compileEmailDocument(doc);
-    const campaign = await createCampaign({
+    const campaign = await createCampaign(userId, {
       name: doc.name || "Untitled campaign",
       subject,
       fromName,

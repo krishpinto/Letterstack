@@ -5,15 +5,28 @@
 import { NextResponse } from "next/server";
 import { listCampaignRecipients } from "@/db/campaign-recipients";
 import { listBouncedEmails } from "@/db/suppression";
+import { getCampaignForUser } from "@/db/campaigns";
+import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
 
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
+    // 404 if it isn't this user's campaign — don't leak another account's data.
+    const campaign = await getCampaignForUser(id, userId);
+    if (!campaign) {
+      return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
+    }
+
     const rows = await listCampaignRecipients(id);
-    const bounced = await listBouncedEmails();
+    const bounced = await listBouncedEmails(userId);
 
     const recipients = rows.map((r) => ({
       id: r.id,
