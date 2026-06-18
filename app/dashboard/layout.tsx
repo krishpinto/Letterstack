@@ -17,8 +17,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-dvh bg-zinc-50">
-      <aside className="w-56 shrink-0 border-r bg-white p-4">
+    <div className="flex min-h-dvh bg-zinc-50 text-zinc-900">
+      <aside className="w-56 shrink-0 border-r border-zinc-200 bg-white p-4">
         <div className="px-2 text-sm font-bold tracking-tight">LetterStack</div>
         <nav className="mt-6 flex flex-col gap-1">
           {NAV.map((item) => {

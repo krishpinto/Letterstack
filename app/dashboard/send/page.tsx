@@ -274,7 +274,7 @@ function SuppressionSection() {
 // ── shared bits ───────────────────────────────────────────────────────────────
 
 const inputCls =
-  "flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500";
+  "flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-500";
 const btnDark = "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
 const btnAmber = "rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
 const btnRose = "rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
