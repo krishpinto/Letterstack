@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/send", label: "Send" },
+  { href: "/dashboard/campaigns", label: "Campaigns" },
   { href: "/editor-new", label: "Create template ↗" },
 ];
 

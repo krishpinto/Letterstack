@@ -50,6 +50,15 @@ export async function markCampaignRecipient(
     .where(eq(campaignRecipients.id, id));
 }
 
+/** Every recipient row for one campaign (for the recipients table). */
+export async function listCampaignRecipients(campaignId: string) {
+  return db
+    .select()
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId))
+    .orderBy(campaignRecipients.email);
+}
+
 /** Counts grouped by status — exactly what the live monitor polls. */
 export async function campaignProgress(campaignId: string) {
   const rows = await db

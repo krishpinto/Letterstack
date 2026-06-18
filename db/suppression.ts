@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "./client";
 import { suppressedEmails } from "./schema";
 
@@ -25,4 +25,13 @@ export async function isSuppressed(email: string): Promise<boolean> {
 /** Read the whole list (newest first) — for the lab card. */
 export async function listSuppressedEmails() {
   return db.select().from(suppressedEmails).orderBy(desc(suppressedEmails.createdAt));
+}
+
+/** The set of emails that bounced or complained — to flag them in a campaign. */
+export async function listBouncedEmails(): Promise<Set<string>> {
+  const rows = await db
+    .select({ email: suppressedEmails.email })
+    .from(suppressedEmails)
+    .where(inArray(suppressedEmails.reason, ["bounce", "complaint"]));
+  return new Set(rows.map((r) => r.email));
 }
