@@ -137,6 +137,7 @@ function CampaignSection() {
   const [status, setStatus] = useState<"idle" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
+  const [fromName, setFromName] = useState("");
 
   async function send() {
     setStatus("starting");
@@ -155,8 +156,12 @@ function CampaignSection() {
         await fetch("/api/campaigns/send-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // subject (if typed) overrides the document's subject
-          body: JSON.stringify({ document, subject: subject.trim() || undefined }),
+          // subject + from-name (if typed) override the document's
+          body: JSON.stringify({
+            document,
+            subject: subject.trim() || undefined,
+            fromName: fromName.trim() || undefined,
+          }),
         })
       ).json();
       if (!data.ok) {
@@ -183,6 +188,12 @@ function CampaignSection() {
         live monitor to watch it go out.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
+        <input
+          value={fromName}
+          onChange={(e) => setFromName(e.target.value)}
+          placeholder="From name (e.g. Krish Pinto)"
+          className={`${inputCls} min-w-[200px]`}
+        />
         <input
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
