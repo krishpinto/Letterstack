@@ -69,11 +69,20 @@ export async function userIdsForEmail(email: string): Promise<string[]> {
   return rows.map((r) => r.userId);
 }
 
-/** Every recipient row for one campaign (for the recipients table). */
+/** Every recipient row for one campaign (for the recipients table). Joins the
+ * contact to surface their display name alongside the per-campaign outcome. */
 export async function listCampaignRecipients(campaignId: string) {
   return db
-    .select()
+    .select({
+      id: campaignRecipients.id,
+      email: campaignRecipients.email,
+      name: recipients.name,
+      status: campaignRecipients.status,
+      sentAt: campaignRecipients.sentAt,
+      error: campaignRecipients.error,
+    })
     .from(campaignRecipients)
+    .leftJoin(recipients, eq(campaignRecipients.recipientId, recipients.id))
     .where(eq(campaignRecipients.campaignId, campaignId))
     .orderBy(campaignRecipients.email);
 }

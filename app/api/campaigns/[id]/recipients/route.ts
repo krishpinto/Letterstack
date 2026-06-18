@@ -31,6 +31,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     const recipients = rows.map((r) => ({
       id: r.id,
       email: r.email,
+      name: r.name,
+      sentAt: r.sentAt,
       // If SES later bounced/complained this address, show that — it's the most
       // important status. Otherwise the send outcome.
       status: bounced.has(r.email) ? "bounced" : r.status,
