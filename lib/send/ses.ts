@@ -32,6 +32,10 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
   const command = new SendEmailCommand({
     FromEmailAddress: `${input.fromName} <${input.fromEmail}>`,
     Destination: { ToAddresses: [input.to] },
+    // Routes this send through the SES configuration set, which is what emits
+    // delivery/bounce/complaint/open/click events into SNS → our webhook. When
+    // unset (e.g. a quick local test), SES just sends with no event tracking.
+    ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
     Content: {
       Simple: {
         Subject: { Data: input.subject, Charset: "UTF-8" },
