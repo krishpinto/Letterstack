@@ -2,7 +2,7 @@
 // functions in db/recipients.ts and reports back — no DB logic lives here.
 
 import { NextResponse } from "next/server";
-import { addRecipient, listRecipients } from "@/db/recipients";
+import { addRecipient, deleteRecipient, listRecipients } from "@/db/recipients";
 
 export const runtime = "nodejs";
 
@@ -43,6 +43,20 @@ export async function POST(request: Request) {
 
     const row = await addRecipient({ email, name: name || undefined });
     return NextResponse.json({ ok: true, recipient: row });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: realError(err) }, { status: 500 });
+  }
+}
+
+// DELETE ?id=… = remove one recipient.
+export async function DELETE(request: Request) {
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+  }
+  try {
+    await deleteRecipient(id);
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ ok: false, error: realError(err) }, { status: 500 });
   }

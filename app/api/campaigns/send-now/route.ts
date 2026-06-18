@@ -22,10 +22,16 @@ export async function POST(request: Request) {
     // Use the editor's document if it's valid; otherwise the sample.
     const doc = isEmailDocument(raw) ? normalizeDocument(raw) : initialEmailDocument;
 
+    // A subject typed on the send page wins over the document's subject.
+    const subject =
+      typeof body?.subject === "string" && body.subject.trim()
+        ? body.subject.trim()
+        : doc.subject || "Newsletter";
+
     const { html, text } = compileEmailDocument(doc);
     const campaign = await createCampaign({
       name: doc.name || "Untitled campaign",
-      subject: doc.subject || "Newsletter",
+      subject,
       fromName: doc.fromName || "LetterStack",
       fromEmail, // always the verified sender, whatever the editor set
       html,

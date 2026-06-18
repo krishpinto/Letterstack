@@ -73,6 +73,11 @@ function RecipientsSection() {
     }
   }
 
+  async function remove(id: string) {
+    await fetch(`/api/lab/recipients?id=${id}`, { method: "DELETE" });
+    await load();
+  }
+
   return (
     <Card title="Recipients" subtitle={`${list.length} contact${list.length === 1 ? "" : "s"}`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -107,9 +112,16 @@ function RecipientsSection() {
       {error && <ErrorBox>{error}</ErrorBox>}
       <ul className="mt-4 divide-y divide-zinc-100">
         {list.map((r) => (
-          <li key={r.id} className="flex items-center justify-between py-2 text-sm">
-            <span className="font-medium text-zinc-800">{r.email}</span>
+          <li key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+            <span className="min-w-0 flex-1 truncate font-medium text-zinc-800">{r.email}</span>
             <span className="text-zinc-500">{r.name || "—"}</span>
+            <button
+              onClick={() => remove(r.id)}
+              className="rounded px-1.5 text-zinc-300 hover:bg-red-50 hover:text-red-500"
+              title="Remove"
+            >
+              ✕
+            </button>
           </li>
         ))}
         {list.length === 0 && <li className="py-2 text-sm text-zinc-400">No recipients yet.</li>}
@@ -124,6 +136,7 @@ function CampaignSection() {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [subject, setSubject] = useState("");
 
   async function send() {
     setStatus("starting");
@@ -142,7 +155,8 @@ function CampaignSection() {
         await fetch("/api/campaigns/send-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ document }),
+          // subject (if typed) overrides the document's subject
+          body: JSON.stringify({ document, subject: subject.trim() || undefined }),
         })
       ).json();
       if (!data.ok) {
@@ -168,7 +182,13 @@ function CampaignSection() {
         to all non-suppressed recipients, in batches. You&apos;ll be taken to the
         live monitor to watch it go out.
       </p>
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="Subject (optional — overrides the editor's)"
+          className={`${inputCls} min-w-[260px]`}
+        />
         <button onClick={send} disabled={status === "starting"} className={btnAmber}>
           {status === "starting" ? "Starting…" : "Create & send campaign"}
         </button>

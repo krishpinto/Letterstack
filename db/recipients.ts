@@ -56,3 +56,8 @@ export async function markRecipientSent(id: string) {
 export async function resetSentFlags() {
   await db.update(recipients).set({ sentAt: null });
 }
+
+/** Remove one recipient from the audience. */
+export async function deleteRecipient(id: string) {
+  await db.delete(recipients).where(eq(recipients.id, id));
+}
