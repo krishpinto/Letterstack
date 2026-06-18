@@ -6,11 +6,9 @@ import { useSession, signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/contacts", label: "Contacts" },
-  { href: "/dashboard/send", label: "Send" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
-  { href: "/editor-new", label: "Create template ↗" },
+  { href: "/dashboard/templates", label: "Templates" },
+  { href: "/dashboard/contacts", label: "Audience" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
