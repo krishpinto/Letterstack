@@ -201,7 +201,16 @@ export function EditorNewShell() {
 
   const saveAndExit = React.useCallback(() => {
     saveDocument()
-    router.push("/")
+    // Return to where the editor was opened from (campaign / templates), not the
+    // public landing page — falls back to the campaigns list.
+    let dest = "/dashboard/campaigns"
+    try {
+      const ret = window.localStorage.getItem("letterstack-return-to")
+      if (ret) dest = ret
+    } catch {
+      // ignore
+    }
+    router.push(dest)
   }, [router, saveDocument])
 
   const addBlock = React.useCallback(
