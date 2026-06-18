@@ -41,6 +41,7 @@ function RecipientsSection() {
   const [list, setList] = useState<Recipient[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importNote, setImportNote] = useState<string | null>(null);
 
   async function load() {
     const data = await (await fetch("/api/lab/recipients")).json();
@@ -74,13 +75,35 @@ function RecipientsSection() {
 
   return (
     <Card title="Recipients" subtitle={`${list.length} contact${list.length === 1 ? "" : "s"}`}>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" className={inputCls} />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (optional)" className={inputCls} />
         <button onClick={add} disabled={saving} className={btnDark}>
           {saving ? "Adding…" : "Add"}
         </button>
+
+        <span className="text-xs text-zinc-300">or</span>
+
+        {/* Import option — UI only for now; the CSV/XLSX parsing is wired later. */}
+        <label className="cursor-pointer rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
+          Import CSV/XLSX
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) setImportNote(`Selected "${file.name}" — import parsing coming soon.`);
+              e.target.value = "";
+            }}
+          />
+        </label>
       </div>
+      {importNote && (
+        <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+          {importNote}
+        </div>
+      )}
       {error && <ErrorBox>{error}</ErrorBox>}
       <ul className="mt-4 divide-y divide-zinc-100">
         {list.map((r) => (
