@@ -228,11 +228,10 @@ export default function ContactsPage() {
               <button
                 key={key}
                 onClick={() => setStatusFilter(key)}
-                className={`inline-flex h-[38px] items-center gap-1.5 rounded-[9px] border px-3.5 text-[13.5px] font-medium transition-colors ${
-                  active
+                className={`inline-flex h-[38px] items-center gap-1.5 rounded-[9px] border px-3.5 text-[13.5px] font-medium transition-colors ${active
                     ? "border-indigo-300 bg-indigo-50 text-indigo-600"
                     : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
-                }`}
+                  }`}
               >
                 {key === "all" ? "All" : STATUS[key].label}
                 <span className={`text-xs font-semibold tabular-nums ${active ? "text-indigo-500" : "text-zinc-400"}`}>
@@ -300,9 +299,8 @@ export default function ContactsPage() {
                   key={c.id}
                   onMouseEnter={() => setHoverId(c.id)}
                   onMouseLeave={() => hoverId === c.id && setHoverId(null)}
-                  className={`group relative grid items-center border-b border-zinc-50 px-4 transition-colors ${
-                    isSelected ? "bg-indigo-50/50" : isHovered ? "bg-zinc-50/70" : ""
-                  }`}
+                  className={`group relative grid items-center border-b border-zinc-50 px-4 transition-colors ${isSelected ? "bg-indigo-50/50" : isHovered ? "bg-zinc-50/70" : ""
+                    }`}
                   style={{ gridTemplateColumns: "46px minmax(200px,2fr) 120px 100px 88px", height: 64 }}
                 >
                   {/* Checkbox */}
@@ -475,11 +473,10 @@ function Checkbox({ checked, indeterminate, onClick }: { checked: boolean; indet
   return (
     <button
       onClick={onClick}
-      className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] text-[11px] font-bold transition-colors ${
-        checked || indeterminate
+      className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] text-[11px] font-bold transition-colors ${checked || indeterminate
           ? "border-indigo-600 bg-indigo-600 text-white"
           : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
-      }`}
+        }`}
     >
       {checked ? "✓" : indeterminate ? "–" : ""}
     </button>
@@ -490,9 +487,8 @@ function BulkBtn({ onClick, children, danger }: { onClick: () => void; children:
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium ${
-        danger ? "border-red-200 text-red-600 hover:bg-red-50" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
-      }`}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium ${danger ? "border-red-200 text-red-600 hover:bg-red-50" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+        }`}
     >
       {children}
     </button>

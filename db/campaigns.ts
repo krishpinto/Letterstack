@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaigns } from "./schema";
+import { campaigns, campaignRecipients } from "./schema";
 
 /** Create a draft campaign owned by `userId` — freezes the compiled content. */
 export async function createCampaign(
@@ -30,10 +30,32 @@ export async function createCampaign(
   return row;
 }
 
-/** This user's campaigns, newest first. */
+/**
+ * This user's campaigns, newest first — each with its frozen audience size and
+ * how many actually sent. The two counts come from campaign_recipients (rows
+ * only exist once a send starts), so drafts report 0/0.
+ */
 export async function listCampaigns(userId: string) {
   return db
-    .select()
+    .select({
+      id: campaigns.id,
+      name: campaigns.name,
+      subject: campaigns.subject,
+      fromName: campaigns.fromName,
+      fromEmail: campaigns.fromEmail,
+      status: campaigns.status,
+      createdAt: campaigns.createdAt,
+      sentAt: campaigns.sentAt,
+      audienceCount: sql<number>`(
+        select count(*)::int from ${campaignRecipients}
+        where ${campaignRecipients.campaignId} = ${campaigns.id}
+      )`,
+      sentCount: sql<number>`(
+        select count(*)::int from ${campaignRecipients}
+        where ${campaignRecipients.campaignId} = ${campaigns.id}
+          and ${campaignRecipients.status} = 'sent'
+      )`,
+    })
     .from(campaigns)
     .where(eq(campaigns.userId, userId))
     .orderBy(desc(campaigns.createdAt));

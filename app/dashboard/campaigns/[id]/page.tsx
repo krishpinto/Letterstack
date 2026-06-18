@@ -74,9 +74,8 @@ export default function CampaignMonitor() {
         {/* Progress bar */}
         <div className="mt-3 h-3 overflow-hidden rounded-full bg-zinc-100">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              finished ? "bg-emerald-500" : "bg-amber-500"
-            }`}
+            className={`h-full rounded-full transition-all duration-500 ${finished ? "bg-emerald-500" : "bg-amber-500"
+              }`}
             style={{ width: `${pct}%` }}
           />
         </div>
