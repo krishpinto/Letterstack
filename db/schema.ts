@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, unique, jsonb } from "drizzle-orm/pg-core";
+import type { EmailDocument } from "@/lib/email/document";
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
@@ -7,6 +8,10 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   passwordHash: text("password_hash").notNull(),
+  // The account's branded sending subdomain slug, e.g. "ciba" → mail goes out
+  // from newsletter@ciba.letterstack.site (a subdomain of the SES-verified
+  // parent domain, so no per-client verification needed).
+  sendingSlug: text("sending_slug"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -90,6 +95,9 @@ export const campaigns = pgTable("campaigns", {
   subject: text("subject").notNull(),
   fromName: text("from_name").notNull(),
   fromEmail: text("from_email").notNull(),
+  // The editable design while the campaign is a draft. The snapshots below are
+  // recompiled from this on every edit and frozen for good at send time.
+  document: jsonb("document").$type<EmailDocument>(),
   htmlSnapshot: text("html_snapshot").notNull(), // frozen compiled HTML
   textSnapshot: text("text_snapshot").notNull(),
   status: text("status").notNull().default("draft"), // draft | sending | sent

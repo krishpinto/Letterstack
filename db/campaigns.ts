@@ -1,8 +1,13 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { campaigns, campaignRecipients } from "./schema";
+import type { EmailDocument } from "@/lib/email/document";
 
-/** Create a draft campaign owned by `userId` — freezes the compiled content. */
+/**
+ * Create a draft campaign owned by `userId`. `document` is the editable design
+ * (kept while the campaign is a draft); html/text are the compiled snapshot,
+ * recompiled from the document on every edit and frozen at send time.
+ */
 export async function createCampaign(
   userId: string,
   input: {
@@ -12,6 +17,7 @@ export async function createCampaign(
     fromEmail: string;
     html: string;
     text: string;
+    document?: EmailDocument;
   },
 ) {
   const [row] = await db
@@ -22,12 +28,47 @@ export async function createCampaign(
       subject: input.subject,
       fromName: input.fromName,
       fromEmail: input.fromEmail,
+      document: input.document,
       htmlSnapshot: input.html, // frozen — what actually gets sent
       textSnapshot: input.text,
       status: "draft",
     })
     .returning();
   return row;
+}
+
+/**
+ * Update a draft campaign's design + recompiled snapshot. Scoped to the owner
+ * AND to status "draft" so a sent campaign's record can never be rewritten.
+ * Returns the updated row, or null if it wasn't an editable draft of this user.
+ */
+export async function updateCampaignDraft(
+  id: string,
+  userId: string,
+  input: {
+    name?: string;
+    subject?: string;
+    fromName?: string;
+    fromEmail?: string;
+    html: string;
+    text: string;
+    document: EmailDocument;
+  },
+) {
+  const [row] = await db
+    .update(campaigns)
+    .set({
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.subject !== undefined ? { subject: input.subject } : {}),
+      ...(input.fromName !== undefined ? { fromName: input.fromName } : {}),
+      ...(input.fromEmail ? { fromEmail: input.fromEmail } : {}),
+      document: input.document,
+      htmlSnapshot: input.html,
+      textSnapshot: input.text,
+    })
+    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId), eq(campaigns.status, "draft")))
+    .returning();
+  return row ?? null;
 }
 
 /**
