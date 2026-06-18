@@ -26,8 +26,8 @@ const STATUS = {
   sent: { label: "Sent", bg: "bg-emerald-50", fg: "text-emerald-700", dot: "bg-emerald-500" },
 } as const;
 
-// Name | Status | Send to | Recipients | Created | chevron
-const GRID = "minmax(220px,2.4fr) 130px 140px 120px 120px 36px";
+// checkbox | Name | Status | Send to | Recipients | Created | chevron
+const GRID = "40px minmax(200px,2.4fr) 130px 140px 110px 110px 36px";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -40,6 +40,7 @@ export default function CampaignsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch("/api/campaigns")
@@ -58,6 +59,34 @@ export default function CampaignsPage() {
     return c;
   }, [list]);
 
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}? This can't be undone.`)) {
+      return;
+    }
+    const results = await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/campaigns/${id}`, { method: "DELETE" })
+          .then((r) => r.json())
+          .then((d) => ({ id, ok: Boolean(d.ok) }))
+          .catch(() => ({ id, ok: false })),
+      ),
+    );
+    const deleted = new Set(results.filter((r) => r.ok).map((r) => r.id));
+    setList((prev) => prev.filter((c) => !deleted.has(c.id)));
+    setSelected(new Set());
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return list.filter((c) => {
@@ -66,6 +95,17 @@ export default function CampaignsPage() {
       return true;
     });
   }, [list, query, statusFilter]);
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id));
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const ids = filtered.map((c) => c.id);
+      const allOn = ids.length > 0 && ids.every((id) => next.has(id));
+      ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }
 
   return (
     <div className="p-8">
@@ -117,12 +157,33 @@ export default function CampaignsPage() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mt-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5">
+          <span className="text-sm font-medium text-indigo-700">
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelected(new Set())} className="text-sm font-medium text-indigo-600 hover:underline">
+              Clear
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            >
+              <TrashIcon /> Delete
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="mt-5 overflow-hidden rounded-xl border border-zinc-200 bg-white">
         <div
           className="grid items-center border-b border-zinc-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-400"
           style={{ gridTemplateColumns: GRID }}
         >
+          <Checkbox checked={allVisibleSelected} onChange={toggleAll} />
           <span>Campaign</span>
           <span>Status</span>
           <span>Send to</span>
@@ -159,12 +220,24 @@ export default function CampaignsPage() {
             const tone = STATUS[c.status as keyof typeof STATUS] ?? STATUS.draft;
             const isDraft = c.status === "draft";
             return (
-              <button
+              <div
                 key={c.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => router.push(`/dashboard/campaigns/${c.id}`)}
-                className="grid w-full items-center border-b border-zinc-50 px-4 text-left transition-colors last:border-0 hover:bg-zinc-50/70"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") router.push(`/dashboard/campaigns/${c.id}`);
+                }}
+                className={`group grid w-full cursor-pointer items-center border-b border-zinc-50 px-4 text-left transition-colors last:border-0 ${
+                  selected.has(c.id) ? "bg-indigo-50/50" : "hover:bg-zinc-50/70"
+                }`}
                 style={{ gridTemplateColumns: GRID, height: 64 }}
               >
+                {/* Checkbox */}
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Checkbox checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} />
+                </div>
+
                 {/* Name */}
                 <div className="flex min-w-0 items-center gap-3 pr-4">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
@@ -210,7 +283,7 @@ export default function CampaignsPage() {
                 <div className="flex justify-end text-zinc-300">
                   <ChevronIcon />
                 </div>
-              </button>
+              </div>
             );
           })}
       </div>
@@ -384,10 +457,38 @@ function MailIcon() {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 function ChevronIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m9 18 6-6-6-6" />
     </svg>
+  );
+}
+
+function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] text-[11px] font-bold transition-colors ${
+        checked
+          ? "border-indigo-600 bg-indigo-600 text-white"
+          : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
+      }`}
+      aria-label="Select"
+    >
+      ✓
+    </button>
   );
 }
