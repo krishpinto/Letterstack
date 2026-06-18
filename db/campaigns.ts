@@ -66,3 +66,15 @@ export async function markCampaignSending(id: string) {
     .set({ status: "sending", sentAt: new Date() })
     .where(eq(campaigns.id, id));
 }
+
+/**
+ * Flip a campaign to "sent" — called by the last batch worker to finish, once no
+ * recipients remain pending. Scoped to a campaign still "sending" so a late retry
+ * can't resurrect a finished campaign.
+ */
+export async function markCampaignSent(id: string) {
+  await db
+    .update(campaigns)
+    .set({ status: "sent" })
+    .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")));
+}

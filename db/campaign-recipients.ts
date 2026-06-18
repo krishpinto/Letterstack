@@ -78,6 +78,20 @@ export async function listCampaignRecipients(campaignId: string) {
     .orderBy(campaignRecipients.email);
 }
 
+/** How many recipients of this campaign are still pending (not yet sent/failed). */
+export async function countPendingForCampaign(campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignRecipients)
+    .where(
+      and(
+        eq(campaignRecipients.campaignId, campaignId),
+        eq(campaignRecipients.status, "pending"),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
 /** Counts grouped by status — exactly what the live monitor polls. */
 export async function campaignProgress(campaignId: string) {
   const rows = await db

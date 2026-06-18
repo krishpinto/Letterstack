@@ -105,7 +105,7 @@ export async function runCampaign(
   const people = await listUnsentRecipients(userId);
   const batches = chunk(people, BATCH_SIZE);
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = appBaseUrl();
 
   // Hand each batch to QStash. It will call our worker endpoint once per batch,
   // paced and retried. We send only the recipient IDs — the worker re-checks
@@ -193,7 +193,7 @@ export async function startCampaign(campaignId: string) {
     batches.map((batch) =>
       qstash.publishJSON({
         url: `${appUrl}/api/send/campaign-worker`,
-        body: { content, userId: campaign.userId, campaignRecipientIds: batch.map((r) => r.id) },
+        body: { content, userId: campaign.userId, campaignId, campaignRecipientIds: batch.map((r) => r.id) },
       }),
     ),
   );
