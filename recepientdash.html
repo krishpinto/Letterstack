@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    ::-webkit-scrollbar{width:11px;height:11px;}
+    ::-webkit-scrollbar-thumb{background:#d4d8dd;border-radius:8px;border:3px solid transparent;background-clip:content-box;}
+    ::-webkit-scrollbar-thumb:hover{background:#b8bec6;background-clip:content-box;}
+    @keyframes ls-rise{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
+    @keyframes ls-pop{from{opacity:0;transform:scale(.97) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}
+    @keyframes ls-fade{from{opacity:0;}to{opacity:1;}}
+  </style>
+</helmet>
+
+<div style="display:flex;height:100vh;width:100%;font-family:'Geist',-apple-system,system-ui,sans-serif;background:#f6f7f8;color:#0f172a;-webkit-font-smoothing:antialiased;overflow:hidden;">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside style="width:244px;flex:none;background:#fff;border-right:1px solid #eaecef;display:flex;flex-direction:column;height:100%;">
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 18px 14px;">
+      <div style="width:30px;height:30px;border-radius:8px;background:{{ accent }};display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(16,24,40,.12);">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 13l9-5.5"/><path d="M4 7h16v11H4z"/></svg>
+      </div>
+      <span style="font-size:15.5px;font-weight:600;letter-spacing:-.01em;">Letterstack</span>
+    </div>
+
+    <nav style="flex:1;overflow-y:auto;padding:6px 12px 12px;">
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/></svg>Home
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7Z"/></svg>Broadcasts
+      </div>
+
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#aab2bd;padding:16px 10px 6px;">Audience</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;font-size:13.5px;font-weight:600;cursor:pointer;background:{{ navActiveBg }};color:{{ accent }};">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.1"/><path d="M3.5 19a5.6 5.6 0 0 1 11 0"/><circle cx="17.5" cy="9" r="2.3"/><path d="M16 18.5a4.6 4.6 0 0 1 5-1.6"/></svg>Contacts
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.1"/><circle cx="4.5" cy="12" r="1.1"/><circle cx="4.5" cy="18" r="1.1"/></svg>Lists
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v8.5h8.5"/></svg>Segments
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M6.2 6.2 17.8 17.8"/></svg>Suppressions
+      </div>
+
+      <div style="font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#aab2bd;padding:16px 10px 6px;">Insights</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19V11M12 19V5M19 19v-7"/></svg>Analytics
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#475569;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f4f5f7;color:#0f172a;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 0 1 15-5.5"/><path d="M20.5 12a8.5 8.5 0 0 1-15 5.5"/><path d="M18.5 3.5v3.5h-3.5"/><path d="M5.5 20.5V17h3.5"/></svg>Deliverability
+      </div>
+    </nav>
+
+    <div style="padding:10px 12px;border-top:1px solid #eef0f2;">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;cursor:pointer;" style-hover="background:#f4f5f7;">
+        <div style="width:30px;height:30px;border-radius:50%;background:#e0e7ff;color:#4338ca;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none;">KP</div>
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Kavi Prakash</div>
+          <div style="font-size:11.5px;color:#94a3b8;">Pro workspace</div>
+        </div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 9 4-4 4 4"/><path d="m8 15 4 4 4-4"/></svg>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main style="flex:1;min-width:0;height:100%;overflow-y:auto;display:flex;flex-direction:column;">
+
+    <!-- Page header -->
+    <div style="padding:22px 28px 0;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+        <div>
+          <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.02em;">Contacts</h1>
+          <div style="margin-top:5px;font-size:13.5px;color:#64748b;">
+            <span style="font-weight:600;color:#334155;font-variant-numeric:tabular-nums;">{{ countLabel }}</span>
+            <span style="color:#cbd2da;margin:0 8px;">·</span>{{ headerMeta }}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;flex:none;">
+          <button style="display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 14px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#334155;font-family:inherit;font-size:13.5px;font-weight:550;cursor:pointer;" style-hover="background:#f7f8f9;border-color:#d6dadf;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 19h14"/></svg>Export
+          </button>
+          <button onClick="{{ openImport }}" style="display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:9px;border:none;background:{{ accent }};color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 1px 2px rgba(16,24,40,.12);" style-hover="filter:brightness(.93);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add recipients
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div style="display:flex;align-items:center;gap:12px;padding:18px 28px 14px;flex-wrap:wrap;">
+      <div style="position:relative;width:300px;flex:none;">
+        <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa3af" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+        <input value="{{ query }}" onInput="{{ onSearch }}" placeholder="Search name, email, company…" style="width:100%;height:38px;padding:0 12px 0 36px;border:1px solid #e2e5e9;border-radius:9px;font-family:inherit;font-size:13.5px;color:#0f172a;background:#fff;outline:none;" style-focus="border-color:#a5b4fc;box-shadow:0 0 0 3px rgba(99,102,241,.12);" />
+      </div>
+
+      <div style="display:flex;align-items:center;gap:7px;">
+        <sc-for list="{{ pills }}" as="pill" hint-placeholder-count="4">
+          <div onClick="{{ pill.onClick }}" style="{{ pill.style }}">{{ pill.label }}<span style="{{ pill.countStyle }}">{{ pill.countLabel }}</span></div>
+        </sc-for>
+      </div>
+
+      <div style="width:1px;height:24px;background:#e6e8eb;"></div>
+      <button style="display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 13px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#475569;font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f7f8f9;border-color:#d6dadf;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>Filters
+      </button>
+
+      <div style="flex:1;"></div>
+      <button style="display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 13px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#475569;font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;" style-hover="background:#f7f8f9;border-color:#d6dadf;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l-3 3M17 20l3-3"/></svg>Sort
+      </button>
+    </div>
+
+    <!-- Table card -->
+    <div style="margin:0 28px 28px;border:1px solid #e8eaed;border-radius:12px;background:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.03);display:flex;flex-direction:column;min-height:0;">
+
+      <!-- Selection bar -->
+      <sc-if value="{{ selectionActive }}" hint-placeholder-val="{{ false }}">
+        <div style="{{ selBarStyle }}">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <span style="font-size:13.5px;font-weight:600;">{{ selectedLabel }}</span>
+            <sc-if value="{{ showSelectAll }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ selectAllUniverse }}" style="background:none;border:none;font-family:inherit;font-size:13px;font-weight:600;color:{{ accent }};cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px;">{{ selectAllLabel }}</button>
+            </sc-if>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button onClick="{{ bulkAddList }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #d9dde2;background:#fff;color:#334155;font-family:inherit;font-size:13px;font-weight:550;cursor:pointer;" style-hover="background:#f7f8f9;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M18 9v8M14 13h8"/></svg>Add to list
+            </button>
+            <button onClick="{{ bulkSuppress }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #d9dde2;background:#fff;color:#334155;font-family:inherit;font-size:13px;font-weight:550;cursor:pointer;" style-hover="background:#f7f8f9;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M6.2 6.2 17.8 17.8"/></svg>Suppress
+            </button>
+            <button onClick="{{ bulkExport }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #d9dde2;background:#fff;color:#334155;font-family:inherit;font-size:13px;font-weight:550;cursor:pointer;" style-hover="background:#f7f8f9;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 19h14"/></svg>Export
+            </button>
+            <button onClick="{{ bulkDelete }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #f3c9c4;background:#fff;color:#c0392b;font-family:inherit;font-size:13px;font-weight:550;cursor:pointer;" style-hover="background:#fef2f1;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>Delete
+            </button>
+            <div style="width:1px;height:22px;background:{{ selBarDivider }};margin:0 2px;"></div>
+            <button onClick="{{ clearSelection }}" title="Clear selection" style="width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:#64748b;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:rgba(15,23,42,.06);color:#0f172a;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- Column header -->
+      <div style="display:grid;grid-template-columns:46px minmax(230px,2.6fr) minmax(150px,1.6fr) 116px 128px 104px 88px;align-items:center;height:40px;padding:0 14px 0 16px;background:#fbfbfc;border-bottom:1px solid #edeef1;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#9aa3af;">
+        <div onClick="{{ toggleAll }}" style="{{ headBoxStyle }}">{{ headCheck }}</div>
+        <div>Name</div>
+        <div>Company</div>
+        <div>Location</div>
+        <div>Status</div>
+        <div>Added</div>
+        <div style="text-align:right;">Open rate</div>
+      </div>
+
+      <!-- Rows -->
+      <sc-if value="{{ hasResults }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <sc-for list="{{ rows }}" as="row" hint-placeholder-count="9">
+            <div onMouseEnter="{{ row.onEnter }}" onMouseLeave="{{ row.onLeave }}" style="position:relative;display:grid;grid-template-columns:46px minmax(230px,2.6fr) minmax(150px,1.6fr) 116px 128px 104px 88px;align-items:center;height:{{ row.rowH }};padding:0 14px 0 16px;border-bottom:1px solid #f2f3f5;background:{{ row.bg }};">
+              <div onClick="{{ row.onToggle }}" style="{{ row.boxStyle }}">{{ row.check }}</div>
+
+              <div style="display:flex;align-items:center;gap:12px;min-width:0;padding-right:14px;">
+                <div style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;flex:none;background:{{ row.avBg }};color:{{ row.avFg }};">{{ row.initials }}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:14px;font-weight:550;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.name }}</div>
+                  <div style="font-size:12.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.email }}</div>
+                </div>
+              </div>
+
+              <div style="min-width:0;padding-right:12px;">
+                <div style="font-size:13.5px;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.company }}</div>
+                <div style="font-size:12px;color:#9aa3af;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.role }}</div>
+              </div>
+
+              <div style="font-size:13px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px;">{{ row.location }}</div>
+
+              <div><span style="{{ row.statusStyle }}"><span style="{{ row.dotStyle }}"></span>{{ row.statusLabel }}</span></div>
+
+              <div style="font-size:13px;color:#64748b;font-variant-numeric:tabular-nums;">{{ row.added }}</div>
+
+              <div style="{{ row.openStyle }}">{{ row.openRate }}</div>
+
+              <!-- hover quick actions -->
+              <div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:2px;background:linear-gradient(90deg,transparent,{{ row.bg }} 22%);padding-left:24px;opacity:{{ row.actionsOpacity }};transition:opacity .12s;">
+                <button onClick="{{ row.onSend }}" title="Send test email" style="width:30px;height:30px;border-radius:7px;border:1px solid transparent;background:transparent;color:#64748b;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#eef0f3;color:#0f172a;border-color:#e2e5e9;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7Z"/></svg>
+                </button>
+                <button onClick="{{ row.onAdd }}" title="Add to list" style="width:30px;height:30px;border-radius:7px;border:1px solid transparent;background:transparent;color:#64748b;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#eef0f3;color:#0f172a;border-color:#e2e5e9;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h9M4 18h7"/><path d="M17 10v8M13 14h8"/></svg>
+                </button>
+                <button onClick="{{ row.onRemove }}" title="Remove contact" style="width:30px;height:30px;border-radius:7px;border:1px solid transparent;background:transparent;color:#64748b;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#fef2f1;color:#c0392b;border-color:#f3c9c4;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+                </button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- Empty / no-results -->
+      <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 24px 80px;text-align:center;">
+          <div style="width:56px;height:56px;border-radius:14px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9aa3af" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+          </div>
+          <div style="font-size:15.5px;font-weight:600;color:#1f2937;">No contacts match your filters</div>
+          <div style="font-size:13.5px;color:#94a3b8;margin-top:5px;max-width:340px;">Try a different search term, or clear the active status filter to see everyone.</div>
+          <button onClick="{{ clearFilters }}" style="margin-top:18px;height:36px;padding:0 16px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#334155;font-family:inherit;font-size:13.5px;font-weight:550;cursor:pointer;" style-hover="background:#f7f8f9;">Clear filters</button>
+        </div>
+      </sc-if>
+
+      <!-- Footer / pagination -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border-top:1px solid #edeef1;background:#fbfbfc;">
+        <div style="font-size:12.5px;color:#94a3b8;font-variant-numeric:tabular-nums;">{{ shownLabel }}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button style="height:30px;min-width:30px;padding:0 8px;border-radius:7px;border:1px solid #e6e8eb;background:#fff;color:#94a3b8;font-family:inherit;font-size:13px;cursor:pointer;">‹</button>
+          <button style="height:30px;min-width:30px;border-radius:7px;border:1px solid {{ accent }};background:{{ navActiveBg }};color:{{ accent }};font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;">1</button>
+          <button style="height:30px;min-width:30px;border-radius:7px;border:1px solid #e6e8eb;background:#fff;color:#475569;font-family:inherit;font-size:13px;cursor:pointer;" style-hover="background:#f7f8f9;">2</button>
+          <button style="height:30px;min-width:30px;border-radius:7px;border:1px solid #e6e8eb;background:#fff;color:#475569;font-family:inherit;font-size:13px;cursor:pointer;" style-hover="background:#f7f8f9;">3</button>
+          <span style="color:#cbd2da;font-size:13px;padding:0 2px;">…</span>
+          <button style="height:30px;min-width:30px;border-radius:7px;border:1px solid #e6e8eb;background:#fff;color:#475569;font-family:inherit;font-size:13px;cursor:pointer;" style-hover="background:#f7f8f9;">18</button>
+          <button style="height:30px;min-width:30px;padding:0 8px;border-radius:7px;border:1px solid #e6e8eb;background:#fff;color:#475569;font-family:inherit;font-size:13px;cursor:pointer;" style-hover="background:#f7f8f9;">›</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ IMPORT MODAL ============ -->
+  <sc-if value="{{ importOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeImport }}" style="position:fixed;inset:0;background:rgba(15,23,42,.42);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:50;animation:ls-fade .14s ease;">
+      <div onClick="{{ stop }}" style="width:564px;max-width:92vw;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(16,24,40,.28);overflow:hidden;animation:ls-pop .18s cubic-bezier(.2,.8,.3,1);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 0;">
+          <div style="font-size:17px;font-weight:600;letter-spacing:-.01em;">Import recipients</div>
+          <button onClick="{{ closeImport }}" style="width:32px;height:32px;border-radius:8px;border:none;background:transparent;color:#94a3b8;display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="background:#f3f4f6;color:#0f172a;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- step: upload -->
+        <sc-if value="{{ importStepUpload }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:14px 22px 22px;">
+            <p style="margin:0 0 16px;font-size:13.5px;color:#64748b;line-height:1.5;">Upload a CSV with an <span style="font-family:'Geist Mono',monospace;font-size:12.5px;color:#334155;background:#f3f4f6;padding:1px 6px;border-radius:5px;">email</span> column. We'll match names, companies and tags automatically.</p>
+            <div style="border:1.5px dashed #d2d7dd;border-radius:12px;background:#fafbfc;padding:30px 20px;display:flex;flex-direction:column;align-items:center;text-align:center;cursor:pointer;" style-hover="border-color:#a5b4fc;background:#f8f9ff;">
+              <div style="width:46px;height:46px;border-radius:11px;background:{{ navActiveBg }};color:{{ accent }};display:flex;align-items:center;justify-content:center;margin-bottom:12px;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M5 16v3h14v-3"/></svg>
+              </div>
+              <div style="font-size:14px;font-weight:550;color:#1f2937;">Drag a CSV here, or <span style="color:{{ accent }};">browse files</span></div>
+              <div style="font-size:12.5px;color:#9aa3af;margin-top:4px;">Up to 50,000 rows · CSV or TSV</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin:16px 0;">
+              <div style="flex:1;height:1px;background:#edeef1;"></div>
+              <span style="font-size:12px;color:#aab2bd;">or</span>
+              <div style="flex:1;height:1px;background:#edeef1;"></div>
+            </div>
+            <button style="width:100%;height:40px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#334155;font-family:inherit;font-size:13.5px;font-weight:550;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;" style-hover="background:#f7f8f9;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>Paste from clipboard
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid #edeef1;background:#fbfbfc;">
+            <button onClick="{{ closeImport }}" style="height:38px;padding:0 15px;border-radius:9px;border:1px solid #e2e5e9;background:#fff;color:#475569;font-family:inherit;font-size:13.5px;font-weight:550;cursor:pointer;" style-hover="background:#f4f5f7;">Cancel</button>
+            <button onClick="{{ runImport }}" style="height:38px;padding:0 17px;border-radius:9px;border:none;background:{{ accent }};color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="filter:brightness(.93);">Import file</button>
+          </div>
+        </sc-if>
+
+        <!-- step: results -->
+        <sc-if value="{{ importStepResults }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:18px 22px 22px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+              <div style="width:42px;height:42px;border-radius:11px;background:#ecfdf3;color:#067647;display:flex;align-items:center;justify-content:center;flex:none;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>
+              </div>
+              <div>
+                <div style="font-size:15px;font-weight:600;">Import complete</div>
+                <div style="font-size:13px;color:#94a3b8;font-variant-numeric:tabular-nums;">Processed {{ resProcessed }} rows from contacts.csv</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
+              <div style="border:1px solid #d6f0e0;background:#f4fcf7;border-radius:11px;padding:14px;">
+                <div style="font-size:26px;font-weight:700;color:#067647;font-variant-numeric:tabular-nums;letter-spacing:-.02em;">{{ resAdded }}</div>
+                <div style="font-size:12px;color:#3f9a6a;margin-top:2px;font-weight:500;">Added</div>
+              </div>
+              <div style="border:1px solid #f3e2c4;background:#fdf9f0;border-radius:11px;padding:14px;">
+                <div style="font-size:26px;font-weight:700;color:#b45309;font-variant-numeric:tabular-nums;letter-spacing:-.02em;">{{ resDup }}</div>
+                <div style="font-size:12px;color:#c08a3e;margin-top:2px;font-weight:500;">Duplicates</div>
+              </div>
+              <div style="border:1px solid #f3d4cf;background:#fdf4f3;border-radius:11px;padding:14px;">
+                <div style="font-size:26px;font-weight:700;color:#c0392b;font-variant-numeric:tabular-nums;letter-spacing:-.02em;">{{ resInvalid }}</div>
+                <div style="font-size:12px;color:#cc6b5f;margin-top:2px;font-weight:500;">Invalid</div>
+              </div>
+            </div>
+            <div style="border:1px solid #edeef1;border-radius:11px;overflow:hidden;">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #f2f3f5;font-size:13px;color:#475569;">
+                <span style="width:7px;height:7px;border-radius:50%;background:#16a34a;flex:none;"></span><span style="font-variant-numeric:tabular-nums;"><b style="font-weight:600;color:#1f2937;">{{ resAdded }}</b> new contacts added to All contacts</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #f2f3f5;font-size:13px;color:#475569;">
+                <span style="width:7px;height:7px;border-radius:50%;background:#ea580c;flex:none;"></span><span style="font-variant-numeric:tabular-nums;"><b style="font-weight:600;color:#1f2937;">{{ resDup }}</b> already existed — merged, not duplicated</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:13px;color:#475569;">
+                <span style="width:7px;height:7px;border-radius:50%;background:#d4453a;flex:none;"></span><span style="font-variant-numeric:tabular-nums;"><b style="font-weight:600;color:#1f2937;">{{ resInvalid }}</b> rows skipped — malformed email address</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 22px;border-top:1px solid #edeef1;background:#fbfbfc;">
+            <button style="height:38px;padding:0 4px;border:none;background:none;color:#64748b;font-family:inherit;font-size:13px;font-weight:550;cursor:pointer;" style-hover="color:#0f172a;">Download error report</button>
+            <button onClick="{{ finishImport }}" style="height:38px;padding:0 18px;border-radius:9px;border:none;background:{{ accent }};color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="filter:brightness(.93);">Done</button>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TOAST ============ -->
+  <sc-if value="{{ toastShown }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;background:#1f2430;color:#fff;padding:11px 16px;border-radius:11px;box-shadow:0 12px 30px rgba(16,24,40,.3);font-size:13.5px;font-weight:500;animation:ls-rise .2s cubic-bezier(.2,.8,.3,1);">
+      <span style="width:7px;height:7px;border-radius:50%;background:#4ade80;flex:none;"></span>{{ toast }}
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: &quot;100%&quot;, &quot;height&quot;: &quot;100%&quot; },
+  &quot;accent&quot;: { &quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#4f46e5&quot;, &quot;tsType&quot;: &quot;string&quot; },
+  &quot;density&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;comfortable&quot;, &quot;compact&quot;], &quot;default&quot;: &quot;comfortable&quot;, &quot;tsType&quot;: &quot;string&quot; },
+  &quot;zebra&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot; }
+}">
+const STATUS = {
+  subscribed: { label: 'Subscribed', bg: '#ecfdf3', fg: '#067647', dot: '#16a34a' },
+  bounced:    { label: 'Bounced',    bg: '#fff4ed', fg: '#c2410c', dot: '#ea580c' },
+  suppressed: { label: 'Suppressed', bg: '#f1f5f9', fg: '#64748b', dot: '#94a3b8' },
+};
+const AVA = [
+  ['#e0e7ff','#4338ca'], ['#fce7f3','#be185d'], ['#dcfce7','#15803d'],
+  ['#fef3c7','#b45309'], ['#e0f2fe','#0369a1'], ['#f3e8ff','#7e22ce'],
+  ['#fee2e2','#b91c1c'], ['#cffafe','#0e7490'],
+];
+const SEED = [
+  ['Maya Chen','maya@linear.app','Linear','Head of Growth','San Francisco','subscribed',62,'May 28'],
+  ['Daniel Okafor','daniel.okafor@vercel.com','Vercel','Developer Advocate','Remote','subscribed',48,'May 26'],
+  ['Priya Nair','priya@notion.so','Notion','Lifecycle Marketing','New York','subscribed',71,'May 24'],
+  ['Tom Hargreave','tom@figma.com','Figma','Product Designer','London','bounced',0,'May 22'],
+  ['Sofia Ricci','sofia.ricci@ramp.com','Ramp','Demand Generation','New York','subscribed',55,'May 20'],
+  ['Lucas Meyer','lucas@retool.com','Retool','Co-founder','Berlin','suppressed',0,'May 19'],
+  ['Aisha Khan','aisha@webflow.com','Webflow','Content Lead','Toronto','subscribed',64,'May 18'],
+  ['Ben Carter','ben.carter@loom.com','Loom','Marketing Manager','Austin','subscribed',39,'May 16'],
+  ['Elena Sokolova','elena@airtable.com','Airtable','Growth PM','Remote','subscribed',58,'May 15'],
+  ['Marcus Lee','marcus@mercury.com','Mercury','Brand Lead','San Francisco','subscribed',67,'May 14'],
+  ['Hannah Brooks','hannah@brex.com','Brex','Email Marketer','New York','bounced',0,'May 12'],
+  ['Raj Patel','raj.patel@census.co','Census','Data Lead','Remote','subscribed',44,'May 11'],
+  ['Clara Nguyen','clara@amplitude.com','Amplitude','Product Marketing','San Francisco','subscribed',52,'May 10'],
+  ['Felix Wagner','felix@segment.com','Segment','Growth Engineer','Berlin','suppressed',0,'May 9'],
+  ['Grace Adeyemi','grace@plaid.com','Plaid','Comms','London','subscribed',60,'May 8'],
+  ['Oliver Smith','oliver@render.com','Render','Developer Relations','Remote','subscribed',41,'May 6'],
+  ['Nina Larsson','nina@supabase.com','Supabase','Community','Stockholm','subscribed',73,'May 5'],
+  ['Diego Torres','diego@datadoghq.com','Datadog','Field Marketing','Austin','bounced',0,'May 4'],
+  ['Yuki Tanaka','yuki@stripe.com','Stripe','Lifecycle','Tokyo','subscribed',49,'May 2'],
+  ['Sara Goldberg','sara@clearbit.com','Clearbit','Growth','New York','subscribed',57,'Apr 30'],
+  ['Mohammed Ali','mohammed@mixpanel.com','Mixpanel','Product Marketing','Dubai','subscribed',46,'Apr 29'],
+  ['Laura Pereira','laura@posthog.com','PostHog','Content','Lisbon','suppressed',0,'Apr 28'],
+  ['Kevin Zhou','kevin@cron.com','Cron','Founder','San Francisco','subscribed',65,'Apr 26'],
+  ['Emma Wright','emma@height.app','Height','Operations','London','subscribed',38,'Apr 25'],
+];
+
+class Component extends DCLogic {
+  state = {
+    query: '', statusFilter: 'all', selected: {}, hoverId: null,
+    importOpen: false, importStep: 'upload', importResults: null,
+    toast: null, addedTotal: 0, removedCount: 0,
+  };
+
+  constructor(props) {
+    super(props);
+    this.contacts = SEED.map((r, i) => {
+      const parts = r[0].split(' ');
+      const initials = (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+      return { id: 'c' + i, n: r[0], e: r[1], c: r[2], r: r[3], l: r[4], s: r[5], o: r[6], d: r[7], in: initials, av: i % AVA.length };
+    });
+  }
+
+  getFiltered() {
+    const q = (this.state.query || '').trim().toLowerCase();
+    const sf = this.state.statusFilter || 'all';
+    return this.contacts.filter(c => {
+      if (sf !== 'all' && c.s !== sf) return false;
+      if (q) {
+        const hay = (c.n + ' ' + c.e + ' ' + c.c + ' ' + c.r + ' ' + c.l).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  selectedIds() {
+    const sel = this.state.selected || {};
+    return Object.keys(sel).filter(k => sel[k]);
+  }
+
+  toast(msg) {
+    if (this._tt) clearTimeout(this._tt);
+    this.setState({ toast: msg });
+    this._tt = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+
+  toggleRow(id) {
+    this.setState(s => ({ selected: { ...s.selected, [id]: !s.selected[id] } }));
+  }
+  toggleAll() {
+    const ids = this.getFiltered().map(c => c.id);
+    const all = ids.length > 0 && ids.every(id => this.state.selected[id]);
+    const next = { ...this.state.selected };
+    ids.forEach(id => { next[id] = !all; });
+    this.setState({ selected: next });
+  }
+  clearSelection() { this.setState({ selected: {} }); }
+
+  removeRows(ids) {
+    this.contacts = this.contacts.filter(c => !ids.includes(c.id));
+    const next = { ...this.state.selected };
+    ids.forEach(id => delete next[id]);
+    this.setState(s => ({ selected: next, removedCount: s.removedCount + ids.length }));
+    this.toast(ids.length + (ids.length === 1 ? ' contact removed' : ' contacts removed'));
+  }
+  bulkSuppress() {
+    const ids = this.selectedIds();
+    if (!ids.length) return;
+    this.contacts.forEach(c => { if (ids.includes(c.id)) c.s = 'suppressed'; });
+    this.setState({ selected: {} });
+    this.toast(ids.length + ' ' + (ids.length === 1 ? 'contact' : 'contacts') + ' suppressed');
+  }
+  bulkDelete() {
+    const ids = this.selectedIds();
+    if (ids.length) this.removeRows(ids);
+  }
+  bulkAddList() {
+    const n = this.selectedIds().length;
+    this.toast(n + ' added to “Newsletter — June”');
+    this.setState({ selected: {} });
+  }
+  bulkExport() {
+    const n = this.selectedIds().length;
+    this.toast('Exporting ' + n + ' contacts to CSV…');
+  }
+  selectAllUniverse() {
+    const ids = this.contacts.map(c => c.id);
+    const next = {};
+    ids.forEach(id => { next[id] = true; });
+    this.setState({ selected: next });
+    this.toast('Selected all 412 contacts');
+  }
+
+  clearFilters() { this.setState({ query: '', statusFilter: 'all' }); }
+
+  openImport() { this.setState({ importOpen: true, importStep: 'upload', importResults: null }); }
+  closeImport() { this.setState({ importOpen: false }); }
+  runImport() { this.setState({ importStep: 'results', importResults: { processed: 248, added: 213, duplicates: 24, invalid: 11 } }); }
+  finishImport() {
+    const r = this.state.importResults || { added: 0 };
+    this.setState(s => ({ importOpen: false, addedTotal: s.addedTotal + r.added }));
+    this.toast(r.added + ' contacts imported successfully');
+  }
+
+  renderVals() {
+    const A = this.props.accent || '#4f46e5';
+    const navActiveBg = A + '14';
+    const dense = (this.props.density || 'comfortable') === 'compact';
+    const rowH = dense ? '52px' : '64px';
+    const zebra = !!this.props.zebra;
+    const sel = this.state.selected || {};
+    const hover = this.state.hoverId;
+
+    const filtered = this.getFiltered();
+    const totalCount = 412 + this.state.addedTotal - this.state.removedCount;
+    const fmt = n => n.toLocaleString('en-US');
+
+    const rows = filtered.map((c, i) => {
+      const id = c.id;
+      const selected = !!sel[id];
+      const st = STATUS[c.s];
+      const av = AVA[c.av];
+      const showAct = (hover === id) || selected;
+      let bg = '#ffffff';
+      if (selected) bg = A + '0f';
+      else if (hover === id) bg = '#f8f9fb';
+      else if (zebra && i % 2) bg = '#fcfcfd';
+      return {
+        id, name: c.n, email: c.e, company: c.c, role: c.r, location: c.l,
+        initials: c.in, avBg: av[0], avFg: av[1], added: c.d,
+        openRate: c.s === 'subscribed' ? c.o + '%' : '—',
+        openStyle: c.s === 'subscribed'
+          ? 'text-align:right;font-size:13px;color:#334155;font-weight:500;font-variant-numeric:tabular-nums;'
+          : 'text-align:right;font-size:13px;color:#cbd2da;',
+        statusLabel: st.label,
+        statusStyle: 'display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;background:' + st.bg + ';color:' + st.fg + ';',
+        dotStyle: 'width:6px;height:6px;border-radius:50%;flex:none;background:' + st.dot + ';',
+        check: selected ? '✓' : '',
+        boxStyle: 'width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;font-weight:700;transition:all .1s;'
+          + (selected ? 'background:' + A + ';border:1.5px solid ' + A + ';color:#fff;' : 'background:#fff;border:1.5px solid #cbd2da;color:transparent;'),
+        bg, rowH,
+        actionsOpacity: showAct ? '1' : '0',
+        onEnter: () => this.setState({ hoverId: id }),
+        onLeave: () => this.setState(s => (s.hoverId === id ? { hoverId: null } : null)),
+        onToggle: () => this.toggleRow(id),
+        onSend: () => this.toast('Test email sent to ' + c.n.split(' ')[0]),
+        onAdd: () => this.toast(c.n.split(' ')[0] + ' added to a list'),
+        onRemove: () => this.removeRows([id]),
+      };
+    });
+
+    const pillBase = 'display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 13px;border-radius:9px;font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .12s;';
+    const pillDefs = [
+      { key: 'all', label: 'All', count: 412 },
+      { key: 'subscribed', label: 'Subscribed', count: 384 },
+      { key: 'bounced', label: 'Bounced', count: 18 },
+      { key: 'suppressed', label: 'Suppressed', count: 10 },
+    ];
+    const pills = pillDefs.map(p => {
+      const active = this.state.statusFilter === p.key;
+      return {
+        label: p.label,
+        countLabel: fmt(p.count),
+        onClick: () => this.setState({ statusFilter: p.key }),
+        style: pillBase + (active
+          ? 'background:' + navActiveBg + ';border:1px solid ' + A + '4d;color:' + A + ';'
+          : 'background:#fff;border:1px solid #e2e5e9;color:#475569;'),
+        countStyle: 'font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;' + (active ? 'color:' + A + ';opacity:.7;' : 'color:#aab2bd;'),
+      };
+    });
+
+    const ids = filtered.map(c => c.id);
+    const allFilteredSelected = ids.length > 0 && ids.every(id => sel[id]);
+    const someFilteredSelected = ids.some(id => sel[id]);
+    const headCheck = allFilteredSelected ? '✓' : (someFilteredSelected ? '–' : '');
+    const headChecked = allFilteredSelected || someFilteredSelected;
+    const headBoxStyle = 'width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;font-weight:700;transition:all .1s;'
+      + (headChecked ? 'background:' + A + ';border:1.5px solid ' + A + ';color:#fff;' : 'background:#fff;border:1.5px solid #cbd2da;color:transparent;');
+
+    const selectedCount = this.selectedIds().length;
+    const filterActive = !!(this.state.query.trim()) || this.state.statusFilter !== 'all';
+    const shownLabel = filterActive
+      ? fmt(filtered.length) + (filtered.length === 1 ? ' contact matches' : ' contacts match')
+      : 'Showing 1–' + filtered.length + ' of ' + fmt(totalCount) + ' contacts';
+
+    const r = this.state.importResults || {};
+
+    return {
+      accent: A,
+      navActiveBg,
+      countLabel: fmt(totalCount) + ' contacts',
+      headerMeta: '384 subscribed · 18 bounced · 10 suppressed',
+      query: this.state.query,
+      onSearch: e => this.setState({ query: e.target.value }),
+      pills,
+      rows,
+      hasResults: rows.length > 0,
+      noResults: rows.length === 0,
+      shownLabel,
+      // header checkbox
+      headCheck, headBoxStyle,
+      toggleAll: () => this.toggleAll(),
+      // selection bar
+      selectionActive: selectedCount > 0,
+      selectedLabel: selectedCount + (selectedCount === 1 ? ' contact selected' : ' contacts selected'),
+      showSelectAll: allFilteredSelected && this.state.statusFilter === 'all' && !this.state.query.trim() && selectedCount < 412,
+      selectAllLabel: 'Select all 412 contacts',
+      selectAllUniverse: () => this.selectAllUniverse(),
+      selBarStyle: 'display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 16px;background:' + navActiveBg + ';border-bottom:1px solid ' + A + '33;color:' + A + ';',
+      selBarDivider: A + '40',
+      clearSelection: () => this.clearSelection(),
+      bulkAddList: () => this.bulkAddList(),
+      bulkSuppress: () => this.bulkSuppress(),
+      bulkExport: () => this.bulkExport(),
+      bulkDelete: () => this.bulkDelete(),
+      clearFilters: () => this.clearFilters(),
+      // import modal
+      importOpen: this.state.importOpen,
+      importStepUpload: this.state.importStep === 'upload',
+      importStepResults: this.state.importStep === 'results',
+      openImport: () => this.openImport(),
+      closeImport: () => this.closeImport(),
+      runImport: () => this.runImport(),
+      finishImport: () => this.finishImport(),
+      stop: e => { e.stopPropagation(); },
+      resProcessed: r.processed != null ? fmt(r.processed) : '—',
+      resAdded: r.added != null ? fmt(r.added) : '—',
+      resDup: r.duplicates != null ? fmt(r.duplicates) : '—',
+      resInvalid: r.invalid != null ? fmt(r.invalid) : '—',
+      // toast
+      toastShown: !!this.state.toast,
+      toast: this.state.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 // the partner's editor sidebar so the two halves don't collide.
 const NAV = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/dashboard/contacts", label: "Contacts" },
   { href: "/dashboard/send", label: "Send" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
   { href: "/editor-new", label: "Create template ↗" },
