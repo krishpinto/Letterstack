@@ -84,12 +84,14 @@ export const campaigns = pgTable("campaigns", {
  */
 export const campaignRecipients = pgTable("campaign_recipients", {
   id: uuid("id").defaultRandom().primaryKey(),
+  // onDelete cascade: deleting a campaign or a recipient also removes their
+  // bridge rows, so deletes don't hit foreign-key constraint errors.
   campaignId: uuid("campaign_id")
     .notNull()
-    .references(() => campaigns.id),
+    .references(() => campaigns.id, { onDelete: "cascade" }),
   recipientId: uuid("recipient_id")
     .notNull()
-    .references(() => recipients.id),
+    .references(() => recipients.id, { onDelete: "cascade" }),
   email: text("email").notNull(), // copied here so the worker needn't re-join
   status: text("status").notNull().default("pending"), // pending | sent | failed
   sentAt: timestamp("sent_at"),

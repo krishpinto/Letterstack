@@ -74,7 +74,10 @@ function RecipientsSection() {
   }
 
   async function remove(id: string) {
-    await fetch(`/api/lab/recipients?id=${id}`, { method: "DELETE" });
+    const data = await (
+      await fetch(`/api/lab/recipients?id=${id}`, { method: "DELETE" })
+    ).json();
+    if (!data.ok) setError(data.error);
     await load();
   }
 
