@@ -75,7 +75,9 @@ import {
   findBlock,
   initialEmailDocument,
   insertBlockAtIndex,
+  isEmailDocument,
   locateBlock,
+  normalizeDocument,
   reorderBlocks,
   removeBlock,
   STORAGE_KEY,
@@ -108,6 +110,31 @@ export function EditorNewShell() {
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
   const [dockStatus, setDockStatus] = React.useState<"idle" | "saved" | "copied">("idle")
   const saveStatusTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isHydrated, setIsHydrated] = React.useState(false)
+
+  // Load the saved template on open (so your work is restored, not reset).
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (isEmailDocument(parsed)) setDocument(normalizeDocument(parsed))
+      }
+    } catch {
+      // ignore corrupt storage
+    }
+    setIsHydrated(true)
+  }, [])
+
+  // Autosave to localStorage (debounced) — but only after the load above, so we
+  // never overwrite the saved template with the default on first render.
+  React.useEffect(() => {
+    if (!isHydrated) return
+    const t = setTimeout(() => {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))
+    }, 600)
+    return () => clearTimeout(t)
+  }, [document, isHydrated])
 
   const selectedBlock = findBlock(document.blocks, selectedBlockId)
   const selectedLocation = locateBlock(document.blocks, selectedBlockId)
