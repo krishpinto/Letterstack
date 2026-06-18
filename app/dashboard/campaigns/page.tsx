@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 
 type Campaign = {
   id: string;
@@ -38,6 +39,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/campaigns")
@@ -73,12 +75,12 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Campaigns</h1>
           <p className="mt-1 text-sm text-zinc-500">Every send and its status. Click one to see details.</p>
         </div>
-        <Link
-          href="/editor-new"
+        <button
+          onClick={() => setCreateOpen(true)}
           className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
         >
           <PlusIcon /> Create
-        </Link>
+        </button>
       </div>
 
       {/* Filter bar */}
@@ -212,7 +214,147 @@ export default function CampaignsPage() {
             );
           })}
       </div>
+
+      {createOpen && <CreateCampaignModal onClose={() => setCreateOpen(false)} />}
     </div>
+  );
+}
+
+// ── Create campaign modal ────────────────────────────────────────────────────
+
+function CreateCampaignModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const defaultName = useMemo(
+    () =>
+      `Email Campaign - ${new Date().toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })}`,
+    [],
+  );
+  const [name, setName] = useState(defaultName);
+  const [templateId, setTemplateId] = useState("blank");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() || "Untitled Campaign", templateId }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setError(data.error || "Could not create campaign");
+        setCreating(false);
+        return;
+      }
+      router.push(`/dashboard/campaigns/${data.id}`);
+    } catch {
+      setError("Could not reach the server.");
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button className="absolute inset-0 bg-zinc-900/40" aria-hidden onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+          <h2 className="text-base font-semibold text-zinc-800">Create a new email</h2>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div className="space-y-5 p-5">
+          {/* Type — only Regular for now */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-zinc-500">Type</label>
+            <div className="flex items-start gap-3 rounded-lg border border-zinc-900 bg-zinc-50/60 p-3">
+              <div className="mt-0.5 text-zinc-700">
+                <MailIcon />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-zinc-800">Regular email</div>
+                <p className="text-xs text-zinc-500">
+                  Design an on-brand email to promote a product, announce an event, or share news.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Name */}
+          <div>
+            <label htmlFor="campaign-name" className="mb-1.5 block text-xs font-medium text-zinc-500">
+              Internal name
+            </label>
+            <input
+              id="campaign-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-zinc-300"
+            />
+          </div>
+
+          {/* Template */}
+          <div>
+            <label htmlFor="campaign-template" className="mb-1.5 block text-xs font-medium text-zinc-500">
+              Start from
+            </label>
+            <select
+              id="campaign-template"
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-zinc-300"
+            >
+              <option value="blank">Blank — start from scratch</option>
+              {PREBUILT_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-4">
+          <button
+            onClick={onClose}
+            className="h-9 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={create}
+            disabled={creating}
+            className="h-9 rounded-lg bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {creating ? "Creating…" : "Begin"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
   );
 }
 
