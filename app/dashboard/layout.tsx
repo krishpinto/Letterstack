@@ -74,9 +74,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const initials = who.slice(0, 1).toUpperCase() || "L";
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900">
-      {/* ── Navbar: full width, no border — fused with the rail as one frame ── */}
-      <header className="flex h-12 shrink-0 items-center gap-2 bg-zinc-50 px-3">
+    <div className="flex h-dvh flex-col overflow-hidden bg-zinc-100 text-zinc-900">
+      {/* ── Navbar: flows into the chrome (rail/sidebar share its bg) ── */}
+      <header className="flex h-12 shrink-0 items-center gap-2 bg-zinc-100 px-3">
         <WorkspaceSwitcher email={email} initials={initials} who={who} />
         <div className="flex-1" />
         <div className="relative w-full max-w-md">
@@ -97,10 +97,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      {/* ── Body: rail + toggleable sidebar + inset content panel ───────── */}
+      {/* ── Body: rail + sidebar (chrome) + rounded inset content panel ──── */}
       <div className="flex min-h-0 flex-1">
-        {/* Rail — no borders; part of the zinc-100 frame */}
-        <aside className="flex w-[68px] shrink-0 flex-col items-center justify-between bg-zinc-100 pb-3">
+        {/* Rail — chrome; line on its right */}
+        <aside className="flex w-[68px] shrink-0 flex-col items-center justify-between border-r border-zinc-200 bg-zinc-100 pb-3">
           <div className="flex w-full flex-col items-center gap-1">
             {RAIL_NAV.map((item) => (
               <RailItem key={item.href} item={item} active={pathname.startsWith(item.href)} />
@@ -109,9 +109,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <RailItem item={SETTINGS} active={pathname.startsWith(SETTINGS.href)} />
         </aside>
 
-        {/* Toggleable sidebar — same frame bg, no border */}
+        {/* Toggleable sidebar — chrome; line on its right */}
         {!collapsed && (
-          <aside className="flex w-60 shrink-0 flex-col bg-zinc-100 pb-3">
+          <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 pb-3">
             <div className="px-3 pt-1">
               <Link
                 href="/editor-new"
@@ -129,7 +129,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </aside>
         )}
 
-        {/* Main content — inset white panel; the toggle lives in ITS header */}
+        {/* Content panel — white, inset, curved top-left; breadcrumb is its
+            own strip (line below); page content sits under it. */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-tl-xl border-l border-t border-zinc-200 bg-white">
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-zinc-200 px-3 text-sm">
             <button
