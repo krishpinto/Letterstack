@@ -3,38 +3,38 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.9940 0 0);
-  --foreground: oklch(0 0 0);
+  --background: oklch(0.9848 0.0003 230.66);
+  --foreground: oklch(0.2378 0.0029 230.83);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2790 0.0410 260.0310);
+  --card-foreground: oklch(0.2378 0.0029 230.83);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2790 0.0410 260.0310);
-  --primary: oklch(0.6581 0.1777 264.2752);
+  --popover-foreground: oklch(0.2378 0.0029 230.83);
+  --primary: oklch(0.4799 0.1158 242.91);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9290 0.0130 255.5080);
-  --secondary-foreground: oklch(0.2780 0.0330 256.8480);
-  --muted: oklch(0.9680 0.0070 247.8960);
-  --muted-foreground: oklch(0.5540 0.0460 257.4170);
-  --accent: oklch(0.9320 0.0320 255.5850);
-  --accent-foreground: oklch(0.2790 0.0410 260.0310);
+  --secondary: oklch(0.9543 0.001 230.67);
+  --secondary-foreground: oklch(0.2378 0.0029 230.83);
+  --muted: oklch(0.9696 0.0007 230.67);
+  --muted-foreground: oklch(0.5288 0.0083 230.88);
+  --accent: oklch(0.9543 0.001 230.67);
+  --accent-foreground: oklch(0.2378 0.0029 230.83);
   --destructive: oklch(0.6370 0.2370 25.3310);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.9220 0 0);
-  --input: oklch(0.9290 0.0130 255.5080);
-  --ring: oklch(0.7040 0.0400 256.7880);
+  --border: oklch(0.9235 0.0017 230.69);
+  --input: oklch(0.9235 0.0017 230.69);
+  --ring: oklch(0.6766 0.1665 243.91);
   --chart-1: oklch(0.6730 0.1820 276.9350);
   --chart-2: oklch(0.8701 0.0633 270.2851);
   --chart-3: oklch(0.6765 0.1708 272.5550);
   --chart-4: oklch(0.9292 0.0337 271.0369);
   --chart-5: oklch(0.7892 0.1061 270.2489);
-  --sidebar: oklch(0.9680 0.0070 247.8960);
-  --sidebar-foreground: oklch(0.2790 0.0410 260.0310);
-  --sidebar-primary: oklch(0.6581 0.1777 264.2752);
+  --sidebar: oklch(0.9696 0.0007 230.67);
+  --sidebar-foreground: oklch(0.2378 0.0029 230.83);
+  --sidebar-primary: oklch(0.4799 0.1158 242.91);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9320 0.0320 255.5850);
-  --sidebar-accent-foreground: oklch(0.2790 0.0410 260.0310);
-  --sidebar-border: oklch(0.9290 0.0130 255.5080);
-  --sidebar-ring: oklch(0.7040 0.0400 256.7880);
+  --sidebar-accent: oklch(0.9543 0.001 230.67);
+  --sidebar-accent-foreground: oklch(0.2378 0.0029 230.83);
+  --sidebar-border: oklch(0.9235 0.0017 230.69);
+  --sidebar-ring: oklch(0.6766 0.1665 243.91);
   --font-sans: Inter, ui-sans-serif, sans-serif, system-ui;
   --font-serif: Merriweather, ui-serif, serif;
   --font-mono: JetBrains Mono, ui-monospace, monospace;
@@ -161,6 +161,42 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+}
+
+/*
+ * Plane-inspired palette remap. The app's hand-written pages use `zinc-*`
+ * (neutrals) and `indigo-*` (accent) literals in ~750 places. Rather than
+ * rewrite every call site, we redefine what those color names resolve to:
+ *   - zinc  → Plane's cool blue-gray neutral scale (hue ~230, soft near-black
+ *             text instead of pure black — the calm Plane feel)
+ *   - indigo→ Plane's deep true-blue brand scale (hue ~243, not violet)
+ * The ramp stays monotonic light→dark, so every contrast relationship the
+ * pages relied on is preserved. Revert = delete this block.
+ */
+@theme {
+  --color-zinc-50: oklch(0.9848 0.0003 230.66);
+  --color-zinc-100: oklch(0.9543 0.001 230.67);
+  --color-zinc-200: oklch(0.9235 0.0017 230.69);
+  --color-zinc-300: oklch(0.8612 0.0032 230.71);
+  --color-zinc-400: oklch(0.6668 0.0079 230.82);
+  --color-zinc-500: oklch(0.5288 0.0083 230.88);
+  --color-zinc-600: oklch(0.4377 0.0066 230.87);
+  --color-zinc-700: oklch(0.3700 0.0050 230.86);
+  --color-zinc-800: oklch(0.3000 0.0040 230.84);
+  --color-zinc-900: oklch(0.2378 0.0029 230.83);
+  --color-zinc-950: oklch(0.1932 0.0020 230.81);
+
+  --color-indigo-50: oklch(0.9847 0.0083 236.56);
+  --color-indigo-100: oklch(0.9715 0.0167 230.9);
+  --color-indigo-200: oklch(0.9428 0.0341 230.22);
+  --color-indigo-300: oklch(0.8414 0.0947 233.08);
+  --color-indigo-400: oklch(0.6766 0.1665 243.91);
+  --color-indigo-500: oklch(0.5600 0.1300 243);
+  --color-indigo-600: oklch(0.4799 0.1158 242.91);
+  --color-indigo-700: oklch(0.4347 0.1041 242.48);
+  --color-indigo-800: oklch(0.3399 0.0783 240.32);
+  --color-indigo-900: oklch(0.2626 0.0578 237.5);
+  --color-indigo-950: oklch(0.2093 0.0438 234.02);
 }
 
 @layer base {

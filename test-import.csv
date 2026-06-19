@@ -1,0 +1,7 @@
+Full Name,E-mail Address,Company
+Asha Rao,asha@example.com,CIBA
+Ravi Kumar,ravi@example.com,Acme
+Duplicate Asha,asha@example.com,CIBA
+Bad Row,not-an-email,Nope
+Blank Email,,Ghost
+Meera Iyer,meera@example.com,Fomo

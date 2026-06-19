@@ -109,22 +109,8 @@ export default function CampaignsPage() {
 
   return (
     <div className="p-8">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Campaigns</h1>
-          <p className="mt-1 text-sm text-zinc-500">Every send and its status. Click one to see details.</p>
-        </div>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-        >
-          <PlusIcon /> Create
-        </button>
-      </div>
-
-      {/* Filter bar */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      {/* Toolbar: search · status filters · create */}
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1">
           <SearchIcon />
           <input
@@ -155,6 +141,12 @@ export default function CampaignsPage() {
             );
           })}
         </div>
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="inline-flex h-[38px] shrink-0 items-center gap-2 rounded-[9px] bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+        >
+          <PlusIcon /> Create
+        </button>
       </div>
 
       {/* Bulk action bar */}
