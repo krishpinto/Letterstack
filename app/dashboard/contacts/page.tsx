@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ImportWizard } from "./import-wizard";
 
 type Recipient = {
   id: string;
@@ -55,6 +56,7 @@ export default function ContactsPage() {
   const [addName, setAddName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const load = useCallback(async () => {
@@ -201,6 +203,10 @@ export default function ContactsPage() {
             <button className={outlineBtn}>
               <ExportIcon />
               Export
+            </button>
+            <button onClick={() => setImportOpen(true)} className={outlineBtn}>
+              <UploadIcon />
+              Import
             </button>
             <button onClick={() => setAddOpen(true)} className={primaryBtn}>
               <PlusIcon />
@@ -417,20 +423,16 @@ export default function ContactsPage() {
                 <span className="text-xs text-zinc-300">or</span>
                 <div className="h-px flex-1 bg-zinc-100" />
               </div>
-              <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-[9px] border border-zinc-200 bg-white py-2.5 text-[13.5px] font-medium text-zinc-600 hover:bg-zinc-50">
+              <button
+                onClick={() => {
+                  setAddOpen(false);
+                  setImportOpen(true);
+                }}
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-[9px] border border-zinc-200 bg-white py-2.5 text-[13.5px] font-medium text-zinc-600 hover:bg-zinc-50"
+              >
                 <UploadIcon />
                 Import CSV / XLSX
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) showToast(`Selected "${file.name}" — import parsing coming soon.`);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              </button>
             </div>
             <div className="flex items-center justify-end gap-2.5 border-t border-zinc-100 bg-[#fbfbfc] px-5 py-3.5 rounded-b-2xl">
               <button onClick={() => setAddOpen(false)} className={outlineBtn}>
@@ -442,6 +444,18 @@ export default function ContactsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Import wizard ───────────────────────────────────────────── */}
+      {importOpen && (
+        <ImportWizard
+          onClose={() => setImportOpen(false)}
+          onDone={(s) => {
+            setImportOpen(false);
+            showToast(`${s.imported} contact${s.imported === 1 ? "" : "s"} imported`);
+            load();
+          }}
+        />
       )}
 
       {/* ── Toast ───────────────────────────────────────────────────── */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
@@ -33,6 +33,11 @@ export function CampaignSendView({
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-send test ("see it in a real inbox first").
+  const [testEmail, setTestEmail] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
 
   // Editable form fields, seeded from the campaign and re-synced after saves.
   const [fromName, setFromName] = useState(initial.fromName);
@@ -72,14 +77,24 @@ export function CampaignSendView({
   }, []);
 
   const hasDoc = Boolean(campaign.document);
+
+  // Pre-send safety signals computed from the frozen snapshot.
+  const htmlBytes = useMemo(
+    () => new TextEncoder().encode(campaign.htmlSnapshot).length,
+    [campaign.htmlSnapshot],
+  );
+  const gmailClipRisk = htmlBytes > 102_000; // Gmail clips messages over ~102KB
+  const hasUnsubscribe = campaign.htmlSnapshot.includes("{{unsubscribe_url}}");
+
   const ready = {
     to: (recipientCount ?? 0) > 0,
     from: Boolean(campaign.fromName.trim() && campaign.fromEmail.trim()),
     subject: Boolean(campaign.subject.trim()),
     sendtime: true,
     content: true,
+    unsubscribe: hasUnsubscribe,
   };
-  const canSend = ready.to && ready.from && ready.subject;
+  const canSend = ready.to && ready.from && ready.subject && ready.unsubscribe;
   const doneCount = Object.values(ready).filter(Boolean).length;
 
   function toggle(key: SectionKey) {
@@ -159,6 +174,29 @@ export function CampaignSendView({
     router.push("/editor-new");
   }
 
+  async function sendTest() {
+    if (!testEmail.trim()) return;
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: testEmail }),
+      });
+      const data = await res.json();
+      setTestMsg(
+        data.ok
+          ? `Test sent to ${data.count} address${data.count === 1 ? "" : "es"} — check your inbox.`
+          : data.error || "Could not send test",
+      );
+    } catch {
+      setTestMsg("Could not reach the server.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   async function send() {
     setSending(true);
     setError(null);
@@ -215,13 +253,25 @@ export function CampaignSendView({
           <div className="mx-auto max-w-2xl">
             {/* Completion bar */}
             <div className="mb-4">
-              <div className="mb-1.5 text-xs font-medium text-zinc-500">{doneCount}/5 items ready</div>
+              <div className="mb-1.5 text-xs font-medium text-zinc-500">
+                {doneCount}/{Object.keys(ready).length} items ready
+              </div>
               <div className="flex gap-1">
                 {Object.values(ready).map((ok, i) => (
                   <div key={i} className={`h-1 flex-1 rounded-full ${ok ? "bg-emerald-500" : "bg-zinc-200"}`} />
                 ))}
               </div>
             </div>
+
+            {gmailClipRisk && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                <span aria-hidden>⚠</span>
+                <span>
+                  This email is {Math.round(htmlBytes / 1024)}KB — over Gmail&apos;s ~102KB clipping
+                  limit. Gmail may cut it off and hide your unsubscribe link. Trim copy or shrink images.
+                </span>
+              </div>
+            )}
 
             <div className="space-y-3">
               {/* To */}
@@ -371,6 +421,32 @@ export function CampaignSendView({
                 </button>
               </div>
 
+              {/* Send a test */}
+              <div className="rounded-xl border border-zinc-200 bg-white p-4">
+                <div className="text-sm font-semibold text-zinc-900">Send a test</div>
+                <p className="mt-0.5 text-sm text-zinc-500">
+                  See exactly what lands in the inbox before you send to everyone. Up to 5 addresses,
+                  comma-separated.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className={inputCls}
+                    onKeyDown={(e) => e.key === "Enter" && testEmail.trim() && sendTest()}
+                  />
+                  <button
+                    onClick={sendTest}
+                    disabled={testing || !testEmail.trim()}
+                    className="h-10 shrink-0 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    {testing ? "Sending…" : "Send test"}
+                  </button>
+                </div>
+                {testMsg && <p className="mt-2 text-xs text-zinc-500">{testMsg}</p>}
+              </div>
+
               {!canSend && (
                 <p className="px-1 pt-1 text-xs text-amber-600">
                   {!ready.to
@@ -379,7 +455,9 @@ export function CampaignSendView({
                       ? "Add a subject before sending."
                       : !ready.from
                         ? "Set a from name and email before sending."
-                        : ""}
+                        : !ready.unsubscribe
+                          ? "This email has no unsubscribe link — required to send. Re-open the design so the footer is added."
+                          : ""}
                 </p>
               )}
             </div>

@@ -15,6 +15,16 @@ type Recipient = {
   error: string | null;
 };
 
+type Engagement = {
+  delivered: number;
+  bounced: number;
+  complained: number;
+  opensTotal: number;
+  opensUnique: number;
+  clicksTotal: number;
+  clicksUnique: number;
+};
+
 type StatusKey = "all" | "sent" | "failed" | "bounced" | "pending";
 
 const STATUS = {
@@ -61,24 +71,29 @@ export function CampaignMonitor() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [engagement, setEngagement] = useState<Engagement | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
 
-  // Poll progress + recipients every 1.5s; stop once nothing is pending.
+  // Poll progress + recipients + engagement every 1.5s; stop once nothing is
+  // pending. (Opens/clicks keep trickling in for days, but we stop the live
+  // poll when the send finishes — a reload picks up later engagement.)
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
 
     async function poll() {
-      const [pRes, rRes] = await Promise.all([
+      const [pRes, rRes, eRes] = await Promise.all([
         fetch(`/api/campaigns/${id}/progress`).then((r) => r.json()),
         fetch(`/api/campaigns/${id}/recipients`).then((r) => r.json()),
+        fetch(`/api/campaigns/${id}/analytics`).then((r) => r.json()),
       ]);
       if (!active) return;
       if (pRes.ok) {
         setCampaign(pRes.campaign);
         setProgress(pRes.progress);
         if (rRes.ok) setRecipients(rRes.recipients);
+        if (eRes.ok) setEngagement(eRes.engagement);
         if (pRes.progress.pending > 0 || pRes.progress.total === 0) {
           timer = setTimeout(poll, 1500);
         }
@@ -119,6 +134,10 @@ export function CampaignMonitor() {
   const finished = total > 0 && progress.pending === 0;
   const deliveryRate = total > 0 ? Math.round((counts.sent / total) * 100) : 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  // Engagement rates use delivered-to count (counts.sent) as the denominator.
+  const rate = (part: number) => (counts.sent > 0 ? Math.round((part / counts.sent) * 100) : 0);
+  const openRate = rate(engagement?.opensUnique ?? 0);
+  const clickRate = rate(engagement?.clicksUnique ?? 0);
 
   // Only offer filter tabs for statuses that actually occur in this campaign.
   const filterKeys = (["all", "sent", "failed", "bounced", "pending"] as StatusKey[]).filter(
@@ -145,9 +164,23 @@ export function CampaignMonitor() {
 
       {/* ── Metrics ─────────────────────────────────────────────────── */}
       <div className="px-7 pt-5">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Metric label="Recipients" value={total} tone="text-zinc-900" />
           <Metric label="Delivered" value={counts.sent} tone="text-emerald-600" />
+          <Metric
+            label="Opened"
+            value={`${openRate}%`}
+            hint={engagement ? `${engagement.opensUnique} unique` : "—"}
+            tone="text-indigo-600"
+            soft
+          />
+          <Metric
+            label="Clicked"
+            value={`${clickRate}%`}
+            hint={engagement ? `${engagement.clicksUnique} unique` : "—"}
+            tone="text-indigo-600"
+            soft
+          />
           <Metric
             label="Failed"
             value={counts.failed}
@@ -159,6 +192,10 @@ export function CampaignMonitor() {
             tone={counts.bounced > 0 ? "text-orange-600" : "text-zinc-400"}
           />
         </div>
+        <p className="mt-2 text-xs text-zinc-400">
+          Delivered, failed &amp; bounced are exact. Opened &amp; clicked are estimates — privacy
+          inboxes block or pre-fetch tracking, so the real numbers are at least this high.
+        </p>
 
         {/* Progress / delivery-rate bar */}
         <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
@@ -343,11 +380,31 @@ function StatusBadge({ finished }: { finished: boolean }) {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone: string }) {
+function Metric({
+  label,
+  value,
+  tone,
+  hint,
+  soft,
+}: {
+  label: string;
+  value: number | string;
+  tone: string;
+  hint?: string;
+  soft?: boolean;
+}) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
       <div className={`text-[26px] font-semibold tabular-nums leading-none ${tone}`}>{value}</div>
-      <div className="mt-1.5 text-[12.5px] font-medium text-zinc-500">{label}</div>
+      <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px] font-medium text-zinc-500">
+        {label}
+        {soft && (
+          <span className="rounded bg-zinc-100 px-1 py-0.5 text-[9.5px] font-semibold uppercase text-zinc-400">
+            est
+          </span>
+        )}
+      </div>
+      {hint && <div className="mt-0.5 text-[11px] tabular-nums text-zinc-400">{hint}</div>}
     </div>
   );
 }

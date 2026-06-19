@@ -40,8 +40,11 @@ export async function POST(request: Request) {
     event.mail?.destination?.[0] ??
     null;
 
+  // SES echoes our message tags back as mail.tags = { campaignId: ["<uuid>"] }.
+  const campaignId: string | null = event.mail?.tags?.campaignId?.[0] ?? null;
+
   if (email) {
-    await recordEvent(email, type);
+    await recordEvent(email, type, campaignId);
     // Hard bounces and complaints are permanent — never email them again.
     // Suppression is per-user, so attribute it to every account that actually
     // mailed this address (found via campaign_recipients → campaigns).

@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
     // Only the rows still pending — a retried batch skips ones already done.
     const rows = await listPendingByIds(campaignRecipientIds ?? []);
-    const result = await sendCampaignBatch(content, rows, userId);
+    const result = await sendCampaignBatch(content, rows, userId, campaignId);
 
     // If this was the last batch to finish (nothing left pending), the campaign
     // is done — flip it to "sent". Whichever worker finishes last trips this.

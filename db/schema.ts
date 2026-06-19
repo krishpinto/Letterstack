@@ -76,7 +76,10 @@ export const suppressedEmails = pgTable(
 export const emailEvents = pgTable("email_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull(),
-  type: text("type").notNull(), // "Bounce" | "Complaint" | "Delivery" | ...
+  type: text("type").notNull(), // "Bounce" | "Complaint" | "Delivery" | "Open" | "Click" | ...
+  // Which campaign this event belongs to — set from the SES message tag the send
+  // path attaches. Nullable: legacy events and non-campaign test sends have none.
+  campaignId: uuid("campaign_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

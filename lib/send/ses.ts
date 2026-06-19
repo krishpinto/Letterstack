@@ -25,6 +25,18 @@ export type SendEmailInput = {
   fromName: string;
   /** Must be an address on a domain verified in this SES region. */
   fromEmail: string;
+  /**
+   * RFC 8058 one-click unsubscribe endpoint. When set, we add the
+   * List-Unsubscribe + List-Unsubscribe-Post headers so Gmail/Apple Mail show a
+   * native "Unsubscribe" control — a real deliverability signal for bulk mail.
+   */
+  listUnsubscribeUrl?: string;
+  /**
+   * SES message tags echoed back on every event for this send (mail.tags in the
+   * SNS payload). We use this to attribute delivery/open/click/bounce events to
+   * a campaign. Values must be ASCII alphanumerics, hyphens, or underscores.
+   */
+  tags?: { name: string; value: string }[];
 };
 
 /** Sends one email through SES. Returns the SES MessageId on success. */
@@ -43,8 +55,15 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
           Html: { Data: input.html, Charset: "UTF-8" },
           Text: { Data: input.text, Charset: "UTF-8" },
         },
+        Headers: input.listUnsubscribeUrl
+          ? [
+              { Name: "List-Unsubscribe", Value: `<${input.listUnsubscribeUrl}>` },
+              { Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" },
+            ]
+          : undefined,
       },
     },
+    EmailTags: input.tags?.map((t) => ({ Name: t.name, Value: t.value })),
   });
 
   const result = await sesClient().send(command);

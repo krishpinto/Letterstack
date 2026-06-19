@@ -21,6 +21,24 @@ export async function addRecipient(
   return row;
 }
 
+/**
+ * Write: add many people at once, skipping any that already exist for this user
+ * (the unique(userId,email) constraint + onConflictDoNothing handles dedupe
+ * against the existing list). Returns the rows that were actually inserted, so
+ * the caller can report "X imported" vs "Y already there".
+ */
+export async function addRecipientsBulk(
+  userId: string,
+  people: { email: string; name?: string | null }[],
+) {
+  if (people.length === 0) return [];
+  return db
+    .insert(recipients)
+    .values(people.map((p) => ({ userId, email: p.email, name: p.name ?? null })))
+    .onConflictDoNothing({ target: [recipients.userId, recipients.email] })
+    .returning();
+}
+
 /** Read: this user's whole list, newest first. */
 export async function listRecipients(userId: string) {
   return db

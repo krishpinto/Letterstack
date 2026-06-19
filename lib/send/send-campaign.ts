@@ -6,6 +6,11 @@ import { getCampaign, markCampaignSending } from "@/db/campaigns";
 import { freezeAudience, markCampaignRecipient } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { qstash, appBaseUrl } from "./qstash";
+import {
+  personalizeUnsubscribe,
+  unsubscribeOneClickUrl,
+  unsubscribePageUrl,
+} from "@/lib/email/unsubscribe";
 
 /**
  * The send engine, now backed by QStash.
@@ -51,6 +56,7 @@ export async function sendBatch(
   let failed = 0;
   let suppressed = 0;
   const failures: { email: string; error: string }[] = [];
+  const base = appBaseUrl();
 
   for (const person of people) {
     // Do-not-mail check: never send to a bounced/complained/unsubscribed address
@@ -61,13 +67,19 @@ export async function sendBatch(
     }
 
     try {
+      // Mint this recipient's unsubscribe link and bake it into their copy.
+      const personalized = personalizeUnsubscribe(
+        content,
+        unsubscribePageUrl(base, userId, person.email),
+      );
       await sendEmail({
         to: person.email,
         subject: content.subject,
-        html: content.html,
-        text: content.text,
+        html: personalized.html,
+        text: personalized.text,
         fromName: content.fromName,
         fromEmail: content.fromEmail,
+        listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, person.email),
       });
       await markRecipientSent(person.id); // tick off the checklist, after success
       sent++;
@@ -136,9 +148,14 @@ export async function sendCampaignBatch(
   content: FrozenContent,
   rows: CampaignBatchRow[],
   userId: string,
+  campaignId?: string,
 ) {
   let sent = 0;
   let failed = 0;
+  const base = appBaseUrl();
+  // Tag every send with the campaign id so SES echoes it back on each event —
+  // that's how delivery/open/click/bounce get attributed to this campaign.
+  const tags = campaignId ? [{ name: "campaignId", value: campaignId }] : undefined;
 
   for (const row of rows) {
     if (await isSuppressed(userId, row.email)) {
@@ -147,13 +164,20 @@ export async function sendCampaignBatch(
       continue;
     }
     try {
+      // Mint this recipient's unsubscribe link and bake it into their copy.
+      const personalized = personalizeUnsubscribe(
+        content,
+        unsubscribePageUrl(base, userId, row.email),
+      );
       await sendEmail({
         to: row.email,
         subject: content.subject,
-        html: content.html,
-        text: content.text,
+        html: personalized.html,
+        text: personalized.text,
         fromName: content.fromName,
         fromEmail: content.fromEmail,
+        listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
+        tags,
       });
       await markCampaignRecipient(row.id, "sent");
       sent++;
