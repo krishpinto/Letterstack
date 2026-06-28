@@ -25,6 +25,8 @@ export type SendEmailInput = {
   fromName: string;
   /** Must be an address on a domain verified in this SES region. */
   fromEmail: string;
+  listUnsubscribeUrl?: string;
+  tags?: { name: string; value: string }[];
 };
 
 /** Sends one email through SES. Returns the SES MessageId on success. */
@@ -32,6 +34,7 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
   const command = new SendEmailCommand({
     FromEmailAddress: `${input.fromName} <${input.fromEmail}>`,
     Destination: { ToAddresses: [input.to] },
+    ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
     Content: {
       Simple: {
         Subject: { Data: input.subject, Charset: "UTF-8" },
@@ -39,8 +42,18 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
           Html: { Data: input.html, Charset: "UTF-8" },
           Text: { Data: input.text, Charset: "UTF-8" },
         },
+        Headers: input.listUnsubscribeUrl
+          ? [
+              { Name: "List-Unsubscribe", Value: `<${input.listUnsubscribeUrl}>` },
+              { Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" },
+            ]
+          : undefined,
       },
     },
+    EmailTags: input.tags?.map((tag) => ({
+      Name: tag.name,
+      Value: tag.value,
+    })),
   });
 
   const result = await sesClient().send(command);
