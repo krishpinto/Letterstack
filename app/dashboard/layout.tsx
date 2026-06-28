@@ -1,49 +1,56 @@
-"use client";
+import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import {
+  getActiveOrganizationForUser,
+  listOrganizationsForUser,
+} from "@/db/organizations";
+import { ACTIVE_ORGANIZATION_COOKIE } from "@/lib/active-organization";
+import { auth } from "@/lib/auth";
+import { DashboardShell } from "@/components/dashboard-shell";
 
-// The dashboard's own simple shell: a left nav + a content area. Separate from
-// the partner's editor sidebar so the two halves don't collide.
-const NAV = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/send", label: "Send" },
-  { href: "/editor-new", label: "Create template ↗" },
-];
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const session = await auth();
+  const userId = session?.user?.id;
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  if (!userId) {
+    redirect("/login");
+  }
+
+  const cookieStore = await cookies();
+  const activeOrganizationId =
+    cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value ?? null;
+
+  const [organization, organizations] = await Promise.all([
+    getActiveOrganizationForUser(userId, activeOrganizationId),
+    listOrganizationsForUser(userId),
+  ]);
+
+  if (!organization) {
+    redirect("/onboarding");
+  }
 
   return (
-    <div className="flex min-h-dvh bg-zinc-50">
-      <aside className="w-56 shrink-0 border-r bg-white p-4">
-        <div className="px-2 text-sm font-bold tracking-tight">LetterStack</div>
-        <nav className="mt-6 flex flex-col gap-1">
-          {NAV.map((item) => {
-            const active =
-              item.href === "/dashboard"
-                ? pathname === item.href
-                : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "rounded-lg px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-zinc-900 text-white"
-                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
-
-      <main className="min-w-0 flex-1">{children}</main>
-    </div>
+    <DashboardShell
+      organization={{
+        id: organization.id,
+        name: organization.name,
+        type: organization.type,
+        role: organization.role,
+      }}
+      organizations={organizations.map((item) => ({
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        role: item.role,
+      }))}
+      user={{
+        name: session.user?.name ?? "User",
+        email: session.user?.email ?? "",
+      }}
+    >
+      {children}
+    </DashboardShell>
   );
 }
