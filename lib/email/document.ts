@@ -133,7 +133,7 @@ export type ColumnContent = {
   linkUrl: string;
   showImage: boolean;
   showCta: boolean;
-  /** Kept for older saved documents; /editor-new renders preset column content. */
+  /** Kept for older saved documents; /editor renders preset column content. */
   blocks: EmailBlock[];
 };
 
