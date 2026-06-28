@@ -1,58 +1,92 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "./client";
 import { recipients } from "./schema";
 
-/**
- * The real, keep-forever logic for the `recipients` table. The /lab card only
- * CALLS these — it doesn't know how the database works. When /lab is deleted,
- * these functions stay, and the real "Send campaign" flow will reuse them.
- */
+const INSERT_BATCH_SIZE = 1_000;
 
-/** Write: add one person to the recipients table, return the saved row. */
-export async function addRecipient(input: { email: string; name?: string }) {
+type AudiencePerson = {
+  email: string;
+  name?: string | null;
+};
+
+export async function addRecipient(
+  organizationId: string,
+  userId: string,
+  input: AudiencePerson,
+) {
   const [row] = await db
     .insert(recipients)
-    .values({ email: input.email, name: input.name ?? null })
-    .returning(); // give us back the row the database created (with id + time)
-  return row;
+    .values({
+      organizationId,
+      userId,
+      email: input.email,
+      name: input.name ?? null,
+    })
+    .onConflictDoNothing({
+      target: [recipients.organizationId, recipients.email],
+    })
+    .returning();
+
+  return row ?? null;
 }
 
-/** Read: get everyone, newest first. */
-export async function listRecipients() {
-  return db.select().from(recipients).orderBy(desc(recipients.createdAt));
+export async function addRecipientsBulk(
+  organizationId: string,
+  userId: string,
+  people: AudiencePerson[],
+) {
+  const inserted: (typeof recipients.$inferSelect)[] = [];
+
+  for (let index = 0; index < people.length; index += INSERT_BATCH_SIZE) {
+    const batch = people.slice(index, index + INSERT_BATCH_SIZE);
+    if (batch.length === 0) continue;
+
+    const rows = await db
+      .insert(recipients)
+      .values(
+        batch.map((person) => ({
+          organizationId,
+          userId,
+          email: person.email,
+          name: person.name ?? null,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [recipients.organizationId, recipients.email],
+      })
+      .returning();
+
+    inserted.push(...rows);
+  }
+
+  return inserted;
 }
 
-/** Read: only people we HAVEN'T emailed yet (sentAt is still null). */
-export async function listUnsentRecipients() {
+export async function listRecipientsForOrganization(organizationId: string) {
   return db
     .select()
     .from(recipients)
-    .where(isNull(recipients.sentAt)) // the WHERE clause: "where sent_at is empty"
+    .where(eq(recipients.organizationId, organizationId))
     .orderBy(desc(recipients.createdAt));
 }
 
-/**
- * Read: of a specific set of people (one QStash batch), which are STILL unsent.
- * The worker calls this before sending, so a retried batch skips anyone already
- * done — that's what makes QStash's retries safe.
- */
-export async function listUnsentByIds(ids: string[]) {
-  if (ids.length === 0) return [];
-  return db
-    .select()
-    .from(recipients)
-    .where(and(inArray(recipients.id, ids), isNull(recipients.sentAt)));
-}
-
-/** Write: tick one person off the checklist by stamping them with the time. */
-export async function markRecipientSent(id: string) {
+export async function resetSentFlags(organizationId: string) {
   await db
     .update(recipients)
-    .set({ sentAt: new Date() })
-    .where(eq(recipients.id, id)); // only this one person (matched by id)
+    .set({ sentAt: null })
+    .where(eq(recipients.organizationId, organizationId));
 }
 
-/** Write: clear every stamp — a testing helper so we can re-send the demo. */
-export async function resetSentFlags() {
-  await db.update(recipients).set({ sentAt: null });
+export async function deleteRecipient(organizationId: string, id: string) {
+  const rows = await db
+    .delete(recipients)
+    .where(
+      and(
+        eq(recipients.id, id),
+        eq(recipients.organizationId, organizationId),
+      ),
+    )
+    .returning({ id: recipients.id });
+
+  return rows.length > 0;
 }
