@@ -654,11 +654,13 @@ function CreateCampaignDialog({
   const [error, setError] = useState<string | null>(null);
 
   // Sender options: the shared LetterStack address plus the org's own
-  // verified domain (with a freely chosen local part).
+  // verified domains (with a freely chosen local part).
   const [sharedFromEmail, setSharedFromEmail] = useState("");
-  const [customDomain, setCustomDomain] = useState<string | null>(null);
-  const [customDomainReady, setCustomDomainReady] = useState(false);
-  const [senderSource, setSenderSource] = useState<"shared" | "custom">("shared");
+  const [domains, setDomains] = useState<
+    { domain: string; readyToSend: boolean }[]
+  >([]);
+  // "shared" or one of the connected domain names.
+  const [senderSource, setSenderSource] = useState("shared");
   const [customLocal, setCustomLocal] = useState("");
 
   useEffect(() => {
@@ -668,16 +670,18 @@ function CreateCampaignDialog({
       .then((data) => {
         if (!data.ok) return;
         setSharedFromEmail(data.sharedFromEmail ?? "");
-        setCustomDomain(data.domain ?? null);
-        setCustomDomainReady(Boolean(data.readyToSend));
-        if (data.readyToSend) setSenderSource("custom");
+        const list: { domain: string; readyToSend: boolean }[] =
+          data.domains ?? [];
+        setDomains(list);
+        const firstVerified = list.find((d) => d.readyToSend);
+        if (firstVerified) setSenderSource(firstVerified.domain);
       })
       .catch(() => {});
   }, [open]);
 
   const fromEmail =
-    senderSource === "custom" && customDomain
-      ? `${customLocal.trim() || "hello"}@${customDomain}`
+    senderSource !== "shared"
+      ? `${customLocal.trim() || "hello"}@${senderSource}`
       : sharedFromEmail;
 
   async function create() {
@@ -750,22 +754,24 @@ function CreateCampaignDialog({
             <NativeSelect
               id="campaign-sender"
               value={senderSource}
-              onChange={(event) =>
-                setSenderSource(event.target.value as "shared" | "custom")
-              }
+              onChange={(event) => setSenderSource(event.target.value)}
               className="w-full"
             >
               <NativeSelectOption value="shared">
                 {sharedFromEmail || "Shared LetterStack address"} — shared
               </NativeSelectOption>
-              {customDomain && (
-                <NativeSelectOption value="custom" disabled={!customDomainReady}>
-                  {customDomain} — your domain
-                  {customDomainReady ? "" : " (pending verification)"}
+              {domains.map((entry) => (
+                <NativeSelectOption
+                  key={entry.domain}
+                  value={entry.domain}
+                  disabled={!entry.readyToSend}
+                >
+                  {entry.domain} — your domain
+                  {entry.readyToSend ? "" : " (pending verification)"}
                 </NativeSelectOption>
-              )}
+              ))}
             </NativeSelect>
-            {senderSource === "custom" && customDomain && (
+            {senderSource !== "shared" && (
               <div className="flex items-center gap-1">
                 <Input
                   value={customLocal}
@@ -779,12 +785,12 @@ function CreateCampaignDialog({
                   aria-label="Sender address name"
                 />
                 <span className="shrink-0 text-sm text-muted-foreground">
-                  @{customDomain}
+                  @{senderSource}
                 </span>
               </div>
             )}
             <FieldDescription>
-              {customDomain
+              {domains.length > 0
                 ? "Pick any address name on your domain — updates, applications, hello…"
                 : "Connect your own domain on the Domains page to send from a branded address."}
             </FieldDescription>

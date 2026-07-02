@@ -105,9 +105,11 @@ export function CampaignDetail({
   );
   const [savingSection, setSavingSection] = useState<SectionKey | null>(null);
   const [sharedFromEmail, setSharedFromEmail] = useState("");
-  const [customDomain, setCustomDomain] = useState<string | null>(null);
-  const [customDomainReady, setCustomDomainReady] = useState(false);
-  const [senderSource, setSenderSource] = useState<"shared" | "custom">("shared");
+  const [senderDomains, setSenderDomains] = useState<
+    { domain: string; readyToSend: boolean }[]
+  >([]);
+  // "shared" or one of the connected domain names.
+  const [senderSource, setSenderSource] = useState("shared");
   const [customLocal, setCustomLocal] = useState("");
   const [reusing, setReusing] = useState(false);
 
@@ -152,20 +154,23 @@ export function CampaignDetail({
   }, [loadAudience]);
 
   // Load the sender addresses this org can use (shared + verified custom
-  // domain), and reflect the campaign's current From address in the picker.
+  // domains), and reflect the campaign's current From address in the picker.
   useEffect(() => {
     fetch("/api/domains")
       .then((r) => r.json())
       .then((data) => {
         if (!data.ok) return;
         setSharedFromEmail(data.sharedFromEmail ?? "");
-        setCustomDomain(data.domain ?? null);
-        setCustomDomainReady(Boolean(data.readyToSend));
+        const list: { domain: string; readyToSend: boolean }[] =
+          data.domains ?? [];
+        setSenderDomains(list);
 
         const current = initialRef.current.fromEmail;
         const at = current.lastIndexOf("@");
-        if (data.domain && at > 0 && current.slice(at + 1) === data.domain) {
-          setSenderSource("custom");
+        const currentDomain = at > 0 ? current.slice(at + 1) : "";
+        const match = list.find((entry) => entry.domain === currentDomain);
+        if (match) {
+          setSenderSource(match.domain);
           setCustomLocal(current.slice(0, at));
         } else {
           setSenderSource("shared");
@@ -276,8 +281,8 @@ export function CampaignDetail({
   async function saveFrom() {
     if (!campaign.document) return;
     const fromEmail =
-      senderSource === "custom" && customDomain
-        ? `${customLocal.trim() || "hello"}@${customDomain}`
+      senderSource !== "shared"
+        ? `${customLocal.trim() || "hello"}@${senderSource}`
         : sharedFromEmail;
     await saveSection("from", (doc) => {
       doc.fromName = fromName.trim();
@@ -786,14 +791,15 @@ export function CampaignDetail({
                                   </span>
                                 </label>
                               )}
-                              {customDomain && (
+                              {senderDomains.map((entry) => (
                                 <label
+                                  key={entry.domain}
                                   className={cn(
                                     "flex items-start gap-3 rounded-lg border p-3",
-                                    customDomainReady
+                                    entry.readyToSend
                                       ? "cursor-pointer"
                                       : "opacity-70",
-                                    senderSource === "custom"
+                                    senderSource === entry.domain
                                       ? "border-primary bg-primary/5"
                                       : "border-border",
                                   )}
@@ -801,13 +807,15 @@ export function CampaignDetail({
                                   <input
                                     type="radio"
                                     name="sender-address"
-                                    checked={senderSource === "custom"}
-                                    disabled={!customDomainReady}
-                                    onChange={() => setSenderSource("custom")}
+                                    checked={senderSource === entry.domain}
+                                    disabled={!entry.readyToSend}
+                                    onChange={() =>
+                                      setSenderSource(entry.domain)
+                                    }
                                     className="mt-1 accent-current"
                                   />
                                   <span className="min-w-0 flex-1">
-                                    {senderSource === "custom" ? (
+                                    {senderSource === entry.domain ? (
                                       <span className="flex items-center gap-1">
                                         <Input
                                           value={customLocal}
@@ -823,12 +831,12 @@ export function CampaignDetail({
                                           aria-label="Sender address name"
                                         />
                                         <span className="shrink-0 text-sm text-muted-foreground">
-                                          @{customDomain}
+                                          @{entry.domain}
                                         </span>
                                       </span>
                                     ) : (
                                       <span className="block truncate text-sm font-medium">
-                                        @{customDomain}
+                                        @{entry.domain}
                                       </span>
                                     )}
                                     <span className="mt-1 block text-xs text-muted-foreground">
@@ -836,13 +844,13 @@ export function CampaignDetail({
                                       works (updates, applications, hello…)
                                     </span>
                                   </span>
-                                  {!customDomainReady && (
+                                  {!entry.readyToSend && (
                                     <Badge variant="outline">
                                       Pending verification
                                     </Badge>
                                   )}
                                 </label>
-                              )}
+                              ))}
                             </div>
                             <FieldDescription>
                               Connect and verify your own domain on the{" "}
