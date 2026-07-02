@@ -10,7 +10,7 @@ import {
 } from "@/lib/email/templates";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { getOrganizationForUser } from "@/db/organizations";
-import { SENDING_LOCALPART } from "@/lib/send/sender-identity";
+import { isAllowedFromEmail, SENDING_LOCALPART } from "@/lib/send/sender-identity";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -53,12 +53,27 @@ export async function POST(request: Request) {
 
     const organization = await getOrganizationForUser(userId, organizationId);
 
-    // Default sender = the org's verified custom domain, or the shared
-    // verified default (MAIL_FROM) until one is connected. Editable per-campaign.
-    const fromEmail =
+    // Sender: the caller's choice if it's one they're allowed to use, else
+    // the org's verified custom domain, else the shared default (MAIL_FROM).
+    const requestedFrom =
+      typeof body?.fromEmail === "string" ? body.fromEmail.trim().toLowerCase() : "";
+    let fromEmail =
       organization?.sendingDomain && organization.sendingDomainVerifiedAt
         ? `${SENDING_LOCALPART}@${organization.sendingDomain}`
         : process.env.MAIL_FROM!;
+    if (requestedFrom) {
+      if (!isAllowedFromEmail(requestedFrom, organization)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "You can only send from the shared address or your verified domain.",
+          },
+          { status: 400 },
+        );
+      }
+      fromEmail = requestedFrom;
+    }
 
     // Build the starting design from the chosen template (or blank), and fill
     // template placeholders like {{organization}} with the real org name so

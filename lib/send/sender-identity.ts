@@ -28,3 +28,33 @@ export const SENDING_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export function isValidSlug(slug: string): boolean {
   return SENDING_SLUG_RE.test(slug);
 }
+
+/** Local part users may pick on their own domain (hello, updates, jobs…). */
+export const FROM_LOCALPART_RE =
+  /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/i;
+
+/**
+ * A campaign may only send from the shared verified address (MAIL_FROM) or
+ * any local part on the organization's own verified custom domain.
+ */
+export function isAllowedFromEmail(
+  email: string,
+  organization: {
+    sendingDomain: string | null;
+    sendingDomainVerifiedAt: Date | null;
+  } | null,
+): boolean {
+  if (email === (process.env.MAIL_FROM ?? "")) return email.length > 0;
+
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return false;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1).toLowerCase();
+
+  return Boolean(
+    FROM_LOCALPART_RE.test(local) &&
+      organization?.sendingDomain &&
+      organization.sendingDomainVerifiedAt &&
+      domain === organization.sendingDomain.toLowerCase(),
+  );
+}

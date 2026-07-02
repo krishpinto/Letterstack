@@ -450,7 +450,9 @@ export default function CampaignsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">
-                        {isDraft ? (
+                        {campaign.audienceCount === 0 ? (
+                          <span>—</span>
+                        ) : isDraft ? (
                           <span>
                             {campaign.audienceCount} recipient
                             {campaign.audienceCount === 1 ? "" : "s"}
@@ -651,6 +653,33 @@ function CreateCampaignDialog({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sender options: the shared LetterStack address plus the org's own
+  // verified domain (with a freely chosen local part).
+  const [sharedFromEmail, setSharedFromEmail] = useState("");
+  const [customDomain, setCustomDomain] = useState<string | null>(null);
+  const [customDomainReady, setCustomDomainReady] = useState(false);
+  const [senderSource, setSenderSource] = useState<"shared" | "custom">("shared");
+  const [customLocal, setCustomLocal] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/domains")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.ok) return;
+        setSharedFromEmail(data.sharedFromEmail ?? "");
+        setCustomDomain(data.domain ?? null);
+        setCustomDomainReady(Boolean(data.readyToSend));
+        if (data.readyToSend) setSenderSource("custom");
+      })
+      .catch(() => {});
+  }, [open]);
+
+  const fromEmail =
+    senderSource === "custom" && customDomain
+      ? `${customLocal.trim() || "hello"}@${customDomain}`
+      : sharedFromEmail;
+
   async function create() {
     setCreating(true);
     setError(null);
@@ -662,6 +691,7 @@ function CreateCampaignDialog({
         body: JSON.stringify({
           name: name.trim() || "Untitled Campaign",
           templateId,
+          fromEmail: fromEmail || undefined,
         }),
       });
       const data = await res.json();
@@ -713,6 +743,51 @@ function CreateCampaignDialog({
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="campaign-sender">Send from</FieldLabel>
+            <NativeSelect
+              id="campaign-sender"
+              value={senderSource}
+              onChange={(event) =>
+                setSenderSource(event.target.value as "shared" | "custom")
+              }
+              className="w-full"
+            >
+              <NativeSelectOption value="shared">
+                {sharedFromEmail || "Shared LetterStack address"} — shared
+              </NativeSelectOption>
+              {customDomain && (
+                <NativeSelectOption value="custom" disabled={!customDomainReady}>
+                  {customDomain} — your domain
+                  {customDomainReady ? "" : " (pending verification)"}
+                </NativeSelectOption>
+              )}
+            </NativeSelect>
+            {senderSource === "custom" && customDomain && (
+              <div className="flex items-center gap-1">
+                <Input
+                  value={customLocal}
+                  onChange={(event) =>
+                    setCustomLocal(
+                      event.target.value.toLowerCase().replace(/[^a-z0-9._+-]/g, ""),
+                    )
+                  }
+                  placeholder="hello"
+                  className="min-w-0 flex-1"
+                  aria-label="Sender address name"
+                />
+                <span className="shrink-0 text-sm text-muted-foreground">
+                  @{customDomain}
+                </span>
+              </div>
+            )}
+            <FieldDescription>
+              {customDomain
+                ? "Pick any address name on your domain — updates, applications, hello…"
+                : "Connect your own domain on the Domains page to send from a branded address."}
+            </FieldDescription>
           </Field>
 
           <Field>

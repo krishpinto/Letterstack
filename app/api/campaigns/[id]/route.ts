@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { isEmailDocument, normalizeDocument } from "@/lib/email/document";
 import { deleteCampaign, getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
+import { getOrganizationForUser } from "@/db/organizations";
+import { isAllowedFromEmail } from "@/lib/send/sender-identity";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -50,6 +52,31 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }
     const doc = normalizeDocument(body.document);
     const { html, text } = compileEmailDocument(doc);
+
+    // If the sender is being changed, it must be one this org may use.
+    const nextFromEmail =
+      typeof body?.fromEmail === "string" ? body.fromEmail : doc.fromEmail;
+    const existing = await getCampaignForUser(id, userId);
+    if (
+      existing &&
+      nextFromEmail &&
+      nextFromEmail !== existing.fromEmail
+    ) {
+      const organization = await getOrganizationForUser(
+        userId,
+        existing.organizationId,
+      );
+      if (!isAllowedFromEmail(nextFromEmail.toLowerCase(), organization)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "You can only send from the shared address or your verified domain.",
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     const updated = await updateCampaignDraft(id, userId, {
       name: typeof body?.name === "string" ? body.name : doc.name,
