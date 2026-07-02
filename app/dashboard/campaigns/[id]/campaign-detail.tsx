@@ -104,10 +104,11 @@ export function CampaignDetail({
     initial.document?.settings.previewText ?? "",
   );
   const [savingSection, setSavingSection] = useState<SectionKey | null>(null);
-  const [senderChoice, setSenderChoice] = useState<string>(initial.fromEmail);
   const [sharedFromEmail, setSharedFromEmail] = useState("");
-  const [customFromEmail, setCustomFromEmail] = useState<string | null>(null);
+  const [customDomain, setCustomDomain] = useState<string | null>(null);
   const [customDomainReady, setCustomDomainReady] = useState(false);
+  const [senderSource, setSenderSource] = useState<"shared" | "custom">("shared");
+  const [customLocal, setCustomLocal] = useState("");
   const [reusing, setReusing] = useState(false);
 
   // Audience state
@@ -126,7 +127,6 @@ export function CampaignDetail({
     setCampaign(initial);
     setFromName(initial.fromName);
     setSubject(initial.subject);
-    setSenderChoice(initial.fromEmail);
     setPreviewText(initial.document?.settings.previewText ?? "");
   }, [initial]);
 
@@ -151,15 +151,24 @@ export function CampaignDetail({
     loadAudience();
   }, [loadAudience]);
 
-  // Load the sender addresses this org can use (shared + verified custom domain)
+  // Load the sender addresses this org can use (shared + verified custom
+  // domain), and reflect the campaign's current From address in the picker.
   useEffect(() => {
     fetch("/api/domains")
       .then((r) => r.json())
       .then((data) => {
-        if (data.ok) {
-          setSharedFromEmail(data.sharedFromEmail ?? "");
-          setCustomFromEmail(data.customFromEmail ?? null);
-          setCustomDomainReady(Boolean(data.readyToSend));
+        if (!data.ok) return;
+        setSharedFromEmail(data.sharedFromEmail ?? "");
+        setCustomDomain(data.domain ?? null);
+        setCustomDomainReady(Boolean(data.readyToSend));
+
+        const current = initialRef.current.fromEmail;
+        const at = current.lastIndexOf("@");
+        if (data.domain && at > 0 && current.slice(at + 1) === data.domain) {
+          setSenderSource("custom");
+          setCustomLocal(current.slice(0, at));
+        } else {
+          setSenderSource("shared");
         }
       })
       .catch(() => {});
@@ -266,9 +275,13 @@ export function CampaignDetail({
 
   async function saveFrom() {
     if (!campaign.document) return;
+    const fromEmail =
+      senderSource === "custom" && customDomain
+        ? `${customLocal.trim() || "hello"}@${customDomain}`
+        : sharedFromEmail;
     await saveSection("from", (doc) => {
       doc.fromName = fromName.trim();
-      doc.fromEmail = senderChoice;
+      doc.fromEmail = fromEmail;
     });
   }
 
@@ -750,7 +763,7 @@ export function CampaignDetail({
                                 <label
                                   className={cn(
                                     "flex cursor-pointer items-center gap-3 rounded-lg border p-3",
-                                    senderChoice === sharedFromEmail
+                                    senderSource === "shared"
                                       ? "border-primary bg-primary/5"
                                       : "border-border",
                                   )}
@@ -758,10 +771,8 @@ export function CampaignDetail({
                                   <input
                                     type="radio"
                                     name="sender-address"
-                                    checked={senderChoice === sharedFromEmail}
-                                    onChange={() =>
-                                      setSenderChoice(sharedFromEmail)
-                                    }
+                                    checked={senderSource === "shared"}
+                                    onChange={() => setSenderSource("shared")}
                                     className="accent-current"
                                   />
                                   <span className="min-w-0 flex-1">
@@ -775,14 +786,14 @@ export function CampaignDetail({
                                   </span>
                                 </label>
                               )}
-                              {customFromEmail && (
+                              {customDomain && (
                                 <label
                                   className={cn(
-                                    "flex items-center gap-3 rounded-lg border p-3",
+                                    "flex items-start gap-3 rounded-lg border p-3",
                                     customDomainReady
                                       ? "cursor-pointer"
                                       : "opacity-70",
-                                    senderChoice === customFromEmail
+                                    senderSource === "custom"
                                       ? "border-primary bg-primary/5"
                                       : "border-border",
                                   )}
@@ -790,19 +801,39 @@ export function CampaignDetail({
                                   <input
                                     type="radio"
                                     name="sender-address"
-                                    checked={senderChoice === customFromEmail}
+                                    checked={senderSource === "custom"}
                                     disabled={!customDomainReady}
-                                    onChange={() =>
-                                      setSenderChoice(customFromEmail)
-                                    }
-                                    className="accent-current"
+                                    onChange={() => setSenderSource("custom")}
+                                    className="mt-1 accent-current"
                                   />
                                   <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm font-medium">
-                                      {customFromEmail}
-                                    </span>
-                                    <span className="block text-xs text-muted-foreground">
-                                      Your connected domain
+                                    {senderSource === "custom" ? (
+                                      <span className="flex items-center gap-1">
+                                        <Input
+                                          value={customLocal}
+                                          onChange={(e) =>
+                                            setCustomLocal(
+                                              e.target.value
+                                                .toLowerCase()
+                                                .replace(/[^a-z0-9._+-]/g, ""),
+                                            )
+                                          }
+                                          placeholder="hello"
+                                          className="h-8 min-w-0 flex-1"
+                                          aria-label="Sender address name"
+                                        />
+                                        <span className="shrink-0 text-sm text-muted-foreground">
+                                          @{customDomain}
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span className="block truncate text-sm font-medium">
+                                        @{customDomain}
+                                      </span>
+                                    )}
+                                    <span className="mt-1 block text-xs text-muted-foreground">
+                                      Your connected domain — any address name
+                                      works (updates, applications, hello…)
                                     </span>
                                   </span>
                                   {!customDomainReady && (
