@@ -32,13 +32,18 @@ async function main() {
     );
     for (const r of status.records) {
       console.log(`  [${r.purpose}]`);
-      console.log(`    Type:  ${r.type}`);
-      console.log(`    Host:  ${r.host}`);
-      console.log(`    Value: ${r.value}\n`);
+      console.log(`    Type:     ${r.type}`);
+      console.log(`    Host:     ${r.host}`);
+      console.log(`    Value:    ${r.value}`);
+      if (r.priority !== undefined) console.log(`    Priority: ${r.priority}`);
+      console.log("");
     }
     console.log(
       [
         "Notes for the domain owner:",
+        "  - Every Value is a hostname or text — never an IP address.",
+        "  - Leave TTL on Auto/default. On Cloudflare, set records to \"DNS only\"",
+        "    (grey cloud), not Proxied — proxying breaks verification.",
         "  - Some DNS panels (GoDaddy, Namecheap) auto-append the domain to Host.",
         `    If so, enter the Host WITHOUT the trailing ".${status.domain}" part.`,
         "  - No existing records need to change; these are all additions.",

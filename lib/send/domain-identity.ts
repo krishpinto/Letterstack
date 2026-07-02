@@ -36,7 +36,10 @@ export function mailFromDomain(domain: string): string {
 export type DomainDnsRecord = {
   type: "CNAME" | "MX" | "TXT";
   host: string;
+  /** Always a hostname or text value — never an IP address. */
   value: string;
+  /** MX only. DNS panels ask for this as its own field. */
+  priority?: number;
   purpose: string;
   /** Which SES status this record's verification is reported under. */
   group: "dkim" | "mailFrom";
@@ -58,7 +61,8 @@ export function dnsRecordsForDomain(
     {
       type: "MX",
       host: mailFromDomain(domain),
-      value: `10 feedback-smtp.${region}.amazonses.com`,
+      value: `feedback-smtp.${region}.amazonses.com`,
+      priority: 10,
       purpose: "Bounce return path (MAIL FROM)",
       group: "mailFrom",
     },

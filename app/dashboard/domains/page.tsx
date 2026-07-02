@@ -44,6 +44,7 @@ type DnsRecord = {
   type: string;
   host: string;
   value: string;
+  priority?: number;
   purpose: string;
   group: "dkim" | "mailFrom";
 };
@@ -148,7 +149,16 @@ export default function DomainsPage() {
   function copyAllRecords() {
     if (!state?.records) return;
     const text = state.records
-      .map((r) => `${r.purpose}\nType:  ${r.type}\nHost:  ${r.host}\nValue: ${r.value}`)
+      .map((r) =>
+        [
+          r.purpose,
+          `Type:     ${r.type}`,
+          `Host:     ${r.host}`,
+          `Value:    ${r.value}`,
+          ...(r.priority !== undefined ? [`Priority: ${r.priority}`] : []),
+          "TTL:      Auto / default",
+        ].join("\n"),
+      )
       .join("\n\n");
     void copyText("all", text);
   }
@@ -259,7 +269,10 @@ export default function DomainsPage() {
                       <h2 className="text-sm font-medium">DNS records</h2>
                       <p className="text-sm text-muted-foreground">
                         Add these at your DNS provider (GoDaddy, Cloudflare,
-                        Namecheap, …). Nothing existing needs to change.
+                        Namecheap, …). Nothing existing needs to change. Every
+                        value is a hostname or text — never an IP address. Leave
+                        TTL on Auto/default. On Cloudflare, set each record to
+                        “DNS only” (grey cloud), not Proxied.
                       </p>
                     </div>
                   </div>
@@ -269,6 +282,7 @@ export default function DomainsPage() {
                         <TableHead>Type</TableHead>
                         <TableHead>Host</TableHead>
                         <TableHead>Value</TableHead>
+                        <TableHead>Priority</TableHead>
                         <TableHead className="text-right">Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -309,6 +323,9 @@ export default function DomainsPage() {
                               {copied === `${key}-value` && (
                                 <span className="ml-1 text-xs text-primary">Copied</span>
                               )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {record.priority ?? "—"}
                             </TableCell>
                             <TableCell className="text-right">
                               {statusBadge(group)}
