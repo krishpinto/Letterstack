@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "email-sdk": {
+      "source": "opencoredev/email-sdk",
+      "sourceType": "github",
+      "skillPath": "skills/email-sdk/SKILL.md",
+      "computedHash": "397a20b6a4b505ceb9f359a7069593d2aebb43db34e2be93b99ccc8a98279e76"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "0dc0edeeaec2ae491ae506806517866a3f9bd48d04e0458feb37e0252862891f"
+    }
+  }
+}

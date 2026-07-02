@@ -1,23 +1,22 @@
 import type { Metadata } from "next";
 import { Providers } from "./providers";
-import { Inter, Merriweather, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
-const fontSans = Inter({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
 });
 
-const fontSerif = Merriweather({
+const geistSans = Geist({
   subsets: ["latin"],
-  variable: "--font-serif",
+  variable: "--font-geist-sans",
 });
 
-const fontMono = JetBrains_Mono({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-geist-mono",
 });
-
 
 export const metadata: Metadata = {
   title: "LetterStack",
@@ -32,7 +31,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${fontSans.variable} ${fontSerif.variable} ${fontMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} h-full font-sans antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>

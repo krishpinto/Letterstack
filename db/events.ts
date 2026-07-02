@@ -1,20 +1,8 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
+import { getDefaultOrganizationForUser } from "./organizations";
 import { campaigns, emailEvents } from "./schema";
 
-/** Record one SES event (Delivery / Bounce / Complaint / Open / Click / …),
- * optionally attributed to the campaign whose send produced it. */
-export async function recordEvent(email: string, type: string, campaignId?: string | null) {
-  await db.insert(emailEvents).values({ email, type, campaignId: campaignId ?? null });
-}
-
-/** Read the most recent events — for the lab card. */
-export async function listEvents(limit = 20) {
-  return db.select().from(emailEvents).orderBy(desc(emailEvents.createdAt)).limit(limit);
-}
-
-/** Engagement = SES event types this address generated. Opens/clicks are
- * counted both raw (total events) and unique (distinct address). */
 export type CampaignEngagement = {
   delivered: number;
   bounced: number;
@@ -35,7 +23,14 @@ const EMPTY_ENGAGEMENT: CampaignEngagement = {
   clicksUnique: 0,
 };
 
-/** Aggregate one campaign's events into engagement counts. */
+export async function recordEvent(email: string, type: string, campaignId?: string | null) {
+  await db.insert(emailEvents).values({ email, type, campaignId: campaignId ?? null });
+}
+
+export async function listEvents(limit = 20) {
+  return db.select().from(emailEvents).orderBy(desc(emailEvents.createdAt)).limit(limit);
+}
+
 export async function campaignEngagement(campaignId: string): Promise<CampaignEngagement> {
   const rows = await db
     .select({
@@ -50,10 +45,8 @@ export async function campaignEngagement(campaignId: string): Promise<CampaignEn
   return foldEngagement(rows);
 }
 
-/** Same aggregation for EVERY campaign owned by a user, in one query — for the
- * analytics overview table. Returns a map of campaignId → engagement. */
-export async function engagementByCampaign(
-  userId: string,
+export async function engagementByOrganization(
+  organizationId: string,
 ): Promise<Map<string, CampaignEngagement>> {
   const rows = await db
     .select({
@@ -64,48 +57,60 @@ export async function engagementByCampaign(
     })
     .from(emailEvents)
     .innerJoin(campaigns, eq(emailEvents.campaignId, campaigns.id))
-    .where(eq(campaigns.userId, userId))
+    .where(eq(campaigns.organizationId, organizationId))
     .groupBy(emailEvents.campaignId, emailEvents.type);
 
   const byCampaign = new Map<string, { type: string; total: number; uniques: number }[]>();
-  for (const r of rows) {
-    if (!r.campaignId) continue;
-    const list = byCampaign.get(r.campaignId) ?? [];
-    list.push({ type: r.type, total: r.total, uniques: r.uniques });
-    byCampaign.set(r.campaignId, list);
+  for (const row of rows) {
+    if (!row.campaignId) continue;
+    const list = byCampaign.get(row.campaignId) ?? [];
+    list.push({ type: row.type, total: row.total, uniques: row.uniques });
+    byCampaign.set(row.campaignId, list);
   }
 
-  const out = new Map<string, CampaignEngagement>();
-  for (const [id, list] of byCampaign) out.set(id, foldEngagement(list));
-  return out;
+  const output = new Map<string, CampaignEngagement>();
+  for (const [id, rowsForCampaign] of byCampaign) {
+    output.set(id, foldEngagement(rowsForCampaign));
+  }
+
+  return output;
 }
 
-/** Collapse grouped (type, total, uniques) rows into one engagement record.
- * SES event types: Delivery / Bounce / Complaint / Open / Click. */
+export async function engagementByCampaign(
+  userId: string,
+): Promise<Map<string, CampaignEngagement>> {
+  const organization = await getDefaultOrganizationForUser(userId);
+  if (!organization) return new Map();
+
+  return engagementByOrganization(organization.id);
+}
+
 function foldEngagement(
   rows: { type: string; total: number; uniques: number }[],
 ): CampaignEngagement {
-  const e: CampaignEngagement = { ...EMPTY_ENGAGEMENT };
-  for (const r of rows) {
-    switch (r.type) {
+  const engagement: CampaignEngagement = { ...EMPTY_ENGAGEMENT };
+
+  for (const row of rows) {
+    switch (row.type) {
       case "Delivery":
-        e.delivered = r.total;
+        engagement.delivered = row.total;
         break;
       case "Bounce":
-        e.bounced = r.total;
+        engagement.bounced = row.total;
         break;
       case "Complaint":
-        e.complained = r.total;
+        engagement.complained = row.total;
         break;
       case "Open":
-        e.opensTotal = r.total;
-        e.opensUnique = r.uniques;
+        engagement.opensTotal = row.total;
+        engagement.opensUnique = row.uniques;
         break;
       case "Click":
-        e.clicksTotal = r.total;
-        e.clicksUnique = r.uniques;
+        engagement.clicksTotal = row.total;
+        engagement.clicksUnique = row.uniques;
         break;
     }
   }
-  return e;
+
+  return engagement;
 }

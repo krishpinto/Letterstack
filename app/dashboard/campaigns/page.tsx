@@ -1,9 +1,76 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  FilterIcon,
+  MailIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  SearchIcon,
+  Trash2Icon,
+} from "lucide-react";
+
 import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
+import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type Campaign = {
   id: string;
@@ -20,17 +87,33 @@ type Campaign = {
 
 type StatusKey = "all" | "draft" | "sending" | "sent";
 
-const STATUS = {
-  draft: { label: "Draft", bg: "bg-zinc-100", fg: "text-zinc-600", dot: "bg-zinc-400" },
-  sending: { label: "Sending", bg: "bg-amber-50", fg: "text-amber-700", dot: "bg-amber-500" },
-  sent: { label: "Sent", bg: "bg-emerald-50", fg: "text-emerald-700", dot: "bg-emerald-500" },
+const STATUS_LABELS: Record<StatusKey, string> = {
+  all: "All",
+  draft: "Draft",
+  sending: "Sending",
+  sent: "Sent",
+};
+
+const STATUS_BADGE_VARIANTS = {
+  draft: "secondary",
+  sending: "outline",
+  sent: "default",
 } as const;
 
-// checkbox | Name | Status | Send to | Recipients | Created | chevron
-const GRID = "40px minmax(200px,2.4fr) 130px 140px 110px 110px 36px";
+const STATUS_DESCRIPTIONS: Record<Exclude<StatusKey, "all">, string> = {
+  draft: "Not sent yet",
+  sending: "Queued / in progress",
+  sent: "Completed",
+};
+
+const PAGE_SIZE = 8;
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export default function CampaignsPage() {
@@ -41,23 +124,97 @@ export default function CampaignsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    fetch("/api/campaigns")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.ok) setList(d.campaigns);
-      })
-      .finally(() => setLoading(false));
+  const loadCampaigns = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/campaigns");
+      const data = await response.json();
+      setList(data.ok ? data.campaigns : []);
+    } catch {
+      setList([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const counts = useMemo(() => {
-    const c: Record<StatusKey, number> = { all: list.length, draft: 0, sending: 0, sent: 0 };
-    list.forEach((x) => {
-      if (x.status === "draft" || x.status === "sending" || x.status === "sent") c[x.status]++;
+  useEffect(() => {
+    void loadCampaigns();
+  }, [loadCampaigns]);
+
+  useEffect(() => {
+    return onOrganizationChanged(() => {
+      setSelected(new Set());
+      setQuery("");
+      setStatusFilter("all");
+      setPage(1);
+      void loadCampaigns();
     });
+  }, [loadCampaigns]);
+
+  const counts = useMemo(() => {
+    const c: Record<StatusKey, number> = {
+      all: list.length,
+      draft: 0,
+      sending: 0,
+      sent: 0,
+    };
+
+    list.forEach((item) => {
+      if (
+        item.status === "draft" ||
+        item.status === "sending" ||
+        item.status === "sent"
+      ) {
+        c[item.status]++;
+      }
+    });
+
     return c;
   }, [list]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return list.filter((campaign) => {
+      if (statusFilter !== "all" && campaign.status !== statusFilter) {
+        return false;
+      }
+
+      if (
+        q &&
+        !`${campaign.name} ${campaign.subject}`.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [list, query, statusFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const firstShown = filtered.length === 0 ? 0 : pageStart + 1;
+  const lastShown = Math.min(pageStart + pageItems.length, filtered.length);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter]);
+
+  useEffect(() => {
+    if (page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [page, pageCount]);
+
+  const allVisibleSelected =
+    pageItems.length > 0 &&
+    pageItems.every((campaign) => selected.has(campaign.id));
+  const someVisibleSelected = pageItems.some((campaign) =>
+    selected.has(campaign.id),
+  );
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -68,12 +225,17 @@ export default function CampaignsPage() {
     });
   }
 
-  async function handleBulkDelete() {
-    const ids = [...selected];
-    if (ids.length === 0) return;
-    if (!window.confirm(`Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}? This can't be undone.`)) {
-      return;
-    }
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const ids = pageItems.map((campaign) => campaign.id);
+      const allOn = ids.length > 0 && ids.every((id) => next.has(id));
+      ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }
+
+  async function deleteCampaigns(ids: string[]) {
     const results = await Promise.all(
       ids.map((id) =>
         fetch(`/api/campaigns/${id}`, { method: "DELETE" })
@@ -82,212 +244,396 @@ export default function CampaignsPage() {
           .catch(() => ({ id, ok: false })),
       ),
     );
-    const deleted = new Set(results.filter((r) => r.ok).map((r) => r.id));
-    setList((prev) => prev.filter((c) => !deleted.has(c.id)));
-    setSelected(new Set());
-  }
+    const deleted = new Set(
+      results.filter((result) => result.ok).map((result) => result.id),
+    );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return list.filter((c) => {
-      if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (q && !`${c.name} ${c.subject}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [list, query, statusFilter]);
-
-  const allVisibleSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id));
-  function toggleAll() {
+    setList((prev) => prev.filter((campaign) => !deleted.has(campaign.id)));
     setSelected((prev) => {
       const next = new Set(prev);
-      const ids = filtered.map((c) => c.id);
-      const allOn = ids.length > 0 && ids.every((id) => next.has(id));
-      ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
+      deleted.forEach((id) => next.delete(id));
       return next;
     });
   }
 
+  async function handleBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+
+    if (
+      !window.confirm(
+        `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    await deleteCampaigns(ids);
+  }
+
+  async function handleRowDelete(campaign: Campaign) {
+    if (
+      !window.confirm(
+        `Delete ${campaign.name || "this campaign"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    await deleteCampaigns([campaign.id]);
+  }
+
   return (
-    <div className="p-8">
-      {/* Toolbar: search · status filters · create */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[220px] flex-1">
-          <SearchIcon />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search campaigns…"
-            className="h-[38px] w-full rounded-[9px] border border-zinc-200 bg-white pl-9 pr-3 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-zinc-300"
-          />
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal">Campaigns</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create, review, and monitor email campaigns from one workspace.
+          </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          {(["all", "draft", "sending", "sent"] as StatusKey[]).map((key) => {
-            const active = statusFilter === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setStatusFilter(key)}
-                className={`inline-flex h-[38px] items-center gap-1.5 rounded-[9px] border px-3.5 text-[13.5px] font-medium transition-colors ${
-                  active
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-600"
-                    : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
-                }`}
-              >
-                {key === "all" ? "All" : STATUS[key].label}
-                <span className={`text-xs font-semibold tabular-nums ${active ? "text-indigo-500" : "text-zinc-400"}`}>
-                  {counts[key]}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex h-[38px] shrink-0 items-center gap-2 rounded-[9px] bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-        >
-          <PlusIcon /> Create
-        </button>
+        <Button onClick={() => setCreateOpen(true)}>
+          <PlusIcon data-icon="inline-start" />
+          Create
+        </Button>
       </div>
 
-      {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5">
-          <span className="text-sm font-medium text-indigo-700">
-            {selected.size} selected
-          </span>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSelected(new Set())} className="text-sm font-medium text-indigo-600 hover:underline">
-              Clear
-            </button>
-            <button
-              onClick={handleBulkDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700"
-            >
-              <TrashIcon /> Delete
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="mt-5 overflow-hidden rounded-xl border border-zinc-200 bg-white">
-        <div
-          className="grid items-center border-b border-zinc-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-400"
-          style={{ gridTemplateColumns: GRID }}
-        >
-          <Checkbox checked={allVisibleSelected} onChange={toggleAll} />
-          <span>Campaign</span>
-          <span>Status</span>
-          <span>Send to</span>
-          <span>Recipients</span>
-          <span>Created</span>
-          <span />
-        </div>
-
-        {loading && <div className="px-4 py-12 text-center text-sm text-zinc-400">Loading…</div>}
-
-        {!loading && filtered.length === 0 && (
-          <div className="px-4 py-16 text-center">
-            <p className="text-sm font-medium text-zinc-600">
-              {list.length === 0 ? "No campaigns yet" : "No campaigns match your filters"}
-            </p>
-            <p className="mt-1 text-sm text-zinc-400">
-              {list.length === 0 ? (
-                <>
-                  Compose one in the{" "}
-                  <Link href="/editor-new" className="text-indigo-600 hover:underline">
-                    editor
-                  </Link>
-                  , then send it.
-                </>
-              ) : (
-                "Try a different search or status."
-              )}
-            </p>
-          </div>
-        )}
-
-        {!loading &&
-          filtered.map((c) => {
-            const tone = STATUS[c.status as keyof typeof STATUS] ?? STATUS.draft;
-            const isDraft = c.status === "draft";
-            return (
-              <div
-                key={c.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => router.push(`/dashboard/campaigns/${c.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") router.push(`/dashboard/campaigns/${c.id}`);
-                }}
-                className={`group grid w-full cursor-pointer items-center border-b border-zinc-50 px-4 text-left transition-colors last:border-0 ${
-                  selected.has(c.id) ? "bg-indigo-50/50" : "hover:bg-zinc-50/70"
-                }`}
-                style={{ gridTemplateColumns: GRID, height: 64 }}
-              >
-                {/* Checkbox */}
-                <div onClick={(e) => e.stopPropagation()}>
-                  <Checkbox checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} />
-                </div>
-
-                {/* Name */}
-                <div className="flex min-w-0 items-center gap-3 pr-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
-                    <MailIcon />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-zinc-800">
-                      {c.name || "Untitled Campaign"}
-                    </div>
-                    <div className="truncate text-xs text-zinc-400">{c.subject || "No subject"}</div>
-                  </div>
-                </div>
-
-                {/* Status */}
-                <div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${tone.bg} ${tone.fg}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
-                    {tone.label}
-                  </span>
-                </div>
-
-                {/* Send to */}
-                <div className="text-sm text-zinc-500">All contacts</div>
-
-                {/* Recipients */}
-                <div className="text-sm tabular-nums text-zinc-600">
-                  {isDraft ? (
-                    <span className="text-zinc-300">—</span>
-                  ) : (
-                    <span>
-                      {c.sentCount}
-                      <span className="text-zinc-400">/{c.audienceCount}</span>
-                    </span>
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {filtered.length} of {list.length} campaign
+            {list.length === 1 ? "" : "s"} shown
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 sm:w-72">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search campaigns..."
+                className="pl-8"
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <FilterIcon data-icon="inline-start" />
+                  Filter
+                  {statusFilter !== "all" && (
+                    <Badge variant="secondary">
+                      {STATUS_LABELS[statusFilter]}
+                    </Badge>
                   )}
-                </div>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {(["all", "draft", "sending", "sent"] as StatusKey[]).map(
+                    (key) => (
+                      <DropdownMenuItem
+                        key={key}
+                        onClick={() => setStatusFilter(key)}
+                      >
+                        <span>{STATUS_LABELS[key]}</span>
+                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                          {counts[key]}
+                        </span>
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
-                {/* Created */}
-                <div className="text-xs text-zinc-400">{formatDate(c.createdAt)}</div>
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={
+                      allVisibleSelected
+                        ? true
+                        : someVisibleSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all visible campaigns"
+                  />
+                </TableHead>
+                <TableHead>Campaign</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden lg:table-cell">Recipients</TableHead>
+                <TableHead className="hidden xl:table-cell">Created</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-32">
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Spinner />
+                      Loading campaigns...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
 
-                {/* Chevron */}
-                <div className="flex justify-end text-zinc-300">
-                  <ChevronIcon />
-                </div>
-              </div>
-            );
-          })}
-      </div>
+              {!loading && filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <CampaignEmptyState hasCampaigns={list.length > 0} />
+                  </TableCell>
+                </TableRow>
+              )}
 
-      {createOpen && <CreateCampaignModal onClose={() => setCreateOpen(false)} />}
+              {!loading &&
+                pageItems.map((campaign) => {
+                  const status =
+                    campaign.status === "sending" || campaign.status === "sent"
+                      ? campaign.status
+                      : "draft";
+                  const isDraft = campaign.status === "draft";
+
+                  return (
+                    <TableRow
+                      key={campaign.id}
+                      data-state={selected.has(campaign.id) ? "selected" : undefined}
+                      className="cursor-pointer"
+                      onClick={() => router.push(`/dashboard/campaigns/${campaign.id}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          router.push(`/dashboard/campaigns/${campaign.id}`);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          checked={selected.has(campaign.id)}
+                          onCheckedChange={() => toggleOne(campaign.id)}
+                          aria-label={`Select ${campaign.name || "campaign"}`}
+                        />
+                      </TableCell>
+                      <TableCell className="min-w-64">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                            <MailIcon className="size-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-foreground">
+                              {campaign.name || "Untitled Campaign"}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {campaign.subject || "No subject"}
+                            </span>
+                          </span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={STATUS_BADGE_VARIANTS[status]}>
+                            <span className="size-1.5 rounded-full bg-current" />
+                            {STATUS_LABELS[status]}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {STATUS_DESCRIPTIONS[status]}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">
+                        {isDraft ? (
+                          <span>
+                            {campaign.audienceCount} recipient
+                            {campaign.audienceCount === 1 ? "" : "s"}
+                          </span>
+                        ) : (
+                          <span>
+                            {campaign.sentCount}/{campaign.audienceCount}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground xl:table-cell">
+                        {formatDate(campaign.createdAt)}
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Open actions for ${campaign.name || "campaign"}`}
+                            >
+                              <MoreHorizontalIcon />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  router.push(`/dashboard/campaigns/${campaign.id}`)
+                                }
+                              >
+                                Open campaign
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => handleRowDelete(campaign)}
+                              >
+                                <Trash2Icon data-icon="inline-start" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {firstShown}-{lastShown} of {filtered.length}
+          </p>
+          {pageCount > 1 && (
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setPage((current) => Math.max(1, current - 1));
+                    }}
+                    aria-disabled={page === 1}
+                    tabIndex={page === 1 ? -1 : undefined}
+                  />
+                </PaginationItem>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map(
+                  (pageNumber) => (
+                    <PaginationItem key={pageNumber}>
+                      <PaginationLink
+                        href="#"
+                        isActive={pageNumber === page}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setPage(pageNumber);
+                        }}
+                      >
+                        {pageNumber}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ),
+                )}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setPage((current) => Math.min(pageCount, current + 1));
+                    }}
+                    aria-disabled={page === pageCount}
+                    tabIndex={page === pageCount ? -1 : undefined}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
+        </div>
+
+        {selected.size > 0 && (
+          <Alert>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {selected.size} campaign{selected.size === 1 ? "" : "s"} selected
+              </span>
+              <span className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelected(new Set())}
+                >
+                  Clear
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                >
+                  <Trash2Icon data-icon="inline-start" />
+                  Delete
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
+      </section>
+
+      <CreateCampaignDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
     </div>
   );
 }
 
-// ── Create campaign modal ────────────────────────────────────────────────────
+function CampaignEmptyState({ hasCampaigns }: { hasCampaigns: boolean }) {
+  return (
+    <Empty className="border-0 py-14">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <MailIcon />
+        </EmptyMedia>
+        <EmptyTitle>
+          {hasCampaigns ? "No campaigns match your filters" : "No campaigns yet"}
+        </EmptyTitle>
+        <EmptyDescription>
+          {hasCampaigns ? (
+            "Try a different search or status filter."
+          ) : (
+            <>
+              Compose one in the{" "}
+              <Link href="/editor">editor</Link>, then send it.
+            </>
+          )}
+        </EmptyDescription>
+      </EmptyHeader>
+      {!hasCampaigns && (
+        <EmptyContent>
+          <Button asChild>
+            <Link href="/editor">Open editor</Link>
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
+  );
+}
 
-function CreateCampaignModal({ onClose }: { onClose: () => void }) {
+function CreateCampaignDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const router = useRouter();
   const defaultName = useMemo(
     () =>
@@ -308,18 +654,24 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   async function create() {
     setCreating(true);
     setError(null);
+
     try {
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || "Untitled Campaign", templateId }),
+        body: JSON.stringify({
+          name: name.trim() || "Untitled Campaign",
+          templateId,
+        }),
       });
       const data = await res.json();
+
       if (!data.ok) {
         setError(data.error || "Could not create campaign");
         setCreating(false);
         return;
       }
+
       router.push(`/dashboard/campaigns/${data.id}`);
     } catch {
       setError("Could not reach the server.");
@@ -328,159 +680,87 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <button className="absolute inset-0 bg-zinc-900/40" aria-hidden onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
-          <h2 className="text-base font-semibold text-zinc-800">Create a new email</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
-            <CloseIcon />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create a new email</DialogTitle>
+          <DialogDescription>
+            Choose a starting point and name the campaign before opening the editor.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="space-y-5 p-5">
-          {/* Type — only Regular for now */}
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-zinc-500">Type</label>
-            <div className="flex items-start gap-3 rounded-lg border border-zinc-900 bg-zinc-50/60 p-3">
-              <div className="mt-0.5 text-zinc-700">
-                <MailIcon />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-zinc-800">Regular email</div>
-                <p className="text-xs text-zinc-500">
-                  Design an on-brand email to promote a product, announce an event, or share news.
-                </p>
-              </div>
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel>Type</FieldLabel>
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+                <MailIcon className="size-4" />
+              </span>
+              <span>
+                <span className="block text-sm font-medium">Regular email</span>
+                <FieldDescription>
+                  Design an on-brand email to promote a product, announce an
+                  event, or share news.
+                </FieldDescription>
+              </span>
             </div>
-          </div>
+          </Field>
 
-          {/* Name */}
-          <div>
-            <label htmlFor="campaign-name" className="mb-1.5 block text-xs font-medium text-zinc-500">
-              Internal name
-            </label>
-            <input
+          <Field>
+            <FieldLabel htmlFor="campaign-name">Internal name</FieldLabel>
+            <Input
               id="campaign-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-zinc-300"
+              onChange={(event) => setName(event.target.value)}
             />
-          </div>
+          </Field>
 
-          {/* Template */}
-          <div>
-            <label htmlFor="campaign-template" className="mb-1.5 block text-xs font-medium text-zinc-500">
-              Start from
-            </label>
-            <select
+          <Field>
+            <FieldLabel htmlFor="campaign-template">Start from</FieldLabel>
+            <NativeSelect
               id="campaign-template"
               value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-zinc-300"
+              onChange={(event) => setTemplateId(event.target.value)}
+              className="w-full"
             >
-              <option value="blank">Blank — start from scratch</option>
-              {PREBUILT_TEMPLATES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
+              <NativeSelectOption value="blank">
+                Blank - start from scratch
+              </NativeSelectOption>
+              {PREBUILT_TEMPLATES.map((template) => (
+                <NativeSelectOption key={template.id} value={template.id}>
+                  {template.title}
+                </NativeSelectOption>
               ))}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
 
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </div>
+        </FieldGroup>
 
-        <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-4">
-          <button
-            onClick={onClose}
-            className="h-9 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={creating}
           >
             Cancel
-          </button>
-          <button
-            onClick={create}
-            disabled={creating}
-            className="h-9 rounded-lg bg-zinc-900 px-5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
-          >
-            {creating ? "Creating…" : "Begin"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+          <Button onClick={create} disabled={creating}>
+            {creating && <Spinner data-icon="inline-start" />}
+            {creating ? "Creating..." : "Begin"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function CloseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
 
-function PlusIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
 
-function SearchIcon() {
-  return (
-    <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.3-4.3" />
-    </svg>
-  );
-}
 
-function MailIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-    </svg>
-  );
-}
 
-function TrashIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-      <path d="M10 11v6M14 11v6" />
-    </svg>
-  );
-}
 
-function ChevronIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m9 18 6-6-6-6" />
-    </svg>
-  );
-}
-
-function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange();
-      }}
-      className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] text-[11px] font-bold transition-colors ${
-        checked
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
-      }`}
-      aria-label="Select"
-    >
-      ✓
-    </button>
-  );
-}

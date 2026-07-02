@@ -4,10 +4,10 @@
 import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
-import { createCampaign, listCampaigns } from "@/db/campaigns";
+import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { getSendingSlug } from "@/db/users";
 import { sendingAddressForSlug } from "@/lib/send/sender-identity";
-import { currentUserId } from "@/lib/auth-helpers";
+import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
@@ -16,8 +16,12 @@ export async function GET() {
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const organizationId = await currentOrganizationId();
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "Organization required" }, { status: 428 });
+  }
   try {
-    const campaigns = await listCampaigns(userId);
+    const campaigns = await listCampaignsForOrganization(organizationId);
     return NextResponse.json({ ok: true, campaigns });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -32,6 +36,10 @@ export async function POST(request: Request) {
   }
   if (!process.env.MAIL_FROM) {
     return NextResponse.json({ ok: false, error: "MAIL_FROM missing" }, { status: 400 });
+  }
+  const organizationId = await currentOrganizationId();
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "Create an organization first" }, { status: 428 });
   }
 
   try {
@@ -51,7 +59,7 @@ export async function POST(request: Request) {
     doc.fromEmail = fromEmail;
 
     const { html, text } = compileEmailDocument(doc);
-    const campaign = await createCampaign(userId, {
+    const campaign = await createCampaign(userId, organizationId, {
       name,
       subject: doc.subject || "",
       fromName: doc.fromName || "LetterStack",

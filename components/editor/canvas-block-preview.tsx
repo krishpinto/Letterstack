@@ -7,6 +7,7 @@ import {
   DEFAULT_FONT_SIZE_BY_TEXT_TYPE,
   type FormattingTextType,
 } from "./formatting-options";
+import { previewHtml } from "./preview-html";
 import { RichTextEditor } from "./rich-text-editor";
 import {
   type ArticleCardBlock,
@@ -143,7 +144,7 @@ export function CanvasBlockPreview({
             <div
               className="font-extrabold leading-tight"
               style={{ color: textColor, fontSize: block.level === 1 ? 32 : block.level === 2 ? 24 : 18 }}
-              dangerouslySetInnerHTML={{ __html: stripOuterP(block.text) }}
+              dangerouslySetInnerHTML={previewHtml(stripOuterP(block.text))}
             />
           )}
         </div>
@@ -165,7 +166,7 @@ export function CanvasBlockPreview({
             <div
               className="text-[15px] leading-relaxed"
               style={{ color: textColor }}
-              dangerouslySetInnerHTML={{ __html: block.body }}
+              dangerouslySetInnerHTML={previewHtml(block.body)}
             />
           )}
         </div>
@@ -206,7 +207,7 @@ export function CanvasBlockPreview({
             <h2
               className="mb-3 text-[26px] font-extrabold leading-tight"
               style={{ color: textColor }}
-              dangerouslySetInnerHTML={{ __html: stripOuterP(block.heading) }}
+              dangerouslySetInnerHTML={previewHtml(stripOuterP(block.heading))}
             />
           )}
           {editable ? (
@@ -222,7 +223,7 @@ export function CanvasBlockPreview({
             <div
               className="text-sm leading-relaxed"
               style={{ color: textColor }}
-              dangerouslySetInnerHTML={{ __html: block.body }}
+              dangerouslySetInnerHTML={previewHtml(block.body)}
             />
           )}
         </div>
@@ -289,7 +290,7 @@ export function CanvasBlockPreview({
                 <h3
                   className="mb-2 text-base font-extrabold leading-tight"
                   style={{ color: textColor }}
-                  dangerouslySetInnerHTML={{ __html: stripOuterP(block.headline) }}
+                  dangerouslySetInnerHTML={previewHtml(stripOuterP(block.headline))}
                 />
               )}
               {editable ? (
@@ -305,7 +306,7 @@ export function CanvasBlockPreview({
                 <div
                   className={cn("text-[13px] leading-relaxed", showCta && "mb-3")}
                   style={{ color: textColor, opacity: 0.82 }}
-                  dangerouslySetInnerHTML={{ __html: block.body }}
+                  dangerouslySetInnerHTML={previewHtml(block.body)}
                 />
               )}
               {articleCta}
@@ -365,12 +366,12 @@ export function CanvasBlockPreview({
                 <h3
                   className="mb-2 text-lg font-extrabold leading-tight"
                   style={{ color: textColor }}
-                  dangerouslySetInnerHTML={{ __html: stripOuterP(column.heading) }}
+                  dangerouslySetInnerHTML={previewHtml(stripOuterP(column.heading))}
                 />
                 <div
                   className={cn("text-sm leading-relaxed", column.showCta && "mb-3")}
                   style={{ color: textColor, opacity: 0.82 }}
-                  dangerouslySetInnerHTML={{ __html: column.body }}
+                  dangerouslySetInnerHTML={previewHtml(column.body)}
                 />
                 {column.showCta ? (
                   <span className="text-xs font-bold" style={{ color: s.linkColor }}>

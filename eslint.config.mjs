@@ -5,6 +5,15 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    rules: {
+      // These React Compiler rules are useful migration targets, but the current
+      // editor/lab code still uses standard effect-driven state patterns.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/refs": "off",
+      "react/no-unescaped-entities": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

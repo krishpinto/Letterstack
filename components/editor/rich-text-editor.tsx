@@ -18,7 +18,6 @@ import {
 import { useEditorToolbar } from "./editor-toolbar-context";
 import {
   createSlashExtension,
-  SLASH_ITEMS,
   type SlashCallbacks,
   type SlashItem,
 } from "./slash-command-extension";

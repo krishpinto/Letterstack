@@ -1,14 +1,7 @@
-// The SES events webhook. In production: SES → SNS → here.
-//
-// It records every event in email_events, and the moment SES reports a Bounce
-// or Complaint, it drops that address onto the suppression list automatically —
-// so bad addresses remove themselves, which is what keeps SES from suspending
-// you. (SNS signature verification is a deploy-time TODO, like QStash's was.)
-
 import { NextResponse } from "next/server";
 import { recordEvent } from "@/db/events";
-import { suppressEmail } from "@/db/suppression";
-import { userIdsForEmail } from "@/db/campaign-recipients";
+import { suppressEmailForOrganization } from "@/db/suppression";
+import { suppressionTargetsForEmail } from "@/db/campaign-recipients";
 
 export const runtime = "nodejs";
 
@@ -18,40 +11,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Bad payload" }, { status: 400 });
   }
 
-  // SNS sends a one-time confirmation when you first subscribe. We confirm it
-  // automatically by fetching the SubscribeURL SNS provides — then the
-  // subscription goes active and real events start flowing.
   if (raw.Type === "SubscriptionConfirmation") {
     if (raw.SubscribeURL) await fetch(raw.SubscribeURL).catch(() => {});
     return NextResponse.json({ ok: true });
   }
 
-  // Real SNS wraps the SES event as a JSON string in `Message`. Our local
-  // simulation posts the event directly. Handle both.
   const event = typeof raw.Message === "string" ? JSON.parse(raw.Message) : raw;
-
-  // SES uses `eventType` (config sets) or `notificationType` (legacy).
   const type: string = event.eventType ?? event.notificationType ?? "Unknown";
-
-  // Pull the affected address out of whichever sub-object applies.
   const email: string | null =
     event.bounce?.bouncedRecipients?.[0]?.emailAddress ??
     event.complaint?.complainedRecipients?.[0]?.emailAddress ??
     event.mail?.destination?.[0] ??
     null;
-
-  // SES echoes our message tags back as mail.tags = { campaignId: ["<uuid>"] }.
   const campaignId: string | null = event.mail?.tags?.campaignId?.[0] ?? null;
 
   if (email) {
     await recordEvent(email, type, campaignId);
-    // Hard bounces and complaints are permanent — never email them again.
-    // Suppression is per-user, so attribute it to every account that actually
-    // mailed this address (found via campaign_recipients → campaigns).
+
     if (type === "Bounce" || type === "Complaint") {
-      const userIds = await userIdsForEmail(email);
+      const targets = await suppressionTargetsForEmail(email);
       await Promise.all(
-        userIds.map((userId) => suppressEmail(userId, email, type.toLowerCase())),
+        targets.map((target) =>
+          suppressEmailForOrganization(
+            target.organizationId,
+            target.userId,
+            email,
+            type.toLowerCase(),
+          ),
+        ),
       );
     }
   }

@@ -1,7 +1,18 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ChevronDownIcon,
+  Code2Icon,
+  Edit2Icon,
+  FileArchiveIcon,
+  MailIcon,
+  PlusIcon,
+  Trash2Icon,
+  UploadIcon,
+} from "lucide-react";
+
 import {
   PREBUILT_TEMPLATES,
   TEMPLATE_CATEGORIES,
@@ -12,38 +23,86 @@ import {
 } from "@/lib/email/templates";
 import {
   STORAGE_KEY,
-  isEmailDocument,
   type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 type Tab = "letterstack" | "saved";
 type CategoryKey = TemplateCategory | "all";
-type Draft = { name: string; updatedAt: string };
+type SavedTemplate = {
+  id: string;
+  name: string;
+  updatedAt: string | Date;
+  document: EmailDocument | null;
+};
 
 export default function TemplatesPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("letterstack");
   const [category, setCategory] = useState<CategoryKey>("all");
   const [importOpen, setImportOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [draft, setDraft] = useState<Draft | null>(null);
 
-  // Read the editor's single working draft (if any) for the "Saved" tab.
-  useEffect(() => {
+  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  const loadSavedTemplates = async () => {
+    setLoadingSaved(true);
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (isEmailDocument(parsed)) {
-        setDraft({ name: parsed.name || "Untitled Campaign", updatedAt: parsed.updatedAt });
+      const r = await fetch("/api/templates");
+      const data = await r.json();
+      if (data.ok) {
+        setSavedTemplates(data.templates);
       }
-    } catch {
-      // ignore corrupt storage
+    } catch (err) {
+      console.error("Failed to load saved templates:", err);
+    } finally {
+      setLoadingSaved(false);
     }
-  }, []);
+  };
 
-  // Write a document into the editor's storage slot, then open the editor.
+  useEffect(() => {
+    if (tab === "saved") {
+      loadSavedTemplates();
+    }
+  }, [tab]);
+
   function openDoc(doc: EmailDocument) {
     try {
       const existing = localStorage.getItem(STORAGE_KEY);
@@ -54,400 +113,551 @@ export default function TemplatesPage() {
         if (!ok) return;
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-      // Editor's back button + Save-and-exit return here, not the campaign.
       localStorage.setItem("letterstack-return-to", "/dashboard/templates");
     } catch {
-      // if storage is unavailable, still navigate — editor falls back to default
+      // If storage is unavailable, the editor falls back to its default document.
     }
-    router.push("/editor-new");
+    router.push("/editor");
+  }
+
+  async function handleDeleteSavedTemplate(id: string) {
+    if (!confirm("Are you sure you want to delete this template?")) return;
+    try {
+      const r = await fetch(`/api/templates/${id}`, {
+        method: "DELETE",
+      });
+      const data = await r.json();
+      if (data.ok) {
+        setSavedTemplates((prev) => prev.filter((t) => t.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete template:", err);
+    }
   }
 
   const filtered = useMemo(
     () =>
       category === "all"
         ? PREBUILT_TEMPLATES
-        : PREBUILT_TEMPLATES.filter((t) => t.category === category),
+        : PREBUILT_TEMPLATES.filter((template) => template.category === category),
     [category],
   );
 
   return (
-    <div className="p-8">
+    <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Templates</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h1 className="text-2xl font-semibold tracking-normal">Templates</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Start from a LetterStack template, your own HTML, or a blank canvas.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Code your own */}
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
-            >
-              <CodeIcon /> Code your own <ChevronDownIcon />
-            </button>
-            {menuOpen && (
-              <>
-                <button
-                  className="fixed inset-0 z-10 cursor-default"
-                  aria-hidden
-                  onClick={() => setMenuOpen(false)}
-                />
-                <div className="absolute right-0 z-20 mt-1.5 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setImportOpen(true);
-                    }}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <CodeIcon /> Import HTML
-                  </button>
-                  <button
-                    disabled
-                    className="flex w-full cursor-not-allowed items-center justify-between gap-2.5 px-3.5 py-2.5 text-left text-sm text-zinc-300"
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <ZipIcon /> Import ZIP
-                    </span>
-                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-400">
-                      Soon
-                    </span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
 
-          {/* Create from scratch */}
-          <button
-            onClick={() => openDoc(blankDocument())}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-          >
-            <PlusIcon /> Create from scratch
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Code2Icon data-icon="inline-start" />
+                Code your own
+                <ChevronDownIcon data-icon="inline-end" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                <Code2Icon />
+                Import HTML
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                <FileArchiveIcon />
+                Import ZIP
+                <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0.5">
+                  Soon
+                </Badge>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button onClick={() => openDoc(blankDocument())}>
+            <PlusIcon data-icon="inline-start" />
+            Create from scratch
+          </Button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="mt-6 flex gap-6 border-b border-zinc-200">
-        <TabButton active={tab === "letterstack"} onClick={() => setTab("letterstack")}>
-          LetterStack templates
-        </TabButton>
-        <TabButton active={tab === "saved"} onClick={() => setTab("saved")}>
-          Saved
-        </TabButton>
-      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-6">
+        <TabsList variant="line">
+          <TabsTrigger value="letterstack">LetterStack templates</TabsTrigger>
+          <TabsTrigger value="saved">Saved</TabsTrigger>
+        </TabsList>
 
-      {tab === "letterstack" ? (
-        <>
-          {/* Category pills */}
-          <div className="mt-5 flex flex-wrap gap-1.5">
-            {TEMPLATE_CATEGORIES.map((c) => {
-              const active = category === c.key;
-              return (
-                <button
-                  key={c.key}
-                  onClick={() => setCategory(c.key)}
-                  className={`h-8 rounded-full border px-3.5 text-[13px] font-medium transition-colors ${
-                    active
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
-                  }`}
-                >
-                  {c.label}
-                </button>
-              );
-            })}
+        <TabsContent value="letterstack" className="pt-4">
+          <div className="flex flex-col gap-6 md:flex-row md:items-start">
+            {/* Sidebar Category Selector (Desktop) */}
+            <aside className="hidden w-56 shrink-0 flex-col gap-1 md:flex">
+              <h2 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Categories</h2>
+              {TEMPLATE_CATEGORIES.map((item) => {
+                const isActive = category === item.key;
+                const count = item.key === "all" 
+                  ? PREBUILT_TEMPLATES.length 
+                  : PREBUILT_TEMPLATES.filter((t) => t.category === item.key).length;
+                
+                return (
+                  <Button
+                    key={item.key}
+                    variant={isActive ? "secondary" : "ghost"}
+                    className={cn(
+                      "justify-between font-semibold h-9 text-sm px-3",
+                      isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => setCategory(item.key)}
+                  >
+                    <span>{item.label}</span>
+                    <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0 pointer-events-none shrink-0 font-normal">
+                      {count}
+                    </Badge>
+                  </Button>
+                );
+              })}
+            </aside>
+
+            {/* Mobile Category Selector */}
+            <div className="flex flex-col gap-2 md:hidden w-full overflow-hidden">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">Categories</h2>
+              <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none snap-x">
+                {TEMPLATE_CATEGORIES.map((item) => {
+                  const isActive = category === item.key;
+                  return (
+                    <Button
+                      key={item.key}
+                      variant={isActive ? "default" : "outline"}
+                      size="sm"
+                      className="snap-start text-xs shrink-0 rounded-full h-8 px-3"
+                      onClick={() => setCategory(item.key)}
+                    >
+                      {item.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Templates Grid */}
+            <div className="flex-1 min-w-0">
+              {filtered.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filtered.map((template) => (
+                    <TemplateCard
+                      key={template.id}
+                      template={template}
+                      onOpen={() => openDoc(template.build())}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Empty className="py-12 border border-dashed rounded-xl">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <MailIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>No templates found</EmptyTitle>
+                    <EmptyDescription>
+                      Try choosing a different template category.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </div>
           </div>
+        </TabsContent>
 
-          {/* Grid */}
-          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((t) => (
-              <TemplateCard key={t.id} template={t} onOpen={() => openDoc(t.build())} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <SavedTab draft={draft} onContinue={() => router.push("/editor-new")} />
-      )}
+        <TabsContent value="saved" className="pt-4">
+          <SavedTab
+            loading={loadingSaved}
+            templates={savedTemplates}
+            onDelete={handleDeleteSavedTemplate}
+            onEditTemplate={(id) => router.push(`/editor/template/${id}`)}
+          />
+        </TabsContent>
+      </Tabs>
 
-      {importOpen && (
-        <ImportHtmlModal
-          onClose={() => setImportOpen(false)}
-          onImport={(html) => openDoc(documentFromHtml(html))}
-        />
-      )}
+      <ImportHtmlDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={(html) => openDoc(documentFromHtml(html))}
+      />
     </div>
   );
 }
 
-// ── Template card + schematic preview ────────────────────────────────────────
-
-function TemplateCard({ template, onOpen }: { template: PrebuiltTemplate; onOpen: () => void }) {
+function TemplateCard({
+  template,
+  onOpen,
+}: {
+  template: PrebuiltTemplate;
+  onOpen: () => void;
+}) {
   return (
-    <button
+    <Card
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="group flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-left transition-shadow hover:shadow-md"
+      onKeyDown={(event) => {
+        if (event.key === "Enter") onOpen();
+      }}
+      className="cursor-pointer gap-0 py-0 transition-all duration-300 hover:shadow-md hover:border-muted-foreground/30 relative flex flex-col h-full rounded-xl overflow-hidden group border bg-card text-card-foreground"
     >
-      <TemplateThumb template={template} />
-      <div className="flex flex-1 flex-col p-3.5">
-        <div className="text-sm font-semibold text-zinc-800">{template.title}</div>
-        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500">
-          {template.description}
-        </p>
-        <div className="mt-3 flex items-center gap-2 pt-1">
-          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
-            <MailIcon /> Email
-          </span>
-          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-600">
-            Free
-          </span>
+      <div className="group relative overflow-hidden rounded-t-xl border-b border-border bg-muted/30">
+        <TemplateThumb template={template} />
+        {/* Hover Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
+          <Button size="sm" onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }} className="shadow-lg transform translate-y-2 transition-transform duration-300 group-hover:translate-y-0">
+            <PlusIcon data-icon="inline-start" />
+            Use template
+          </Button>
         </div>
       </div>
-    </button>
+      <CardContent className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex flex-col gap-1">
+          <div className="font-semibold text-sm text-foreground">{template.title}</div>
+          <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground mt-0.5">
+            {template.description}
+          </p>
+        </div>
+        <div className="mt-auto flex items-center gap-2 pt-2">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            <MailIcon className="size-3" />
+            Email
+          </Badge>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium">Free</Badge>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 function TemplateThumb({ template }: { template: PrebuiltTemplate }) {
   const doc = useMemo(() => template.build(), [template]);
+
   return (
     <div
-      className="flex h-44 items-start justify-center overflow-hidden border-b border-zinc-100 p-4"
+      className="flex h-44 items-start justify-center overflow-hidden border-b border-border p-4 transition-transform duration-500 group-hover:scale-105"
       style={{ backgroundColor: doc.settings.backgroundColor }}
     >
-      <div className="w-full max-w-[180px] space-y-2 rounded-md bg-white p-3 shadow-sm">
-        {doc.blocks.slice(0, 6).map((b) => (
-          <Silhouette key={b.id} block={b} accent={template.accent} />
+      <div className="flex w-full max-w-44 flex-col gap-2 rounded-md bg-background p-3 shadow-sm ring-1 ring-foreground/10">
+        {doc.blocks.slice(0, 6).map((block) => (
+          <Silhouette key={block.id} block={block} accent={template.accent} />
         ))}
       </div>
     </div>
   );
 }
 
-function Silhouette({ block, accent }: { block: EmailBlock; accent: string }) {
+function Silhouette({
+  block,
+  accent,
+}: {
+  block: EmailBlock;
+  accent: string;
+}) {
   switch (block.type) {
     case "logo":
-      return <div className="h-2 w-12 rounded bg-zinc-300" />;
+      return <div className="h-2 w-12 rounded bg-muted-foreground/30" />;
     case "heading":
-      return <div className="h-2.5 w-2/3 rounded bg-zinc-400" />;
+      return <div className="h-2.5 w-2/3 rounded bg-muted-foreground/50" />;
     case "text":
       return (
-        <div className="space-y-1">
-          <div className="h-1.5 w-1/3 rounded bg-zinc-300" />
-          <div className="h-2 w-3/4 rounded bg-zinc-400" />
-          <div className="h-1.5 w-full rounded bg-zinc-200" />
+        <div className="flex flex-col gap-1">
+          <div className="h-1.5 w-1/3 rounded bg-muted-foreground/30" />
+          <div className="h-2 w-3/4 rounded bg-muted-foreground/50" />
+          <div className="h-1.5 w-full rounded bg-muted" />
         </div>
       );
     case "paragraph":
       return (
-        <div className="space-y-1">
-          <div className="h-1.5 w-full rounded bg-zinc-200" />
-          <div className="h-1.5 w-5/6 rounded bg-zinc-200" />
+        <div className="flex flex-col gap-1">
+          <div className="h-1.5 w-full rounded bg-muted" />
+          <div className="h-1.5 w-5/6 rounded bg-muted" />
         </div>
       );
     case "image":
-      return <div className="h-12 w-full rounded bg-zinc-200" />;
+      return <div className="h-12 w-full rounded bg-muted" />;
     case "articleCard":
       return (
         <div className="flex gap-2">
-          <div className="h-8 w-10 shrink-0 rounded bg-zinc-200" />
-          <div className="flex-1 space-y-1 pt-0.5">
-            <div className="h-1.5 w-3/4 rounded bg-zinc-400" />
-            <div className="h-1.5 w-full rounded bg-zinc-200" />
-            <div className="h-1.5 w-2/3 rounded bg-zinc-200" />
+          <div className="h-8 w-10 shrink-0 rounded bg-muted" />
+          <div className="flex flex-1 flex-col gap-1 pt-0.5">
+            <div className="h-1.5 w-3/4 rounded bg-muted-foreground/50" />
+            <div className="h-1.5 w-full rounded bg-muted" />
+            <div className="h-1.5 w-2/3 rounded bg-muted" />
           </div>
         </div>
       );
     case "button":
-      return <div className="h-3 w-20 rounded" style={{ backgroundColor: accent }} />;
+      return (
+        <div
+          className="h-3 w-20 rounded"
+          style={{ backgroundColor: accent }}
+        />
+      );
     case "divider":
-      return <div className="h-px w-full bg-zinc-200" />;
+      return <div className="h-px w-full bg-border" />;
     case "footer":
       return (
-        <div className="space-y-1 pt-1">
-          <div className="h-1.5 w-1/2 rounded bg-zinc-200" />
-          <div className="h-1.5 w-1/3 rounded bg-zinc-200" />
+        <div className="flex flex-col gap-1 pt-1">
+          <div className="h-1.5 w-1/2 rounded bg-muted" />
+          <div className="h-1.5 w-1/3 rounded bg-muted" />
         </div>
       );
     default:
-      return <div className="h-2 w-1/2 rounded bg-zinc-200" />;
+      return <div className="h-2 w-1/2 rounded bg-muted" />;
   }
 }
 
-// ── Saved tab ────────────────────────────────────────────────────────────────
-
-function SavedTab({ draft, onContinue }: { draft: Draft | null; onContinue: () => void }) {
+function SavedTemplateCard({
+  template,
+  onOpen,
+  onDelete,
+}: {
+  template: SavedTemplate;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
   return (
-    <div className="mt-6">
-      {draft && (
-        <button
-          onClick={onContinue}
-          className="flex w-full max-w-md items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-left transition-shadow hover:shadow-md"
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      className="cursor-pointer gap-0 py-0 transition-all duration-300 hover:shadow-md hover:border-muted-foreground/30 relative flex flex-col h-full rounded-xl overflow-hidden group border bg-card text-card-foreground"
+    >
+      <div className="group relative overflow-hidden rounded-t-xl border-b border-border bg-muted/30">
+        {/* Silhouette preview */}
+        <div
+          className="flex h-44 items-start justify-center overflow-hidden border-b border-border p-4 transition-transform duration-500 group-hover:scale-105"
+          style={{ backgroundColor: template.document?.settings?.backgroundColor || "#f4f4f5" }}
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
-            <MailIcon />
+          <div className="flex w-full max-w-44 flex-col gap-2 rounded-md bg-background p-3 shadow-sm ring-1 ring-foreground/10">
+            {template.document?.blocks?.slice(0, 6).map((block: EmailBlock) => (
+              <Silhouette key={block.id} block={block} accent={template.document?.settings?.accentColor || "#18181b"} />
+            ))}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-zinc-800">{draft.name}</div>
-            <div className="text-xs text-zinc-400">
-              Last edited {new Date(draft.updatedAt).toLocaleString()}
-            </div>
-          </div>
-          <span className="text-xs font-medium text-indigo-600">Continue →</span>
-        </button>
-      )}
+        </div>
 
-      <div className="mt-6 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 px-6 py-10 text-center">
-        <p className="text-sm font-medium text-zinc-600">Saved templates are coming</p>
-        <p className="mx-auto mt-1 max-w-md text-sm text-zinc-400">
-          Soon you'll be able to save any campaign as a reusable template and find it here.
-          {draft ? " For now, your current draft is shown above." : ""}
-        </p>
+        {/* Hover Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
+          <Button size="sm" onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }} className="shadow-lg transform translate-y-2 transition-transform duration-300 group-hover:translate-y-0">
+            <Edit2Icon className="size-3.5" data-icon="inline-start" />
+            Edit template
+          </Button>
+        </div>
       </div>
+      <CardContent className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="font-semibold text-sm text-foreground truncate">{template.name}</div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Last edited {new Date(template.updatedAt).toLocaleDateString()}
+          </p>
+        </div>
+        <div className="mt-auto flex items-center justify-between pt-2">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            Custom
+          </Badge>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2Icon className="size-3.5" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SavedTab({
+  loading,
+  templates,
+  onDelete,
+  onEditTemplate,
+}: {
+  loading: boolean;
+  templates: SavedTemplate[];
+  onDelete: (id: string) => void;
+  onEditTemplate: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-6 w-full py-2">
+      {loading ? (
+        <div className="flex justify-center items-center py-12 gap-2 text-muted-foreground text-sm">
+          <Spinner />
+          Loading templates...
+        </div>
+      ) : templates.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {templates.map((template) => (
+            <SavedTemplateCard
+              key={template.id}
+              template={template}
+              onOpen={() => onEditTemplate(template.id)}
+              onDelete={() => onDelete(template.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <Card className="border-dashed border-2">
+          <CardContent className="flex flex-col items-center justify-center p-12 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4">
+              <MailIcon className="size-6" />
+            </div>
+            <h3 className="font-semibold text-base text-foreground">No saved templates</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+              Create a custom template in the editor, and click "Save as template" to see it here!
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-// ── Import HTML modal ────────────────────────────────────────────────────────
-
-function ImportHtmlModal({
-  onClose,
+function ImportHtmlDialog({
+  open,
+  onOpenChange,
   onImport,
 }: {
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onImport: (html: string) => void;
 }) {
   const [html, setHtml] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [mode, setMode] = useState<"upload" | "paste">("upload");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const canImport = html.trim().length > 0;
 
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  function onFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
-    file.text().then(setHtml);
+    file.text().then((text) => {
+      setHtml(text);
+      setMode("paste");
+    });
   }
 
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      file.text().then((text) => {
+        setHtml(text);
+        setMode("paste");
+      });
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <button className="absolute inset-0 bg-zinc-900/40" aria-hidden onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
-          <h2 className="text-sm font-semibold text-zinc-800">Import HTML</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600">
-            <XIcon />
-          </button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg p-6">
+        <DialogHeader className="p-0 pb-4">
+          <DialogTitle>Import HTML</DialogTitle>
+          <DialogDescription>
+            Import your custom email HTML template. It opens in the editor as a custom block.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 py-2">
+          <Tabs value={mode} onValueChange={(v) => setMode(v as "upload" | "paste")} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="upload">Upload HTML file</TabsTrigger>
+              <TabsTrigger value="paste">Paste code</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="upload" className="pt-4">
+              <div
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                className={cn(
+                  "flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 transition-colors duration-200 cursor-pointer text-center",
+                  dragActive ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"
+                )}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground mb-3">
+                  <UploadIcon className="size-5" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">Drag & drop your HTML file here</p>
+                <p className="text-xs text-muted-foreground mt-1">or click to browse local files</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-3">Supports .html and .txt files</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                id="html-import-file"
+                type="file"
+                accept=".html,text/html,.txt"
+                className="hidden"
+                onChange={onFile}
+              />
+            </TabsContent>
+
+            <TabsContent value="paste" className="pt-4 flex flex-col gap-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="html-import">Email HTML Code</FieldLabel>
+                  <Textarea
+                    id="html-import"
+                    value={html}
+                    onChange={(event) => setHtml(event.target.value)}
+                    placeholder="<table>...</table>"
+                    spellCheck={false}
+                    className="min-h-44 font-mono text-xs p-3 rounded-lg border border-border"
+                  />
+                  <FieldDescription>
+                    Full HTML documents or smaller HTML body fragments are accepted.
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            </TabsContent>
+          </Tabs>
         </div>
-        <div className="space-y-3 p-5">
-          <p className="text-sm text-zinc-500">
-            Paste your email HTML or upload a <code className="text-zinc-700">.html</code> file. It
-            opens in the editor as a single custom-HTML block you can keep editing.
-          </p>
-          <textarea
-            value={html}
-            onChange={(e) => setHtml(e.target.value)}
-            placeholder="<table>…</table>"
-            spellCheck={false}
-            className="h-44 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-800 outline-none focus:border-zinc-300"
-          />
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-indigo-600 hover:underline">
-            <UploadIcon /> Upload .html file
-            <input type="file" accept=".html,text/html" className="hidden" onChange={onFile} />
-          </label>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-4">
-          <button
-            onClick={onClose}
-            className="h-9 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-600 hover:bg-zinc-50"
-          >
+
+        <DialogFooter className="p-0 pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => onImport(html)}
-            disabled={!html.trim()}
-            className="h-9 rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!canImport}
           >
             Open in editor
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// ── Bits ─────────────────────────────────────────────────────────────────────
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`-mb-px border-b-2 pb-2.5 text-sm font-medium transition-colors ${
-        active
-          ? "border-zinc-900 text-zinc-900"
-          : "border-transparent text-zinc-400 hover:text-zinc-600"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-function ChevronDownIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
-function CodeIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
-    </svg>
-  );
-}
-function ZipIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
-    </svg>
-  );
-}
-function MailIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-    </svg>
-  );
-}
-function UploadIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-    </svg>
-  );
-}
-function XIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}

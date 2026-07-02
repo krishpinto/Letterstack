@@ -1,9 +1,6 @@
-// Testing helper for the lab: clears every "sent" stamp so the campaign can be
-// re-sent from scratch. Not part of the real product — lab convenience only.
-
 import { NextResponse } from "next/server";
 import { resetSentFlags } from "@/db/recipients";
-import { currentUserId } from "@/lib/auth-helpers";
+import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
@@ -12,11 +9,17 @@ export async function POST() {
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  const organizationId = await currentOrganizationId();
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "Organization required" }, { status: 428 });
+  }
+
   try {
-    await resetSentFlags(userId);
+    await resetSentFlags(organizationId);
     return NextResponse.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

@@ -3,9 +3,9 @@
 // email_events). One row per campaign for the analytics table.
 
 import { NextResponse } from "next/server";
-import { listCampaigns } from "@/db/campaigns";
-import { engagementByCampaign } from "@/db/events";
-import { currentUserId } from "@/lib/auth-helpers";
+import { listCampaignsForOrganization } from "@/db/campaigns";
+import { engagementByOrganization } from "@/db/events";
+import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
@@ -24,10 +24,14 @@ export async function GET() {
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const organizationId = await currentOrganizationId();
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "Organization required" }, { status: 428 });
+  }
 
   const [campaigns, engagement] = await Promise.all([
-    listCampaigns(userId),
-    engagementByCampaign(userId),
+    listCampaignsForOrganization(organizationId),
+    engagementByOrganization(organizationId),
   ]);
 
   const rows = campaigns

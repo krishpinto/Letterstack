@@ -1,28 +1,50 @@
-import { pgTable, uuid, text, timestamp, unique, jsonb } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import type { EmailDocument } from "@/lib/email/document";
-
-// ── Users ────────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name"),
   passwordHash: text("password_hash").notNull(),
-  // The account's branded sending subdomain slug, e.g. "ciba" → mail goes out
-  // from newsletter@ciba.letterstack.site (a subdomain of the SES-verified
-  // parent domain, so no per-client verification needed).
   sendingSlug: text("sending_slug"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// ── Recipients ───────────────────────────────────────────────────────────────
+export const organizations = pgTable("organizations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("business"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("owner"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("organization_members_org_user_unq").on(
+      table.organizationId,
+      table.userId,
+    ),
+  ],
+);
 
 export const recipients = pgTable(
   "recipients",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    // Every recipient belongs to exactly one account. Cascade: deleting the
-    // user removes their whole audience.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -31,66 +53,43 @@ export const recipients = pgTable(
     sentAt: timestamp("sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [
-    // The same address can't be added twice BY THE SAME USER — but two
-    // different users can each have it in their own list.
-    unique("recipients_user_email_unq").on(t.userId, t.email),
+  (table) => [
+    unique("recipients_org_email_unq").on(table.organizationId, table.email),
   ],
 );
 
-/**
- * The do-not-mail list. Any email here is NEVER sent to again — checked before
- * every send. Bounces and complaints land here automatically (Step 3b); manual
- * unsubscribes land here too.
- */
 export const suppressedEmails = pgTable(
   "suppressed_emails",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-
-    // Whose do-not-mail list this entry belongs to. Each account keeps its own.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-
-    // The address to never email.
     email: text("email").notNull(),
-
-    // Why it's suppressed: "bounce" | "complaint" | "manual".
     reason: text("reason").notNull(),
-
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [
-    // The same address can't be suppressed twice for the SAME user — but each
-    // user has their own independent list.
-    unique("suppressed_user_email_unq").on(t.userId, t.email),
+  (table) => [
+    unique("suppressed_org_email_unq").on(table.organizationId, table.email),
   ],
 );
 
-/**
- * Every event SES reports back about an email: Delivery, Bounce, Complaint,
- * Open, Click… Fed by the webhook (SES → SNS → /api/webhooks/ses). Later the
- * analytics dashboard reads aggregates from this table.
- */
 export const emailEvents = pgTable("email_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull(),
-  type: text("type").notNull(), // "Bounce" | "Complaint" | "Delivery" | "Open" | "Click" | ...
-  // Which campaign this event belongs to — set from the SES message tag the send
-  // path attaches. Nullable: legacy events and non-campaign test sends have none.
+  type: text("type").notNull(),
   campaignId: uuid("campaign_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-/**
- * One newsletter send. Self-contained: it carries a FROZEN snapshot of the
- * compiled email, so what gets sent is locked in and stays on record even if
- * the editor changes later.
- */
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
-  // Which account owns this campaign — used to scope the campaigns list.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
@@ -98,35 +97,64 @@ export const campaigns = pgTable("campaigns", {
   subject: text("subject").notNull(),
   fromName: text("from_name").notNull(),
   fromEmail: text("from_email").notNull(),
-  // The editable design while the campaign is a draft. The snapshots below are
-  // recompiled from this on every edit and frozen for good at send time.
   document: jsonb("document").$type<EmailDocument>(),
-  htmlSnapshot: text("html_snapshot").notNull(), // frozen compiled HTML
+  htmlSnapshot: text("html_snapshot").notNull(),
   textSnapshot: text("text_snapshot").notNull(),
-  status: text("status").notNull().default("draft"), // draft | sending | sent
+  status: text("status").notNull().default("draft"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  sentAt: timestamp("sent_at"), // when the send was triggered
+  sentAt: timestamp("sent_at"),
 });
 
-/**
- * The bridge: one row per (campaign, person). Each tracks how THAT person did
- * in THIS campaign. The monitor counts these by status to show progress.
- *
- * campaignId / recipientId are FOREIGN KEYS — they point at rows in the
- * campaigns / recipients tables.
- */
 export const campaignRecipients = pgTable("campaign_recipients", {
   id: uuid("id").defaultRandom().primaryKey(),
-  // onDelete cascade: deleting a campaign or a recipient also removes their
-  // bridge rows, so deletes don't hit foreign-key constraint errors.
   campaignId: uuid("campaign_id")
     .notNull()
     .references(() => campaigns.id, { onDelete: "cascade" }),
   recipientId: uuid("recipient_id")
-    .notNull()
     .references(() => recipients.id, { onDelete: "cascade" }),
-  email: text("email").notNull(), // copied here so the worker needn't re-join
-  status: text("status").notNull().default("pending"), // pending | sent | failed
+  email: text("email").notNull(),
+  name: text("name"),
+  status: text("status").notNull().default("pending"),
   sentAt: timestamp("sent_at"),
   error: text("error"),
+}, (table) => [unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email)]);
+
+export const categories = pgTable("categories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const recipientCategories = pgTable(
+  "recipient_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => recipients.id, { onDelete: "cascade" }),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("recipient_categories_unq").on(table.recipientId, table.categoryId),
+  ],
+);
+
+export const emailTemplates = pgTable("email_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  subject: text("subject").default(""),
+  fromName: text("from_name").default(""),
+  fromEmail: text("from_email").default(""),
+  document: jsonb("document").$type<EmailDocument>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

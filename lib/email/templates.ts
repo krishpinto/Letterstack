@@ -1,6 +1,6 @@
 // Prebuilt, customizable LetterStack templates. Each `build()` returns a fresh
 // EmailDocument (new ids every time) that the templates gallery writes into the
-// editor's STORAGE_KEY before navigating to /editor-new — so the editor loads it
+// editor's STORAGE_KEY before navigating to /editor — so the editor loads it
 // exactly like any saved draft. This file lives in lib/email (the shared core)
 // and only depends on ./document, so it stays inside the module boundary.
 

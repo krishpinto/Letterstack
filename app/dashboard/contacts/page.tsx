@@ -1,7 +1,93 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  BanIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  DownloadIcon,
+  Edit2Icon,
+  FilterIcon,
+  FolderIcon,
+  FolderPlusIcon,
+  FolderOpenIcon,
+  PlusIcon,
+  SearchIcon,
+  TagIcon,
+  Trash2Icon,
+  UploadIcon,
+  UserRoundIcon,
+  XIcon,
+} from "lucide-react";
+
 import { ImportWizard } from "./import-wizard";
+import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 type Recipient = {
   id: string;
@@ -10,167 +96,342 @@ type Recipient = {
   sentAt: string | null;
   createdAt: string;
 };
+
 type SuppressedEntry = { email: string; reason: string };
 type Contact = Recipient & { status: "subscribed" | "bounced" | "suppressed" };
 type StatusKey = "all" | "subscribed" | "bounced" | "suppressed";
 
-const STATUS = {
-  subscribed: { label: "Subscribed", bg: "bg-emerald-50", fg: "text-emerald-700", dot: "bg-emerald-500" },
-  bounced: { label: "Bounced", bg: "bg-orange-50", fg: "text-orange-700", dot: "bg-orange-500" },
-  suppressed: { label: "Suppressed", bg: "bg-zinc-100", fg: "text-zinc-500", dot: "bg-zinc-400" },
+type Category = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+type Mapping = {
+  id: string;
+  recipientId: string;
+  categoryId: string;
+};
+
+const STATUS_LABELS: Record<StatusKey, string> = {
+  all: "All",
+  subscribed: "Subscribed",
+  bounced: "Bounced",
+  suppressed: "Suppressed",
+};
+
+const STATUS_BADGE_VARIANTS = {
+  subscribed: "default",
+  bounced: "destructive",
+  suppressed: "outline",
 } as const;
 
-const AVATAR_COLORS: [string, string][] = [
-  ["bg-indigo-100", "text-indigo-700"],
-  ["bg-pink-100", "text-pink-700"],
-  ["bg-emerald-100", "text-emerald-700"],
-  ["bg-amber-100", "text-amber-700"],
-  ["bg-sky-100", "text-sky-700"],
-  ["bg-purple-100", "text-purple-700"],
-  ["bg-red-100", "text-red-700"],
-  ["bg-cyan-100", "text-cyan-700"],
+const FOLDER_COLORS = [
+  { text: "text-amber-500", bg: "bg-amber-500/10" },
+  { text: "text-violet-500", bg: "bg-violet-500/10" },
+  { text: "text-cyan-500", bg: "bg-cyan-500/10" },
 ];
+
+const PAGE_SIZE = 8;
 
 function getInitials(name: string | null, email: string) {
   if (name) {
     const parts = name.trim().split(/\s+/);
-    return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+    return (parts[0]?.[0] + (parts[1]?.[0] || "")).toUpperCase();
   }
-  return email[0].toUpperCase();
+  return email[0]?.toUpperCase() ?? "?";
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
-export default function ContactsPage() {
+export default function AudiencePage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [mappings, setMappings] = useState<Mapping[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [hoverId, setHoverId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  
+  // Importers / Single contact add dialogs
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [addName, setAddName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  
+  // Folder quick create dialog
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  
+  // Sheet categories see-more dialog
+  const [seeMoreOpen, setSeeMoreOpen] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  
+  // Selection mapping dialog
+  const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
+  const [selectedMappingCategories, setSelectedMappingCategories] = useState<Set<string>>(new Set());
+  const [savingMapping, setSavingMapping] = useState(false);
+
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const r = await fetch("/api/audience/categories");
+      const data = await r.json();
+      if (data.ok) {
+        setCategories(data.categories);
+        setMappings(data.mappings);
+      }
+    } catch (err) {
+      console.error("Failed to load categories:", err);
+    }
+  }, []);
 
   const load = useCallback(async () => {
-    const [rRes, sRes] = await Promise.all([
-      fetch("/api/lab/recipients").then((r) => r.json()),
-      fetch("/api/lab/suppression").then((r) => r.json()),
-    ]);
-    if (!rRes.ok || !sRes.ok) return;
-    const suppMap = new Map<string, string>();
-    (sRes.suppressed as SuppressedEntry[]).forEach((s) => suppMap.set(s.email, s.reason));
-    const merged: Contact[] = (rRes.recipients as Recipient[]).map((r) => {
-      const reason = suppMap.get(r.email);
-      let status: Contact["status"] = "subscribed";
-      if (reason === "bounce" || reason === "complaint") status = "bounced";
-      else if (reason) status = "suppressed";
-      return { ...r, status };
-    });
-    setContacts(merged);
-    setLoading(false);
-  }, []);
+    setLoading(true);
+    try {
+      const [recipientResponse, suppressionResponse] = await Promise.all([
+        fetch("/api/audience").then((response) => response.json()),
+        fetch("/api/audience/suppression").then((response) => response.json()),
+      ]);
+
+      if (!recipientResponse.ok || !suppressionResponse.ok) {
+        setContacts([]);
+        return;
+      }
+
+      const suppMap = new Map<string, string>();
+      (suppressionResponse.suppressed as SuppressedEntry[]).forEach((entry) =>
+        suppMap.set(entry.email, entry.reason),
+      );
+
+      const merged: Contact[] = (recipientResponse.recipients as Recipient[]).map(
+        (recipient) => {
+          const reason = suppMap.get(recipient.email);
+          let status: Contact["status"] = "subscribed";
+          if (reason === "bounce" || reason === "complaint") {
+            status = "bounced";
+          } else if (reason) {
+            status = "suppressed";
+          }
+          return { ...recipient, status };
+        },
+      );
+
+      setContacts(merged);
+      await loadCategories();
+    } catch {
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadCategories]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const showToast = useCallback((msg: string) => {
+  useEffect(() => {
+    return onOrganizationChanged(() => {
+      setSelected(new Set());
+      setQuery("");
+      setStatusFilter("all");
+      setActiveCategoryFilter(null);
+      setPage(1);
+      void load();
+    });
+  }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, activeCategoryFilter]);
+
+  const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(msg);
+    setToast(message);
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return contacts.filter((c) => {
-      if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (q && !`${c.name || ""} ${c.email}`.toLowerCase().includes(q)) return false;
+    
+    const categoryRecipientIds = activeCategoryFilter
+      ? new Set(mappings.filter((m) => m.categoryId === activeCategoryFilter).map((m) => m.recipientId))
+      : null;
+
+    return contacts.filter((contact) => {
+      if (statusFilter !== "all" && contact.status !== statusFilter) return false;
+      if (categoryRecipientIds && !categoryRecipientIds.has(contact.id)) return false;
+      if (
+        q &&
+        !`${contact.name || ""} ${contact.email}`.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [contacts, query, statusFilter]);
+  }, [contacts, query, statusFilter, activeCategoryFilter, mappings]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const firstShown = filtered.length > 0 ? pageStart + 1 : 0;
+  const lastShown = Math.min(pageStart + PAGE_SIZE, filtered.length);
 
   const counts = useMemo(() => {
-    const c = { all: contacts.length, subscribed: 0, bounced: 0, suppressed: 0 };
-    contacts.forEach((r) => c[r.status]++);
-    return c;
+    const count = { all: contacts.length, subscribed: 0, bounced: 0, suppressed: 0 };
+    contacts.forEach((contact) => count[contact.status]++);
+    return count;
   }, [contacts]);
 
-  const toggleRow = (id: string) => {
+  const categoryCounts = useMemo(() => {
+    const countMap: Record<string, number> = {};
+    mappings.forEach((m) => {
+      countMap[m.categoryId] = (countMap[m.categoryId] || 0) + 1;
+    });
+    return countMap;
+  }, [mappings]);
+
+  const contactCategories = useMemo(() => {
+    const map: Record<string, Category[]> = {};
+    mappings.forEach((m) => {
+      if (!map[m.recipientId]) map[m.recipientId] = [];
+      const cat = categories.find((c) => c.id === m.categoryId);
+      if (cat) map[m.recipientId].push(cat);
+    });
+    return map;
+  }, [mappings, categories]);
+
+  const allFilteredSelected =
+    pageItems.length > 0 && pageItems.every((contact) => selected.has(contact.id));
+  const someFilteredSelected = pageItems.some((contact) => selected.has(contact.id));
+
+  function toggleRow(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }
 
-  const toggleAll = () => {
-    const ids = filtered.map((c) => c.id);
+  function toggleAll() {
+    const ids = pageItems.map((contact) => contact.id);
     const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
     setSelected((prev) => {
       const next = new Set(prev);
-      ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
+      ids.forEach((id) => {
+        if (allOn) next.delete(id);
+        else next.add(id);
+      });
       return next;
     });
-  };
+  }
 
-  const clearSelection = () => setSelected(new Set());
+  function clearSelection() {
+    setSelected(new Set());
+  }
 
-  const removeContact = async (id: string) => {
-    const res = await fetch(`/api/lab/recipients?id=${id}`, { method: "DELETE" }).then((r) => r.json());
-    if (res.ok) {
+  async function removeContact(id: string) {
+    const response = await fetch(`/api/audience?id=${id}`, {
+      method: "DELETE",
+    }).then((result) => result.json());
+
+    if (response.ok) {
       showToast("Contact removed");
       setSelected((prev) => {
-        const n = new Set(prev);
-        n.delete(id);
-        return n;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
       });
       await load();
     }
-  };
+  }
 
-  const bulkDelete = async () => {
+  async function bulkDelete() {
     const ids = [...selected];
-    for (const id of ids) await fetch(`/api/lab/recipients?id=${id}`, { method: "DELETE" });
+    if (ids.length === 0) return;
+
+    for (const id of ids) {
+      await fetch(`/api/audience?id=${id}`, { method: "DELETE" });
+    }
+
     showToast(`${ids.length} contact${ids.length === 1 ? "" : "s"} removed`);
     clearSelection();
     await load();
-  };
+  }
 
-  const bulkSuppress = async () => {
-    const emails = contacts.filter((c) => selected.has(c.id)).map((c) => c.email);
-    for (const email of emails)
-      await fetch("/api/lab/suppression", {
+  async function bulkSuppress() {
+    const emails = contacts
+      .filter((contact) => selected.has(contact.id))
+      .map((contact) => contact.email);
+    if (emails.length === 0) return;
+
+    for (const email of emails) {
+      await fetch("/api/audience/suppression", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+    }
+
     showToast(`${emails.length} contact${emails.length === 1 ? "" : "s"} suppressed`);
     clearSelection();
     await load();
-  };
+  }
 
-  const addContact = async () => {
+  function exportContacts() {
+    const escapeCsv = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const rows = [
+      ["Name", "Email", "Status", "Added"],
+      ...contacts.map((contact) => [
+        contact.name ?? "",
+        contact.email,
+        contact.status,
+        contact.createdAt,
+      ]),
+    ];
+    const csv = rows
+      .map((row) => row.map((value) => escapeCsv(String(value))).join(","))
+      .join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "letterstack-audience.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function addContact() {
     setAdding(true);
     setAddError(null);
+
     try {
-      const res = await fetch("/api/lab/recipients", {
+      const response = await fetch("/api/audience", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: addEmail, name: addName || undefined }),
-      }).then((r) => r.json());
-      if (!res.ok) {
-        setAddError(res.error);
+      }).then((result) => result.json());
+
+      if (!response.ok) {
+        setAddError(response.error);
         return;
       }
+
       setAddEmail("");
       setAddName("");
       setAddOpen(false);
@@ -179,292 +440,750 @@ export default function ContactsPage() {
     } finally {
       setAdding(false);
     }
-  };
+  }
 
-  const allFilteredSelected = filtered.length > 0 && filtered.every((c) => selected.has(c.id));
-  const someFilteredSelected = filtered.some((c) => selected.has(c.id));
+  // ── Category Actions ────────────────────────────────────────────────────────
 
-  if (loading) return <div className="p-8 text-sm text-zinc-400">Loading contacts…</div>;
+  async function handleCreateCategory() {
+    if (!newFolderName.trim()) return;
+    setCreatingFolder(true);
+    try {
+      const r = await fetch("/api/audience/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", name: newFolderName }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        showToast("Folder created");
+        setNewFolderName("");
+        setCreateFolderOpen(false);
+        await loadCategories();
+      } else {
+        showToast(data.error || "Failed to create category");
+      }
+    } catch {
+      showToast("Failed to create category");
+    } finally {
+      setCreatingFolder(false);
+    }
+  }
+
+  async function handleRenameCategory(id: string, name: string) {
+    if (!name.trim()) return;
+    try {
+      const r = await fetch("/api/audience/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        showToast("Folder renamed");
+        setEditingCategoryId(null);
+        await loadCategories();
+      } else {
+        showToast(data.error || "Failed to rename folder");
+      }
+    } catch {
+      showToast("Failed to rename folder");
+    }
+  }
+
+  async function handleDeleteCategory(id: string) {
+    if (!confirm("Are you sure you want to delete this folder? Contacts inside will not be deleted.")) return;
+    try {
+      const r = await fetch(`/api/audience/categories?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await r.json();
+      if (data.ok) {
+        showToast("Folder deleted");
+        if (activeCategoryFilter === id) {
+          setActiveCategoryFilter(null);
+        }
+        await loadCategories();
+      } else {
+        showToast(data.error || "Failed to delete folder");
+      }
+    } catch {
+      showToast("Failed to delete folder");
+    }
+  }
+
+  async function handleSaveMapping() {
+    setSavingMapping(true);
+    try {
+      const r = await fetch("/api/audience/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "map",
+          recipientIds: Array.from(selected),
+          categoryIds: Array.from(selectedMappingCategories),
+        }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        showToast("Categories updated");
+        setManageCategoriesOpen(false);
+        clearSelection();
+        await loadCategories();
+      } else {
+        showToast(data.error || "Failed to update categories");
+      }
+    } catch {
+      showToast("Failed to update categories");
+    } finally {
+      setSavingMapping(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
+        Loading audience...
+      </div>
+    );
+  }
+
+  const top3 = categories.slice(0, 3);
+  const activeFilterName = activeCategoryFilter
+    ? categories.find((c) => c.id === activeCategoryFilter)?.name
+    : null;
 
   return (
-    <div className="flex h-full flex-col text-zinc-900">
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <div className="px-7 pt-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-[22px] font-semibold tracking-tight">Contacts</h1>
-            <div className="mt-1 text-[13.5px] text-zinc-500">
-              <span className="font-semibold tabular-nums text-zinc-700">{contacts.length} contacts</span>
-              <span className="mx-2 text-zinc-300">·</span>
-              {counts.subscribed} subscribed · {counts.bounced} bounced · {counts.suppressed} suppressed
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <button className={outlineBtn}>
-              <ExportIcon />
-              Export
-            </button>
-            <button onClick={() => setImportOpen(true)} className={outlineBtn}>
-              <UploadIcon />
-              Import
-            </button>
-            <button onClick={() => setAddOpen(true)} className={primaryBtn}>
-              <PlusIcon />
-              Add recipients
-            </button>
-          </div>
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal">Audience</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{contacts.length}</span>{" "}
+            contacts in this organization: {counts.subscribed} subscribed, {counts.bounced} bounced,
+            and {counts.suppressed} suppressed.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={exportContacts}>
+            <DownloadIcon data-icon="inline-start" />
+            Export
+          </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <UploadIcon data-icon="inline-start" />
+            Import
+          </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <PlusIcon data-icon="inline-start" />
+            Add contact
+          </Button>
         </div>
       </div>
 
-      {/* ── Toolbar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 px-7 pb-3.5 pt-5">
-        <div className="relative w-[300px]">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name or email…"
-            className="h-[38px] w-full rounded-[9px] border border-zinc-200 bg-white pl-9 pr-3 text-[13.5px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-          />
+      {/* Folders Grid - Compact Padding */}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">Folders</h2>
+          {categories.length > 3 && (
+            <Button variant="ghost" size="sm" onClick={() => setSeeMoreOpen(true)} className="h-7 text-xs text-primary hover:text-primary p-0">
+              See more ({categories.length - 3})
+            </Button>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          {(["all", "subscribed", "bounced", "suppressed"] as StatusKey[]).map((key) => {
-            const active = statusFilter === key;
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {top3.map((cat, idx) => {
+            const color = FOLDER_COLORS[idx % FOLDER_COLORS.length]!;
+            const isFiltered = activeCategoryFilter === cat.id;
             return (
-              <button
-                key={key}
-                onClick={() => setStatusFilter(key)}
-                className={`inline-flex h-[38px] items-center gap-1.5 rounded-[9px] border px-3.5 text-[13.5px] font-medium transition-colors ${active
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-600"
-                    : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
-                  }`}
+              <Card
+                key={cat.id}
+                className={cn(
+                  "cursor-pointer transition-all hover:bg-muted/10 active:scale-[0.98] p-0",
+                  isFiltered && "ring-2 ring-primary bg-muted/20 hover:bg-muted/20"
+                )}
+                onClick={() => setActiveCategoryFilter(isFiltered ? null : cat.id)}
               >
-                {key === "all" ? "All" : STATUS[key].label}
-                <span className={`text-xs font-semibold tabular-nums ${active ? "text-indigo-500" : "text-zinc-400"}`}>
-                  {counts[key]}
-                </span>
-              </button>
+                <CardContent className="flex items-center gap-3 p-3">
+                  <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", color.bg)}>
+                    {isFiltered ? (
+                      <FolderOpenIcon className={cn("size-4.5", color.text)} />
+                    ) : (
+                      <FolderIcon className={cn("size-4.5", color.text)} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-xs font-semibold text-foreground">{cat.name}</h3>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {categoryCounts[cat.id] || 0} contact{(categoryCounts[cat.id] || 0) === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
+
+          <Card
+            className="border-dashed cursor-pointer transition-all hover:bg-muted/10 active:scale-[0.98] flex items-center justify-center h-[62px]"
+            onClick={() => setCreateFolderOpen(true)}
+          >
+            <CardContent className="flex items-center gap-2 p-0 text-muted-foreground text-xs font-medium">
+              <FolderPlusIcon className="size-4" />
+              New folder
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      {/* ── Table card ──────────────────────────────────────────────── */}
-      <div className="mx-7 mb-7 flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,.03)]">
-        {/* Selection bar */}
-        {selected.size > 0 && (
-          <div className="flex items-center justify-between gap-4 border-b border-indigo-200 bg-indigo-50 px-4 py-2.5">
-            <span className="text-[13.5px] font-semibold text-indigo-600">
-              {selected.size} selected
-            </span>
-            <div className="flex items-center gap-2">
-              <BulkBtn onClick={bulkSuppress}>
-                <SuppressIcon />
-                Suppress
-              </BulkBtn>
-              <BulkBtn onClick={bulkDelete} danger>
-                <TrashIcon />
-                Delete
-              </BulkBtn>
-              <div className="mx-0.5 h-5 w-px bg-indigo-200" />
-              <button
-                onClick={clearSelection}
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                title="Clear selection"
-              >
-                <XIcon />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Column header */}
-        <div
-          className="grid items-center border-b border-zinc-100 bg-[#fbfbfc] px-4 text-[11px] font-semibold uppercase tracking-[.04em] text-zinc-400"
-          style={{ gridTemplateColumns: "46px minmax(200px,2fr) 120px 100px 88px", height: 40 }}
-        >
-          <div className="flex items-center justify-center">
-            <Checkbox checked={allFilteredSelected} indeterminate={someFilteredSelected && !allFilteredSelected} onClick={toggleAll} />
-          </div>
-          <div>Name</div>
-          <div>Status</div>
-          <div>Added</div>
-          <div className="text-right">Actions</div>
-        </div>
-
-        {/* Rows */}
-        {filtered.length > 0 ? (
-          <div>
-            {filtered.map((c, i) => {
-              const isSelected = selected.has(c.id);
-              const isHovered = hoverId === c.id;
-              const [avBg, avFg] = AVATAR_COLORS[i % AVATAR_COLORS.length];
-              const st = STATUS[c.status];
-              return (
-                <div
-                  key={c.id}
-                  onMouseEnter={() => setHoverId(c.id)}
-                  onMouseLeave={() => hoverId === c.id && setHoverId(null)}
-                  className={`group relative grid items-center border-b border-zinc-50 px-4 transition-colors ${isSelected ? "bg-indigo-50/50" : isHovered ? "bg-zinc-50/70" : ""
-                    }`}
-                  style={{ gridTemplateColumns: "46px minmax(200px,2fr) 120px 100px 88px", height: 64 }}
+      {/* Main Table section */}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">
+              {filtered.length} of {contacts.length} contact{contacts.length === 1 ? "" : "s"} shown
+            </p>
+            {activeFilterName && (
+              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
+                Folder: {activeFilterName}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-3.5 p-0 hover:bg-muted"
+                  onClick={() => setActiveCategoryFilter(null)}
                 >
-                  {/* Checkbox */}
-                  <div className="flex items-center justify-center">
-                    <Checkbox checked={isSelected} onClick={() => toggleRow(c.id)} />
-                  </div>
+                  <XIcon className="size-2.5" />
+                </Button>
+              </Badge>
+            )}
+          </div>
 
-                  {/* Avatar + name + email */}
-                  <div className="flex min-w-0 items-center gap-3 pr-3">
-                    <div className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full text-[12.5px] font-semibold ${avBg} ${avFg}`}>
-                      {getInitials(c.name, c.email)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[14px] font-medium text-zinc-900">
-                        {c.name || c.email.split("@")[0]}
-                      </div>
-                      <div className="truncate text-[12.5px] text-zinc-400">{c.email}</div>
-                    </div>
-                  </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 sm:w-72">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name or email..."
+                className="pl-8"
+              />
+            </div>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <FilterIcon data-icon="inline-start" />
+                  Filter
+                  {statusFilter !== "all" && (
+                    <Badge variant="secondary">
+                      {STATUS_LABELS[statusFilter]}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {(["all", "subscribed", "bounced", "suppressed"] as StatusKey[]).map(
+                    (key) => (
+                      <DropdownMenuItem
+                        key={key}
+                        onClick={() => setStatusFilter(key)}
+                      >
+                        <span>{STATUS_LABELS[key]}</span>
+                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                          {counts[key]}
+                        </span>
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
-                  {/* Status pill */}
-                  <div>
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${st.bg} ${st.fg}`}>
-                      <span className={`h-1.5 w-1.5 flex-none rounded-full ${st.dot}`} />
-                      {st.label}
-                    </span>
-                  </div>
+        {/* Table wrapper with scroll to prevent page scroll */}
+        <div className="overflow-auto max-h-[450px] rounded-lg border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={
+                      allFilteredSelected
+                        ? true
+                        : someFilteredSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all contacts"
+                  />
+                </TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Folders</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Added</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pageItems.length > 0 ? (
+                pageItems.map((contact) => {
+                  const isSelected = selected.has(contact.id);
+                  const myCats = contactCategories[contact.id] || [];
 
-                  {/* Date */}
-                  <div className="text-[13px] tabular-nums text-zinc-500">{formatDate(c.createdAt)}</div>
-
-                  {/* Hover actions */}
-                  <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={() => removeContact(c.id)}
-                      className="flex h-[30px] w-[30px] items-center justify-center rounded-[7px] border border-transparent text-zinc-400 hover:border-red-200 hover:bg-red-50 hover:text-red-500"
-                      title="Remove contact"
+                  return (
+                    <TableRow
+                      key={contact.id}
+                      data-state={isSelected ? "selected" : undefined}
                     >
-                      <TrashIcon />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* Empty state */
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-zinc-100">
-              <SearchIcon className="h-6 w-6 text-zinc-400" />
-            </div>
-            <div className="text-[15.5px] font-semibold text-zinc-800">No contacts match your filters</div>
-            <div className="mt-1 max-w-[340px] text-[13.5px] text-zinc-400">
-              Try a different search term, or clear the active status filter to see everyone.
-            </div>
-            <button
-              onClick={() => { setQuery(""); setStatusFilter("all"); }}
-              className="mt-4 rounded-[9px] border border-zinc-200 bg-white px-4 py-2 text-[13.5px] font-medium text-zinc-600 hover:bg-zinc-50"
-            >
-              Clear filters
-            </button>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="border-t border-zinc-100 bg-[#fbfbfc] px-4 py-3">
-          <div className="text-[12.5px] tabular-nums text-zinc-400">
-            {query || statusFilter !== "all"
-              ? `${filtered.length} contact${filtered.length === 1 ? "" : "s"} match`
-              : `${contacts.length} contact${contacts.length === 1 ? "" : "s"}`}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Add Contact Modal ───────────────────────────────────────── */}
-      {addOpen && (
-        <div onClick={() => setAddOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-[2px]" style={{ animation: "ls-pop .14s ease" }}>
-          <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-[92vw] rounded-2xl bg-white shadow-2xl" style={{ animation: "ls-pop .18s cubic-bezier(.2,.8,.3,1)" }}>
-            <div className="flex items-center justify-between px-5 pt-5">
-              <h2 className="text-[17px] font-semibold">Add recipient</h2>
-              <button onClick={() => setAddOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
-                <XIcon />
-              </button>
-            </div>
-            <div className="space-y-3 px-5 pb-5 pt-4">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Email</label>
-                <input
-                  value={addEmail}
-                  onChange={(e) => setAddEmail(e.target.value)}
-                  placeholder="email@example.com"
-                  className={modalInput}
-                  autoFocus
-                  onKeyDown={(e) => e.key === "Enter" && addEmail.trim() && addContact()}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Name (optional)</label>
-                <input
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  placeholder="Jane Doe"
-                  className={modalInput}
-                  onKeyDown={(e) => e.key === "Enter" && addEmail.trim() && addContact()}
-                />
-              </div>
-              {addError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-sm text-red-700">{addError}</div>
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleRow(contact.id)}
+                          aria-label={`Select ${contact.email}`}
+                        />
+                      </TableCell>
+                      <TableCell className="min-w-64">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+                            {getInitials(contact.name, contact.email)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-foreground">
+                              {contact.name || contact.email.split("@")[0]}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {contact.email}
+                            </span>
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <div className="flex flex-wrap gap-1">
+                          {myCats.length > 0 ? (
+                            myCats.map((c) => (
+                              <Badge key={c.id} variant="secondary" className="text-[10px] px-1.5 py-0">
+                                {c.name}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={contact.status} />
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">
+                        {formatDate(contact.createdAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => removeContact(contact.id)}
+                          title="Remove contact"
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <ContactsEmptyState
+                      hasContacts={contacts.length > 0}
+                      onClear={() => {
+                        setQuery("");
+                        setStatusFilter("all");
+                        setActiveCategoryFilter(null);
+                      }}
+                    />
+                  </TableCell>
+                </TableRow>
               )}
-
-              {/* Divider + import hint */}
-              <div className="flex items-center gap-3 pt-1">
-                <div className="h-px flex-1 bg-zinc-100" />
-                <span className="text-xs text-zinc-300">or</span>
-                <div className="h-px flex-1 bg-zinc-100" />
-              </div>
-              <button
-                onClick={() => {
-                  setAddOpen(false);
-                  setImportOpen(true);
-                }}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-[9px] border border-zinc-200 bg-white py-2.5 text-[13.5px] font-medium text-zinc-600 hover:bg-zinc-50"
-              >
-                <UploadIcon />
-                Import CSV / XLSX
-              </button>
-            </div>
-            <div className="flex items-center justify-end gap-2.5 border-t border-zinc-100 bg-[#fbfbfc] px-5 py-3.5 rounded-b-2xl">
-              <button onClick={() => setAddOpen(false)} className={outlineBtn}>
-                Cancel
-              </button>
-              <button onClick={addContact} disabled={adding || !addEmail.trim()} className={primaryBtn}>
-                {adding ? "Adding…" : "Add contact"}
-              </button>
-            </div>
-          </div>
+            </TableBody>
+          </Table>
         </div>
-      )}
 
-      {/* ── Import wizard ───────────────────────────────────────────── */}
+        {/* Pagination bar styled exactly like campaigns list */}
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {firstShown}-{lastShown} of {filtered.length}
+          </p>
+          {pageCount > 1 && (
+            <Pagination className="mx-0 w-auto">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setPage((current) => Math.max(1, current - 1));
+                    }}
+                    aria-disabled={page === 1}
+                    tabIndex={page === 1 ? -1 : undefined}
+                  />
+                </PaginationItem>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map(
+                  (pageNumber) => (
+                    <PaginationItem key={pageNumber}>
+                      <PaginationLink
+                        href="#"
+                        isActive={pageNumber === page}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setPage(pageNumber);
+                        }}
+                      >
+                        {pageNumber}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ),
+                )}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setPage((current) => Math.min(pageCount, current + 1));
+                    }}
+                    aria-disabled={page === pageCount}
+                    tabIndex={page === pageCount ? -1 : undefined}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
+        </div>
+
+        {/* Selected contacts options alert placed below pagination */}
+        {selected.size > 0 && (
+          <Alert>
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {selected.size} contact{selected.size === 1 ? "" : "s"} selected
+              </span>
+              <span className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={clearSelection}>
+                  Clear
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const initialCats = new Set<string>();
+                  selected.forEach((recipientId) => {
+                    mappings.forEach((m) => {
+                      if (m.recipientId === recipientId) {
+                        initialCats.add(m.categoryId);
+                      }
+                    });
+                  });
+                  setSelectedMappingCategories(initialCats);
+                  setManageCategoriesOpen(true);
+                }}>
+                  <TagIcon data-icon="inline-start" />
+                  Add to folders
+                </Button>
+                <Button variant="outline" size="sm" onClick={bulkSuppress}>
+                  <BanIcon data-icon="inline-start" />
+                  Suppress
+                </Button>
+                <Button variant="destructive" size="sm" onClick={bulkDelete}>
+                  <Trash2Icon data-icon="inline-start" />
+                  Delete
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
+      </section>
+
+      {/* dialog for single contact add */}
+      <AddContactDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        email={addEmail}
+        name={addName}
+        error={addError}
+        adding={adding}
+        onEmailChange={setAddEmail}
+        onNameChange={setAddName}
+        onAdd={addContact}
+        onImport={() => {
+          setAddOpen(false);
+          setImportOpen(true);
+        }}
+      />
+
+      {/* CSV importer */}
       {importOpen && (
         <ImportWizard
           onClose={() => setImportOpen(false)}
-          onDone={(s) => {
+          onDone={(summary) => {
             setImportOpen(false);
-            showToast(`${s.imported} contact${s.imported === 1 ? "" : "s"} imported`);
+            showToast(
+              `${summary.imported} contact${summary.imported === 1 ? "" : "s"} imported`,
+            );
             load();
           }}
         />
       )}
 
-      {/* ── Toast ───────────────────────────────────────────────────── */}
+      {/* Folder quick create dialog */}
+      <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>
+              Create a new category folder to organize your contacts.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup className="py-2">
+            <Field>
+              <FieldLabel htmlFor="folder-name">Folder name</FieldLabel>
+              <Input
+                id="folder-name"
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="e.g. Newsletter, Customers, VIP"
+                autoFocus
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && newFolderName.trim()) handleCreateCategory();
+                }}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateCategory} disabled={creatingFolder || !newFolderName.trim()}>
+              {creatingFolder && <Spinner data-icon="inline-start" />}
+              {creatingFolder ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage categories dialog for selection */}
+      <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add to folders</DialogTitle>
+            <DialogDescription>
+              Associate the {selected.size} selected contact{selected.size === 1 ? "" : "s"} with folders.
+            </DialogDescription>
+          </DialogHeader>
+          {categories.length > 0 ? (
+            <FieldGroup className="py-2">
+              <Field>
+                <FieldLabel>Select folders</FieldLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between font-normal text-left h-auto min-h-9 py-1 px-3">
+                      {selectedMappingCategories.size > 0 ? (
+                        <div className="flex flex-wrap gap-1 max-w-[90%]">
+                          {categories
+                            .filter(cat => selectedMappingCategories.has(cat.id))
+                            .map(cat => (
+                              <Badge key={cat.id} variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+                                {cat.name}
+                              </Badge>
+                            ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Select folders...</span>
+                      )}
+                      <ChevronDownIcon className="size-4 opacity-50 shrink-0 ml-2" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search folders..." />
+                      <CommandList className="max-h-[200px] overflow-y-auto">
+                        <CommandEmpty>No folders found.</CommandEmpty>
+                        <CommandGroup>
+                          {categories.map((cat) => {
+                            const isChecked = selectedMappingCategories.has(cat.id);
+                            return (
+                              <CommandItem
+                                key={cat.id}
+                                value={cat.name}
+                                onSelect={() => {
+                                  setSelectedMappingCategories((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cat.id)) next.delete(cat.id);
+                                    else next.add(cat.id);
+                                    return next;
+                                  });
+                                }}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={() => {}} // Controlled by onSelect
+                                />
+                                <span className="select-none">{cat.name}</span>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </Field>
+            </FieldGroup>
+          ) : (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              No folders created yet. Please create a folder first.
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageCategoriesOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveMapping} disabled={savingMapping || categories.length === 0 || selectedMappingCategories.size === 0}>
+              {savingMapping && <Spinner data-icon="inline-start" />}
+              {savingMapping ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Folders CRUD see-more sidebar Sheet - With Padding */}
+      <Sheet open={seeMoreOpen} onOpenChange={setSeeMoreOpen}>
+        <SheetContent className="w-full sm:max-w-md p-6">
+          <SheetHeader className="p-0 pb-4">
+            <SheetTitle>All folders</SheetTitle>
+            <SheetDescription>
+              Create, rename, or delete folders to organize your audience.
+            </SheetDescription>
+          </SheetHeader>
+          
+          <div className="flex flex-col gap-4 py-4 min-h-0 flex-1 overflow-hidden">
+            {/* Quick add category inside sidebar */}
+            <div className="flex gap-2">
+              <Input
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="New folder name..."
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && newFolderName.trim()) handleCreateCategory();
+                }}
+              />
+              <Button size="icon-sm" onClick={handleCreateCategory} disabled={!newFolderName.trim()}>
+                <PlusIcon className="size-4" />
+              </Button>
+            </div>
+
+            {/* Scrollable list of categories */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {categories.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {categories.map((cat, idx) => {
+                    const isEditing = editingCategoryId === cat.id;
+                    const color = FOLDER_COLORS[idx % FOLDER_COLORS.length]!;
+                    const isFiltered = activeCategoryFilter === cat.id;
+
+                    return (
+                      <div
+                        key={cat.id}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-lg border bg-card/50 transition-colors hover:bg-muted/10",
+                          isFiltered && "border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        {isEditing ? (
+                          <div className="flex flex-1 items-center gap-2">
+                            <Input
+                              value={editingCategoryName}
+                              onChange={(e) => setEditingCategoryName(e.target.value)}
+                              className="h-8 py-1"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleRenameCategory(cat.id, editingCategoryName);
+                                else if (e.key === "Escape") setEditingCategoryId(null);
+                              }}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
+                              onClick={() => handleRenameCategory(cat.id, editingCategoryName)}
+                            >
+                              <CheckIcon className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground"
+                              onClick={() => setEditingCategoryId(null)}
+                            >
+                              <XIcon className="size-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              className="flex flex-1 items-center gap-3 cursor-pointer min-w-0"
+                              onClick={() => {
+                                setActiveCategoryFilter(isFiltered ? null : cat.id);
+                                setSeeMoreOpen(false);
+                              }}
+                            >
+                              <FolderIcon className={cn("size-4 shrink-0", color.text)} />
+                              <span className="truncate text-sm font-semibold text-foreground">
+                                {cat.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({categoryCounts[cat.id] || 0})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => {
+                                  setEditingCategoryId(cat.id);
+                                  setEditingCategoryName(cat.name);
+                                }}
+                              >
+                                <Edit2Icon className="size-3.5 text-muted-foreground" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => handleDeleteCategory(cat.id)}
+                              >
+                                <Trash2Icon className="size-3.5 text-muted-foreground hover:text-destructive" />
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  No folders yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Toast notification */}
       {toast && (
-        <div
-          className="fixed bottom-6 left-1/2 z-[60] flex items-center gap-2.5 rounded-xl bg-zinc-900 px-4 py-3 text-[13.5px] font-medium text-white shadow-lg"
-          style={{ animation: "ls-rise .2s cubic-bezier(.2,.8,.3,1)" }}
-        >
-          <span className="h-[7px] w-[7px] flex-none rounded-full bg-emerald-400" />
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-card-foreground shadow-lg">
           {toast}
         </div>
       )}
@@ -472,103 +1191,130 @@ export default function ContactsPage() {
   );
 }
 
-/* ── Shared styles ──────────────────────────────────────────────────── */
-
-const outlineBtn =
-  "inline-flex h-[38px] items-center gap-[7px] rounded-[9px] border border-zinc-200 bg-white px-3.5 text-[13.5px] font-medium text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300";
-const primaryBtn =
-  "inline-flex h-[38px] items-center gap-[7px] rounded-[9px] border-none bg-indigo-600 px-4 text-[13.5px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50";
-const modalInput =
-  "w-full rounded-[9px] border border-zinc-200 bg-white px-3 py-2.5 text-[13.5px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100";
-
-/* ── Sub-components ─────────────────────────────────────────────────── */
-
-function Checkbox({ checked, indeterminate, onClick }: { checked: boolean; indeterminate?: boolean; onClick: () => void }) {
+function StatusBadge({ status }: { status: Contact["status"] }) {
   return (
-    <button
-      onClick={onClick}
-      className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-[1.5px] text-[11px] font-bold transition-colors ${checked || indeterminate
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
-        }`}
-    >
-      {checked ? "✓" : indeterminate ? "–" : ""}
-    </button>
+    <Badge variant={STATUS_BADGE_VARIANTS[status]}>
+      <span className="size-1.5 rounded-full bg-current" />
+      {STATUS_LABELS[status]}
+    </Badge>
   );
 }
 
-function BulkBtn({ onClick, children, danger }: { onClick: () => void; children: React.ReactNode; danger?: boolean }) {
+function ContactsEmptyState({
+  hasContacts,
+  onClear,
+}: {
+  hasContacts: boolean;
+  onClear: () => void;
+}) {
   return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium ${danger ? "border-red-200 text-red-600 hover:bg-red-50" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
-        }`}
-    >
-      {children}
-    </button>
+    <Empty className="border-0 py-14">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <UserRoundIcon />
+        </EmptyMedia>
+        <EmptyTitle>
+          {hasContacts ? "No contacts match your filters" : "No audience contacts yet"}
+        </EmptyTitle>
+        <EmptyDescription>
+          {hasContacts
+            ? "Try a different search term or clear the active filter."
+            : "Import a list or add recipients one at a time."}
+        </EmptyDescription>
+      </EmptyHeader>
+      {hasContacts && (
+        <EmptyContent>
+          <Button variant="outline" onClick={onClear}>
+            Clear filters
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
   );
 }
 
-/* ── Icons ──────────────────────────────────────────────────────────── */
-
-function SearchIcon({ className = "" }: { className?: string }) {
+function AddContactDialog({
+  open,
+  onOpenChange,
+  email,
+  name,
+  error,
+  adding,
+  onEmailChange,
+  onNameChange,
+  onAdd,
+  onImport,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  email: string;
+  name: string;
+  error: string | null;
+  adding: boolean;
+  onEmailChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  onAdd: () => void;
+  onImport: () => void;
+}) {
   return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.4-3.4" />
-    </svg>
-  );
-}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add recipient</DialogTitle>
+          <DialogDescription>
+            Add a single recipient or jump into the importer for a larger list.
+          </DialogDescription>
+        </DialogHeader>
 
-function PlusIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel htmlFor="contact-email">Email</FieldLabel>
+            <Input
+              id="contact-email"
+              value={email}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="email@example.com"
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && email.trim()) onAdd();
+              }}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="contact-name">Name (optional)</FieldLabel>
+            <Input
+              id="contact-name"
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="Jane Doe"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && email.trim()) onAdd();
+              }}
+            />
+          </Field>
 
-function ExportIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v12" />
-      <path d="m7 10 5 5 5-5" />
-      <path d="M5 19h14" />
-    </svg>
-  );
-}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-function UploadIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 15V4" />
-      <path d="m7 9 5-5 5 5" />
-      <path d="M5 16v3h14v-3" />
-    </svg>
-  );
-}
+          <Button variant="outline" onClick={onImport}>
+            <UploadIcon data-icon="inline-start" />
+            Import CSV / XLSX
+          </Button>
+        </FieldGroup>
 
-function TrashIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
-    </svg>
-  );
-}
-
-function SuppressIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M6.2 6.2 17.8 17.8" />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={onAdd} disabled={adding || !email.trim()}>
+            {adding && <Spinner data-icon="inline-start" />}
+            {adding ? "Adding..." : "Add contact"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

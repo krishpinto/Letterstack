@@ -11,6 +11,7 @@ import { BLOCK_LABELS } from "./editor-types";
 import { BlockBubbleMenu } from "./block-bubble-menu";
 import { CanvasBlockPreview } from "./canvas-block-preview";
 import { RichTextEditor } from "./rich-text-editor";
+import { previewHtml } from "./preview-html";
 import {
   CANVAS_ROOT_CONTAINER,
   useCanvas,
@@ -62,10 +63,10 @@ export function CanvasBlock({
       {/* Hover / selection ring */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-0 z-10 transition-[background-color,box-shadow] duration-150",
+          "pointer-events-none absolute inset-0 z-30 rounded-none transition-[background-color,box-shadow] duration-150",
           isSelected
             ? "ls-selected-block-highlight bg-primary/5 shadow-[inset_0_0_0_2px_var(--primary)]"
-            : "group-hover/block:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]",
+            : "group-hover/block:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]",
         )}
       />
 
@@ -258,7 +259,7 @@ function ColumnPresetCell({
         <h3
           className="mb-2 text-lg font-extrabold leading-tight"
           style={{ color: textColor }}
-          dangerouslySetInnerHTML={{ __html: stripOuterP(column.heading) }}
+          dangerouslySetInnerHTML={previewHtml(stripOuterP(column.heading))}
         />
       )}
       {editable ? (
@@ -280,7 +281,7 @@ function ColumnPresetCell({
         <div
           className={cn("text-sm leading-relaxed", column.showCta && "mb-3")}
           style={{ color: textColor, opacity: 0.82 }}
-          dangerouslySetInnerHTML={{ __html: column.body }}
+          dangerouslySetInnerHTML={previewHtml(column.body)}
         />
       )}
       {column.showCta ? (

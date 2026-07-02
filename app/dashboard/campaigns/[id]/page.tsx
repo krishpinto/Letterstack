@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { CampaignMonitor } from "./campaign-monitor";
-import { CampaignSendView, type DraftCampaign } from "./campaign-send-view";
+import { Spinner } from "@/components/ui/spinner";
+import { CampaignDetail, type CampaignData } from "./campaign-detail";
 
-// One campaign. A draft shows the structured send page; once it's sending/sent
-// it shows the live monitor.
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [campaign, setCampaign] = useState<DraftCampaign | null>(null);
+  const [campaign, setCampaign] = useState<CampaignData | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/campaigns/${id}`);
-    const data = await res.json();
+    const r = await fetch(`/api/campaigns/${id}`);
+    const data = await r.json();
     if (data.ok) setCampaign(data.campaign);
     else setNotFound(true);
   }, [id]);
@@ -23,11 +21,22 @@ export default function CampaignDetailPage() {
     load();
   }, [load]);
 
-  if (notFound) return <div className="p-8 text-sm text-zinc-500">Campaign not found.</div>;
-  if (!campaign) return <div className="p-8 text-sm text-zinc-500">Loading…</div>;
-
-  if (campaign.status === "draft") {
-    return <CampaignSendView campaign={campaign} onSent={load} />;
+  if (notFound) {
+    return (
+      <div className="p-8 text-sm text-muted-foreground">
+        Campaign not found.
+      </div>
+    );
   }
-  return <CampaignMonitor />;
+
+  if (!campaign) {
+    return (
+      <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
+        Loading campaign…
+      </div>
+    );
+  }
+
+  return <CampaignDetail campaign={campaign} onRefresh={load} />;
 }

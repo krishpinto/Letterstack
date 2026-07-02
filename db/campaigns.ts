@@ -1,15 +1,12 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaigns, campaignRecipients } from "./schema";
+import { campaignRecipients, campaigns, organizationMembers } from "./schema";
+import { getDefaultOrganizationForUser } from "./organizations";
 import type { EmailDocument } from "@/lib/email/document";
 
-/**
- * Create a draft campaign owned by `userId`. `document` is the editable design
- * (kept while the campaign is a draft); html/text are the compiled snapshot,
- * recompiled from the document on every edit and frozen at send time.
- */
 export async function createCampaign(
   userId: string,
+  organizationId: string,
   input: {
     name: string;
     subject: string;
@@ -23,25 +20,22 @@ export async function createCampaign(
   const [row] = await db
     .insert(campaigns)
     .values({
+      organizationId,
       userId,
       name: input.name,
       subject: input.subject,
       fromName: input.fromName,
       fromEmail: input.fromEmail,
       document: input.document,
-      htmlSnapshot: input.html, // frozen — what actually gets sent
+      htmlSnapshot: input.html,
       textSnapshot: input.text,
       status: "draft",
     })
     .returning();
+
   return row;
 }
 
-/**
- * Update a draft campaign's design + recompiled snapshot. Scoped to the owner
- * AND to status "draft" so a sent campaign's record can never be rewritten.
- * Returns the updated row, or null if it wasn't an editable draft of this user.
- */
 export async function updateCampaignDraft(
   id: string,
   userId: string,
@@ -55,6 +49,9 @@ export async function updateCampaignDraft(
     document: EmailDocument;
   },
 ) {
+  const campaign = await getCampaignForUser(id, userId);
+  if (!campaign) return null;
+
   const [row] = await db
     .update(campaigns)
     .set({
@@ -66,17 +63,19 @@ export async function updateCampaignDraft(
       htmlSnapshot: input.html,
       textSnapshot: input.text,
     })
-    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId), eq(campaigns.status, "draft")))
+    .where(
+      and(
+        eq(campaigns.id, id),
+        eq(campaigns.organizationId, campaign.organizationId),
+        eq(campaigns.status, "draft"),
+      ),
+    )
     .returning();
+
   return row ?? null;
 }
 
-/**
- * This user's campaigns, newest first — each with its frozen audience size and
- * how many actually sent. The two counts come from campaign_recipients (rows
- * only exist once a send starts), so drafts report 0/0.
- */
-export async function listCampaigns(userId: string) {
+export async function listCampaignsForOrganization(organizationId: string) {
   return db
     .select({
       id: campaigns.id,
@@ -98,40 +97,53 @@ export async function listCampaigns(userId: string) {
       )`,
     })
     .from(campaigns)
-    .where(eq(campaigns.userId, userId))
+    .where(eq(campaigns.organizationId, organizationId))
     .orderBy(desc(campaigns.createdAt));
 }
 
-/**
- * One campaign by id (or null). Unscoped — used by background workers that have
- * no session. API routes that serve a user must check `campaign.userId` against
- * the caller (or use `getCampaignForUser`).
- */
+export async function listCampaigns(userId: string) {
+  const organization = await getDefaultOrganizationForUser(userId);
+  if (!organization) return [];
+
+  return listCampaignsForOrganization(organization.id);
+}
+
 export async function getCampaign(id: string) {
   const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
   return row ?? null;
 }
 
-/** One campaign by id, but only if it belongs to this user (else null). */
 export async function getCampaignForUser(id: string, userId: string) {
   const [row] = await db
-    .select()
+    .select({ campaign: campaigns })
     .from(campaigns)
-    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)))
+    .innerJoin(
+      organizationMembers,
+      eq(campaigns.organizationId, organizationMembers.organizationId),
+    )
+    .where(
+      and(
+        eq(campaigns.id, id),
+        eq(organizationMembers.userId, userId),
+      ),
+    )
     .limit(1);
-  return row ?? null;
+
+  return row?.campaign ?? null;
 }
 
-/** Delete a campaign (and its frozen recipients, via cascade). Owner-scoped. */
 export async function deleteCampaign(id: string, userId: string): Promise<boolean> {
+  const campaign = await getCampaignForUser(id, userId);
+  if (!campaign) return false;
+
   const rows = await db
     .delete(campaigns)
-    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)))
+    .where(and(eq(campaigns.id, id), eq(campaigns.organizationId, campaign.organizationId)))
     .returning({ id: campaigns.id });
+
   return rows.length > 0;
 }
 
-/** Flip a campaign to "sending" and stamp when the send started. */
 export async function markCampaignSending(id: string) {
   await db
     .update(campaigns)
@@ -139,11 +151,6 @@ export async function markCampaignSending(id: string) {
     .where(eq(campaigns.id, id));
 }
 
-/**
- * Flip a campaign to "sent" — called by the last batch worker to finish, once no
- * recipients remain pending. Scoped to a campaign still "sending" so a late retry
- * can't resurrect a finished campaign.
- */
 export async function markCampaignSent(id: string) {
   await db
     .update(campaigns)

@@ -2,14 +2,10 @@
 
 import { NextResponse } from "next/server";
 import { listEvents } from "@/db/events";
-import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await currentUserId())) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
   try {
     const events = await listEvents();
     return NextResponse.json({ ok: true, events });
