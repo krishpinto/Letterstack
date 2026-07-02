@@ -5,6 +5,7 @@ import {
   getOrganizationForUser,
   listOrganizationsForUser,
   normalizeOrganizationType,
+  OwnerNotFoundError,
 } from "@/db/organizations";
 import {
   ACTIVE_ORGANIZATION_COOKIE,
@@ -67,13 +68,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const organization = await createOrganizationForUser(userId, { name, type });
-  const organizations = await listOrganizationsForUser(userId);
+  try {
+    const organization = await createOrganizationForUser(userId, { name, type });
+    const organizations = await listOrganizationsForUser(userId);
 
-  return withActiveOrganizationCookie(
-    { ok: true, organization, organizations },
-    organization.id,
-  );
+    return withActiveOrganizationCookie(
+      { ok: true, organization, organizations },
+      organization.id,
+    );
+  } catch (error) {
+    if (error instanceof OwnerNotFoundError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Your account was not found. Please sign out and sign in again.",
+        },
+        { status: 401 },
+      );
+    }
+
+    console.error("POST /api/organizations failed", error);
+    return NextResponse.json(
+      { ok: false, error: "Could not create organization. Please try again." },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PATCH(request: NextRequest) {
