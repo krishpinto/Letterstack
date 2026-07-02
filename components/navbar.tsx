@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Layers2Icon, MenuIcon } from "lucide-react";
 
@@ -72,6 +72,14 @@ export function Navbar() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
+          {isSignedIn && (
+            <Button
+              variant="ghost"
+              onClick={() => signOut({ callbackUrl: "/" })}
+            >
+              Sign out
+            </Button>
+          )}
           <Button variant="ghost" asChild>
             <Link href={isSignedIn ? "/dashboard" : "/login"}>
               {isSignedIn ? "Dashboard" : "Log in"}
@@ -180,6 +188,16 @@ function MobileNav({
                 </Link>
               </RichButton>
             </SheetClose>
+            {isSignedIn && (
+              <SheetClose asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() => signOut({ callbackUrl: "/" })}
+                >
+                  Sign out
+                </Button>
+              </SheetClose>
+            )}
           </div>
         </div>
       </SheetContent>
