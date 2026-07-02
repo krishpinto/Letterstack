@@ -86,14 +86,17 @@ export async function listCampaignsForOrganization(organizationId: string) {
       status: campaigns.status,
       createdAt: campaigns.createdAt,
       sentAt: campaigns.sentAt,
+      // Hand-qualified: drizzle renders interpolated columns unqualified here,
+      // so `${campaigns.id}` becomes bare "id" and correlates against the
+      // INNER table (always 0 matches). Qualify the outer reference by hand.
       audienceCount: sql<number>`(
-        select count(*)::int from ${campaignRecipients}
-        where ${campaignRecipients.campaignId} = ${campaigns.id}
+        select count(*)::int from campaign_recipients cr
+        where cr.campaign_id = campaigns.id
       )`,
       sentCount: sql<number>`(
-        select count(*)::int from ${campaignRecipients}
-        where ${campaignRecipients.campaignId} = ${campaigns.id}
-          and ${campaignRecipients.status} = 'sent'
+        select count(*)::int from campaign_recipients cr
+        where cr.campaign_id = campaigns.id
+          and cr.status = 'sent'
       )`,
     })
     .from(campaigns)
