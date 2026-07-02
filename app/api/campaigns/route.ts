@@ -10,8 +10,7 @@ import {
 } from "@/lib/email/templates";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { getOrganizationForUser } from "@/db/organizations";
-import { getSendingSlug } from "@/db/users";
-import { sendingAddressForSlug } from "@/lib/send/sender-identity";
+import { SENDING_LOCALPART } from "@/lib/send/sender-identity";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -52,15 +51,18 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "Untitled Campaign";
     const templateId = typeof body?.templateId === "string" ? body.templateId : "blank";
 
-    // Default sender = the account's branded subdomain address (or the shared
-    // verified default if they haven't picked a slug yet). Editable per-campaign.
-    const slug = await getSendingSlug(userId);
-    const fromEmail = sendingAddressForSlug(slug);
+    const organization = await getOrganizationForUser(userId, organizationId);
+
+    // Default sender = the org's verified custom domain, or the shared
+    // verified default (MAIL_FROM) until one is connected. Editable per-campaign.
+    const fromEmail =
+      organization?.sendingDomain && organization.sendingDomainVerifiedAt
+        ? `${SENDING_LOCALPART}@${organization.sendingDomain}`
+        : process.env.MAIL_FROM!;
 
     // Build the starting design from the chosen template (or blank), and fill
     // template placeholders like {{organization}} with the real org name so
     // they never leak into a sent subject line.
-    const organization = await getOrganizationForUser(userId, organizationId);
     const template = PREBUILT_TEMPLATES.find((t) => t.id === templateId);
     const doc = template ? template.build() : blankDocument();
     resolveTemplateVariables(doc, {
