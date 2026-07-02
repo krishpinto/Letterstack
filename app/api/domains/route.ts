@@ -61,6 +61,9 @@ function domainPayload(status: DomainIdentityStatus) {
     fromEmail: status.readyToSend
       ? `${SENDING_LOCALPART}@${status.domain}`
       : process.env.MAIL_FROM ?? "",
+    // Both selectable senders, for From-address pickers.
+    sharedFromEmail: process.env.MAIL_FROM ?? "",
+    customFromEmail: `${SENDING_LOCALPART}@${status.domain}`,
   };
 }
 
@@ -73,6 +76,8 @@ export async function GET() {
       ok: true,
       domain: null,
       fromEmail: process.env.MAIL_FROM ?? "",
+      sharedFromEmail: process.env.MAIL_FROM ?? "",
+      customFromEmail: null,
     });
   }
 
