@@ -1,16 +1,19 @@
-// Custom sending domain for the active organization.
+// Custom sending domains for the active organization (up to SENDING_DOMAIN_LIMIT).
 //
-// POST   { domain } — register it in SES and attach it to the org (records returned)
-// GET               — current domain + live SES verification state + DNS records
-// DELETE            — detach the domain from the org (SES identity is kept;
-//                     removing identities is an ops action via scripts/connect-domain.ts)
+// POST   { domain }  — register it in SES and attach it to the org (records returned)
+// GET                — all connected domains + live SES verification state + records
+// DELETE ?domain=x   — detach the domain from the org (SES identity is kept;
+//                      removing identities is an ops action via scripts/connect-domain.ts)
 
 import { type NextRequest, NextResponse } from "next/server";
+import { getOrganizationForUser } from "@/db/organizations";
 import {
-  getOrganizationForUser,
-  setOrganizationSendingDomain,
-  setOrganizationSendingDomainVerified,
-} from "@/db/organizations";
+  addSendingDomain,
+  listSendingDomains,
+  removeSendingDomain,
+  SENDING_DOMAIN_LIMIT,
+  setSendingDomainVerified,
+} from "@/db/sending-domains";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import {
   getDomainIdentityStatus,
@@ -18,7 +21,7 @@ import {
   registerDomainIdentity,
   type DomainIdentityStatus,
 } from "@/lib/send/domain-identity";
-import { baseSendingDomain, SENDING_LOCALPART } from "@/lib/send/sender-identity";
+import { baseSendingDomain } from "@/lib/send/sender-identity";
 
 export const runtime = "nodejs";
 
@@ -50,20 +53,40 @@ async function requireOrganization() {
   return { organization };
 }
 
-function domainPayload(status: DomainIdentityStatus) {
+function domainEntry(status: DomainIdentityStatus) {
   return {
-    ok: true,
     domain: status.domain,
     dkimStatus: status.dkimStatus,
     mailFromStatus: status.mailFromStatus,
     readyToSend: status.readyToSend,
     records: status.records,
-    fromEmail: status.readyToSend
-      ? `${SENDING_LOCALPART}@${status.domain}`
-      : process.env.MAIL_FROM ?? "",
-    // Both selectable senders, for From-address pickers.
+  };
+}
+
+async function domainsPayload(organizationId: string) {
+  const rows = await listSendingDomains(organizationId);
+
+  const domains = await Promise.all(
+    rows.map(async (row) => {
+      const status = await getDomainIdentityStatus(row.domain);
+      // Keep the stored verdict in sync so the send path can trust it
+      // without calling SES on every campaign create.
+      if (status.readyToSend !== Boolean(row.verifiedAt)) {
+        await setSendingDomainVerified(
+          organizationId,
+          row.domain,
+          status.readyToSend,
+        );
+      }
+      return domainEntry(status);
+    }),
+  );
+
+  return {
+    ok: true,
     sharedFromEmail: process.env.MAIL_FROM ?? "",
-    customFromEmail: `${SENDING_LOCALPART}@${status.domain}`,
+    limit: SENDING_DOMAIN_LIMIT,
+    domains,
   };
 }
 
@@ -71,25 +94,8 @@ export async function GET() {
   const { organization, error } = await requireOrganization();
   if (error) return error;
 
-  if (!organization.sendingDomain) {
-    return NextResponse.json({
-      ok: true,
-      domain: null,
-      fromEmail: process.env.MAIL_FROM ?? "",
-      sharedFromEmail: process.env.MAIL_FROM ?? "",
-      customFromEmail: null,
-    });
-  }
-
   try {
-    const status = await getDomainIdentityStatus(organization.sendingDomain);
-    // Keep the stored verdict in sync so the send path can trust it without
-    // calling SES on every campaign create.
-    const wasVerified = Boolean(organization.sendingDomainVerifiedAt);
-    if (status.readyToSend !== wasVerified) {
-      await setOrganizationSendingDomainVerified(organization.id, status.readyToSend);
-    }
-    return NextResponse.json(domainPayload(status));
+    return NextResponse.json(await domainsPayload(organization.id));
   } catch (err) {
     console.error("GET /api/domains failed", err);
     return NextResponse.json(
@@ -126,13 +132,29 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const status = await registerDomainIdentity(domain);
-    await setOrganizationSendingDomain(organization.id, domain);
-    if (status.readyToSend) {
-      await setOrganizationSendingDomainVerified(organization.id, true);
+    const row = await addSendingDomain(organization.id, domain);
+    if (!row) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `You can connect up to ${SENDING_DOMAIN_LIMIT} domains. Disconnect one first.`,
+        },
+        { status: 400 },
+      );
     }
-    return NextResponse.json(domainPayload(status));
+
+    const status = await registerDomainIdentity(domain);
+    if (status.readyToSend !== Boolean(row.verifiedAt)) {
+      await setSendingDomainVerified(organization.id, domain, status.readyToSend);
+    }
+    return NextResponse.json(await domainsPayload(organization.id));
   } catch (err) {
+    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      return NextResponse.json(
+        { ok: false, error: "That domain is already connected to another workspace." },
+        { status: 409 },
+      );
+    }
     console.error("POST /api/domains failed", err);
     return NextResponse.json(
       { ok: false, error: "Could not register the domain with SES. Please try again." },
@@ -141,14 +163,27 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const { organization, error } = await requireOrganization();
   if (error) return error;
 
-  await setOrganizationSendingDomain(organization.id, null);
-  return NextResponse.json({
-    ok: true,
-    domain: null,
-    fromEmail: process.env.MAIL_FROM ?? "",
-  });
+  const domain = request.nextUrl.searchParams.get("domain")?.trim().toLowerCase();
+  if (!domain) {
+    return NextResponse.json(
+      { ok: false, error: "domain query parameter required" },
+      { status: 400 },
+    );
+  }
+
+  await removeSendingDomain(organization.id, domain);
+  try {
+    return NextResponse.json(await domainsPayload(organization.id));
+  } catch {
+    return NextResponse.json({
+      ok: true,
+      sharedFromEmail: process.env.MAIL_FROM ?? "",
+      limit: SENDING_DOMAIN_LIMIT,
+      domains: [],
+    });
+  }
 }

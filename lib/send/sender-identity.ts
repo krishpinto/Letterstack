@@ -35,14 +35,11 @@ export const FROM_LOCALPART_RE =
 
 /**
  * A campaign may only send from the shared verified address (MAIL_FROM) or
- * any local part on the organization's own verified custom domain.
+ * any local part on one of the organization's verified custom domains.
  */
 export function isAllowedFromEmail(
   email: string,
-  organization: {
-    sendingDomain: string | null;
-    sendingDomainVerifiedAt: Date | null;
-  } | null,
+  verifiedDomains: string[],
 ): boolean {
   if (email === (process.env.MAIL_FROM ?? "")) return email.length > 0;
 
@@ -51,10 +48,8 @@ export function isAllowedFromEmail(
   const local = email.slice(0, at);
   const domain = email.slice(at + 1).toLowerCase();
 
-  return Boolean(
+  return (
     FROM_LOCALPART_RE.test(local) &&
-      organization?.sendingDomain &&
-      organization.sendingDomainVerifiedAt &&
-      domain === organization.sendingDomain.toLowerCase(),
+    verifiedDomains.some((d) => d.toLowerCase() === domain)
   );
 }

@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { isEmailDocument, normalizeDocument } from "@/lib/email/document";
 import { deleteCampaign, getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
-import { getOrganizationForUser } from "@/db/organizations";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { isAllowedFromEmail } from "@/lib/send/sender-identity";
 import { currentUserId } from "@/lib/auth-helpers";
 
@@ -62,11 +62,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       nextFromEmail &&
       nextFromEmail !== existing.fromEmail
     ) {
-      const organization = await getOrganizationForUser(
-        userId,
+      const verifiedDomains = await listVerifiedSendingDomains(
         existing.organizationId,
       );
-      if (!isAllowedFromEmail(nextFromEmail.toLowerCase(), organization)) {
+      if (!isAllowedFromEmail(nextFromEmail.toLowerCase(), verifiedDomains)) {
         return NextResponse.json(
           {
             ok: false,

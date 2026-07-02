@@ -10,6 +10,7 @@ import {
 } from "@/lib/email/templates";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { getOrganizationForUser } from "@/db/organizations";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { isAllowedFromEmail, SENDING_LOCALPART } from "@/lib/send/sender-identity";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
@@ -51,18 +52,20 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "Untitled Campaign";
     const templateId = typeof body?.templateId === "string" ? body.templateId : "blank";
 
-    const organization = await getOrganizationForUser(userId, organizationId);
+    const [organization, verifiedDomains] = await Promise.all([
+      getOrganizationForUser(userId, organizationId),
+      listVerifiedSendingDomains(organizationId),
+    ]);
 
     // Sender: the caller's choice if it's one they're allowed to use, else
-    // the org's verified custom domain, else the shared default (MAIL_FROM).
+    // the org's first verified custom domain, else the shared default.
     const requestedFrom =
       typeof body?.fromEmail === "string" ? body.fromEmail.trim().toLowerCase() : "";
-    let fromEmail =
-      organization?.sendingDomain && organization.sendingDomainVerifiedAt
-        ? `${SENDING_LOCALPART}@${organization.sendingDomain}`
-        : process.env.MAIL_FROM!;
+    let fromEmail = verifiedDomains[0]
+      ? `${SENDING_LOCALPART}@${verifiedDomains[0]}`
+      : process.env.MAIL_FROM!;
     if (requestedFrom) {
-      if (!isAllowedFromEmail(requestedFrom, organization)) {
+      if (!isAllowedFromEmail(requestedFrom, verifiedDomains)) {
         return NextResponse.json(
           {
             ok: false,
