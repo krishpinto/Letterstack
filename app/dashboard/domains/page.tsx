@@ -157,6 +157,7 @@ export default function DomainsPage() {
           `Value:    ${r.value}`,
           ...(r.priority !== undefined ? [`Priority: ${r.priority}`] : []),
           "TTL:      Auto / default",
+          "Proxy:    DNS only (grey cloud) — never Proxied",
         ].join("\n"),
       )
       .join("\n\n");
@@ -283,6 +284,8 @@ export default function DomainsPage() {
                         <TableHead>Host</TableHead>
                         <TableHead>Value</TableHead>
                         <TableHead>Priority</TableHead>
+                        <TableHead>TTL</TableHead>
+                        <TableHead>Proxy</TableHead>
                         <TableHead className="text-right">Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -326,6 +329,12 @@ export default function DomainsPage() {
                             </TableCell>
                             <TableCell className="text-muted-foreground">
                               {record.priority ?? "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                              Auto
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                              DNS only
                             </TableCell>
                             <TableCell className="text-right">
                               {statusBadge(group)}
