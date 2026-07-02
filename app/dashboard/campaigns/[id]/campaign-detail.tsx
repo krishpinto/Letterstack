@@ -9,6 +9,7 @@ import {
   CheckIcon,
   Edit3Icon,
   PlusIcon,
+  RotateCcwIcon,
   SendIcon,
   Trash2Icon,
   TriangleAlertIcon,
@@ -38,12 +39,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupText,
-} from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
@@ -109,9 +104,11 @@ export function CampaignDetail({
     initial.document?.settings.previewText ?? "",
   );
   const [savingSection, setSavingSection] = useState<SectionKey | null>(null);
-  const [slug, setSlug] = useState("");
-  const [baseDomain, setBaseDomain] = useState("letterstack.site");
-  const [slugError, setSlugError] = useState<string | null>(null);
+  const [senderChoice, setSenderChoice] = useState<string>(initial.fromEmail);
+  const [sharedFromEmail, setSharedFromEmail] = useState("");
+  const [customFromEmail, setCustomFromEmail] = useState<string | null>(null);
+  const [customDomainReady, setCustomDomainReady] = useState(false);
+  const [reusing, setReusing] = useState(false);
 
   // Audience state
   const [audienceEmail, setAudienceEmail] = useState("");
@@ -129,6 +126,7 @@ export function CampaignDetail({
     setCampaign(initial);
     setFromName(initial.fromName);
     setSubject(initial.subject);
+    setSenderChoice(initial.fromEmail);
     setPreviewText(initial.document?.settings.previewText ?? "");
   }, [initial]);
 
@@ -153,14 +151,15 @@ export function CampaignDetail({
     loadAudience();
   }, [loadAudience]);
 
-  // Load sending identity
+  // Load the sender addresses this org can use (shared + verified custom domain)
   useEffect(() => {
-    fetch("/api/account/sending")
+    fetch("/api/domains")
       .then((r) => r.json())
       .then((data) => {
         if (data.ok) {
-          setSlug(data.slug ?? "");
-          setBaseDomain(data.baseDomain);
+          setSharedFromEmail(data.sharedFromEmail ?? "");
+          setCustomFromEmail(data.customFromEmail ?? null);
+          setCustomDomainReady(Boolean(data.readyToSend));
         }
       })
       .catch(() => {});
@@ -267,28 +266,29 @@ export function CampaignDetail({
 
   async function saveFrom() {
     if (!campaign.document) return;
-    setSavingSection("from");
-    setSlugError(null);
+    await saveSection("from", (doc) => {
+      doc.fromName = fromName.trim();
+      doc.fromEmail = senderChoice;
+    });
+  }
+
+  async function reuseCampaign() {
+    setReusing(true);
     setError(null);
     try {
-      const r = await fetch("/api/account/sending", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug }),
+      const r = await fetch(`/api/campaigns/${campaign.id}/reuse`, {
+        method: "POST",
       });
       const data = await r.json();
       if (!data.ok) {
-        setSlugError(data.error || "Invalid subdomain");
-        setSavingSection(null);
+        setError(data.error || "Could not reuse this campaign.");
+        setReusing(false);
         return;
       }
-      await saveSection("from", (doc) => {
-        doc.fromName = fromName.trim();
-        doc.fromEmail = data.address;
-      });
+      router.push(`/dashboard/campaigns/${data.id}`);
     } catch {
       setError("Could not reach the server.");
-      setSavingSection(null);
+      setReusing(false);
     }
   }
 
@@ -415,12 +415,22 @@ export function CampaignDetail({
         </div>
         <div className="flex items-center gap-2">
           {!isDraft && (
-            <Button variant="outline" asChild>
-              <Link href={`/dashboard/campaigns/analytics/${campaign.id}`}>
-                <BarChart2Icon data-icon="inline-start" />
-                View analytics
-              </Link>
-            </Button>
+            <>
+              <Button variant="outline" asChild>
+                <Link href={`/dashboard/campaigns/analytics/${campaign.id}`}>
+                  <BarChart2Icon data-icon="inline-start" />
+                  View analytics
+                </Link>
+              </Button>
+              <Button onClick={reuseCampaign} disabled={reusing}>
+                {reusing ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <RotateCcwIcon data-icon="inline-start" />
+                )}
+                {reusing ? "Creating draft…" : "Reuse campaign"}
+              </Button>
+            </>
           )}
           {isDraft && (
             <>
@@ -734,36 +744,84 @@ export function CampaignDetail({
                             />
                           </Field>
                           <Field>
-                            <FieldLabel htmlFor="sending-slug">
-                              Sending address
-                            </FieldLabel>
-                            <InputGroup>
-                              <InputGroupAddon>
-                                <InputGroupText>newsletter@</InputGroupText>
-                              </InputGroupAddon>
-                              <InputGroupInput
-                                id="sending-slug"
-                                value={slug}
-                                onChange={(e) =>
-                                  setSlug(
-                                    e.target.value
-                                      .toLowerCase()
-                                      .replace(/[^a-z0-9-]/g, ""),
-                                  )
-                                }
-                                placeholder="letterstack"
-                              />
-                              <InputGroupAddon align="inline-end">
-                                <InputGroupText>.{baseDomain}</InputGroupText>
-                              </InputGroupAddon>
-                            </InputGroup>
-                            {slugError && (
-                              <FieldError>{slugError}</FieldError>
-                            )}
+                            <FieldLabel>Sending address</FieldLabel>
+                            <div className="flex flex-col gap-2">
+                              {sharedFromEmail && (
+                                <label
+                                  className={cn(
+                                    "flex cursor-pointer items-center gap-3 rounded-lg border p-3",
+                                    senderChoice === sharedFromEmail
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border",
+                                  )}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="sender-address"
+                                    checked={senderChoice === sharedFromEmail}
+                                    onChange={() =>
+                                      setSenderChoice(sharedFromEmail)
+                                    }
+                                    className="accent-current"
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-medium">
+                                      {sharedFromEmail}
+                                    </span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      Shared LetterStack address — works
+                                      immediately
+                                    </span>
+                                  </span>
+                                </label>
+                              )}
+                              {customFromEmail && (
+                                <label
+                                  className={cn(
+                                    "flex items-center gap-3 rounded-lg border p-3",
+                                    customDomainReady
+                                      ? "cursor-pointer"
+                                      : "opacity-70",
+                                    senderChoice === customFromEmail
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border",
+                                  )}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="sender-address"
+                                    checked={senderChoice === customFromEmail}
+                                    disabled={!customDomainReady}
+                                    onChange={() =>
+                                      setSenderChoice(customFromEmail)
+                                    }
+                                    className="accent-current"
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-medium">
+                                      {customFromEmail}
+                                    </span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      Your connected domain
+                                    </span>
+                                  </span>
+                                  {!customDomainReady && (
+                                    <Badge variant="outline">
+                                      Pending verification
+                                    </Badge>
+                                  )}
+                                </label>
+                              )}
+                            </div>
                             <FieldDescription>
-                              A branded subdomain of {baseDomain} works
-                              immediately. Sending from your own domain is a
-                              future upgrade.
+                              Connect and verify your own domain on the{" "}
+                              <Link
+                                href="/dashboard/domains"
+                                className="underline underline-offset-2"
+                              >
+                                Domains page
+                              </Link>{" "}
+                              to send from a branded address.
                             </FieldDescription>
                           </Field>
                           <SaveCancel
