@@ -45,6 +45,21 @@ const HERO = "https://placehold.co/600x300/e8e8e8/888888?text=Hero+image";
 const ARTICLE = "https://placehold.co/280x180/e8e8e8/888888?text=Article";
 const LOGO = "https://placehold.co/120x40/1a1a1a/ffffff?text=LOGO";
 
+/**
+ * Fill `{{organization}}` placeholders in template-provided copy (subject,
+ * preview text) with the actual organization name. Templates are built without
+ * knowing who is using them, so the caller resolves the name at creation time.
+ */
+export function resolveTemplateVariables(
+  doc: EmailDocument,
+  vars: { organization: string },
+): EmailDocument {
+  const fill = (value: string) => value.replaceAll("{{organization}}", vars.organization);
+  if (doc.subject) doc.subject = fill(doc.subject);
+  if (doc.settings.previewText) doc.settings.previewText = fill(doc.settings.previewText);
+  return doc;
+}
+
 /** Build a block of `type` from its factory default, with a few fields overridden. */
 function blk<T extends EmailBlock["type"]>(
   type: T,

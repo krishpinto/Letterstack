@@ -3,8 +3,13 @@
 
 import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
-import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
+import {
+  PREBUILT_TEMPLATES,
+  blankDocument,
+  resolveTemplateVariables,
+} from "@/lib/email/templates";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
+import { getOrganizationForUser } from "@/db/organizations";
 import { getSendingSlug } from "@/db/users";
 import { sendingAddressForSlug } from "@/lib/send/sender-identity";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
@@ -52,9 +57,15 @@ export async function POST(request: Request) {
     const slug = await getSendingSlug(userId);
     const fromEmail = sendingAddressForSlug(slug);
 
-    // Build the starting design from the chosen template (or blank).
+    // Build the starting design from the chosen template (or blank), and fill
+    // template placeholders like {{organization}} with the real org name so
+    // they never leak into a sent subject line.
+    const organization = await getOrganizationForUser(userId, organizationId);
     const template = PREBUILT_TEMPLATES.find((t) => t.id === templateId);
     const doc = template ? template.build() : blankDocument();
+    resolveTemplateVariables(doc, {
+      organization: organization?.name ?? "our team",
+    });
     doc.name = name;
     doc.fromEmail = fromEmail;
 
