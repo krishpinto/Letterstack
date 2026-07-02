@@ -14,11 +14,20 @@ export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   type: text("type").notNull().default("business"),
-  // Custom sending domain (e.g. "ciba.org") registered as an SES identity.
-  // verifiedAt is set once SES confirms DKIM + MAIL FROM; only then does the
-  // send path use newsletter@<sendingDomain> instead of the shared MAIL_FROM.
-  sendingDomain: text("sending_domain"),
-  sendingDomainVerifiedAt: timestamp("sending_domain_verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Custom sending domains (e.g. "ciba.org") registered as SES identities.
+// verifiedAt is set once SES confirms DKIM + MAIL FROM; only verified domains
+// may appear in a campaign's From address. Unique globally: one org owns a
+// domain at a time.
+export const sendingDomains = pgTable("sending_domains", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  domain: text("domain").notNull().unique(),
+  verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

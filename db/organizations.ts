@@ -22,36 +22,8 @@ function organizationSelect() {
     name: organizations.name,
     type: organizations.type,
     role: organizationMembers.role,
-    sendingDomain: organizations.sendingDomain,
-    sendingDomainVerifiedAt: organizations.sendingDomainVerifiedAt,
     createdAt: organizations.createdAt,
   };
-}
-
-/**
- * Point the organization at a custom sending domain (or null to detach).
- * Always clears verifiedAt — verification is re-established by a status check
- * against SES, never assumed.
- */
-export async function setOrganizationSendingDomain(
-  organizationId: string,
-  domain: string | null,
-) {
-  await db
-    .update(organizations)
-    .set({ sendingDomain: domain, sendingDomainVerifiedAt: null })
-    .where(eq(organizations.id, organizationId));
-}
-
-/** Record the latest SES verdict for the org's sending domain. */
-export async function setOrganizationSendingDomainVerified(
-  organizationId: string,
-  verified: boolean,
-) {
-  await db
-    .update(organizations)
-    .set({ sendingDomainVerifiedAt: verified ? new Date() : null })
-    .where(eq(organizations.id, organizationId));
 }
 
 export async function getDefaultOrganizationForUser(userId: string) {
