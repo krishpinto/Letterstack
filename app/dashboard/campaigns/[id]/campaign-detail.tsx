@@ -7,6 +7,7 @@ import {
   ArrowLeftIcon,
   BarChart2Icon,
   CalendarClockIcon,
+  CalendarIcon,
   CheckIcon,
   Edit3Icon,
   PlusIcon,
@@ -28,6 +29,12 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Card,
   CardContent,
@@ -85,6 +92,18 @@ function toLocalInputValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+// Every 30 minutes, labelled in 12-hour time ("9:30 AM").
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hours = Math.floor(i / 2);
+  const minutes = i % 2 === 0 ? 0 : 30;
+  const value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const label = new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(
+    undefined,
+    { hour: "numeric", minute: "2-digit" },
+  );
+  return { value, label };
+});
 
 function formatScheduleTime(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -146,6 +165,23 @@ export function CampaignDetail({
   );
   const [scheduling, setScheduling] = useState(false);
   const [cancelingSchedule, setCancelingSchedule] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+
+  // scheduleAt ("YYYY-MM-DDTHH:mm", local) split into its two picker halves.
+  const scheduleDate = scheduleAt
+    ? new Date(`${scheduleAt.slice(0, 10)}T00:00`)
+    : undefined;
+  const scheduleTime = scheduleAt ? scheduleAt.slice(11, 16) : "";
+
+  function setSchedulePart(day: Date | undefined, time: string) {
+    if (!day) {
+      setScheduleAt("");
+      return;
+    }
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const datePart = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+    setScheduleAt(`${datePart}T${time || "09:00"}`);
+  }
 
   // Editable field state
   const [fromName, setFromName] = useState(initial.fromName);
@@ -1238,18 +1274,66 @@ export function CampaignDetail({
                           </label>
                           {sendMode === "schedule" && (
                             <Field>
-                              <FieldLabel htmlFor="schedule-at">
-                                Date &amp; time
-                              </FieldLabel>
-                              <Input
-                                id="schedule-at"
-                                type="datetime-local"
-                                value={scheduleAt}
-                                min={toLocalInputValue(
-                                  new Date(Date.now() + 5 * 60 * 1000),
-                                )}
-                                onChange={(e) => setScheduleAt(e.target.value)}
-                              />
+                              <FieldLabel>Date &amp; time</FieldLabel>
+                              <div className="flex gap-2">
+                                <Popover
+                                  open={dateOpen}
+                                  onOpenChange={setDateOpen}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      className="flex-1 justify-start font-normal"
+                                    >
+                                      <CalendarIcon data-icon="inline-start" />
+                                      {scheduleDate
+                                        ? scheduleDate.toLocaleDateString(
+                                            undefined,
+                                            {
+                                              weekday: "short",
+                                              day: "numeric",
+                                              month: "short",
+                                            },
+                                          )
+                                        : "Pick a date"}
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className="w-auto p-0"
+                                    align="start"
+                                  >
+                                    <Calendar
+                                      mode="single"
+                                      selected={scheduleDate}
+                                      disabled={{ before: new Date() }}
+                                      onSelect={(day) => {
+                                        setSchedulePart(day, scheduleTime);
+                                        setDateOpen(false);
+                                      }}
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                                <Select
+                                  value={scheduleTime}
+                                  onValueChange={(t) =>
+                                    setSchedulePart(scheduleDate, t)
+                                  }
+                                >
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue placeholder="Time" />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-64">
+                                    {TIME_OPTIONS.map((option) => (
+                                      <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                      >
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                               <FieldDescription>
                                 Uses your local time zone. Must be at least a
                                 few minutes from now.
