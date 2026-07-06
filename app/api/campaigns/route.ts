@@ -2,7 +2,11 @@
 // POST — create a new DRAFT campaign from a chosen template (the create flow).
 
 import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { emailTemplates } from "@/db/schema";
 import { compileEmailDocument } from "@/lib/email/compiler";
+import { normalizeDocument } from "@/lib/email/document";
 import {
   PREBUILT_TEMPLATES,
   blankDocument,
@@ -78,11 +82,28 @@ export async function POST(request: Request) {
       fromEmail = requestedFrom;
     }
 
-    // Build the starting design from the chosen template (or blank), and fill
-    // template placeholders like {{organization}} with the real org name so
-    // they never leak into a sent subject line.
+    // Build the starting design from the chosen template — prebuilt, one of
+    // the org's own saved templates, or blank — and fill template placeholders
+    // like {{organization}} so they never leak into a sent subject line.
     const template = PREBUILT_TEMPLATES.find((t) => t.id === templateId);
-    const doc = template ? template.build() : blankDocument();
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let doc = template ? template.build() : null;
+    if (!doc && UUID_RE.test(templateId)) {
+      const [saved] = await db
+        .select()
+        .from(emailTemplates)
+        .where(
+          and(
+            eq(emailTemplates.id, templateId),
+            eq(emailTemplates.organizationId, organizationId),
+          ),
+        );
+      if (saved?.document) {
+        doc = normalizeDocument(JSON.parse(JSON.stringify(saved.document)));
+      }
+    }
+    doc ??= blankDocument();
     resolveTemplateVariables(doc, {
       organization: organization?.name ?? "our team",
     });

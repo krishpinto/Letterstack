@@ -662,9 +662,25 @@ function CreateCampaignDialog({
   // "shared" or one of the connected domain names.
   const [senderSource, setSenderSource] = useState("shared");
   const [customLocal, setCustomLocal] = useState("");
+  const [savedTemplates, setSavedTemplates] = useState<
+    { id: string; name: string }[]
+  >([]);
 
   useEffect(() => {
     if (!open) return;
+    fetch("/api/templates")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setSavedTemplates(
+            (data.templates ?? []).map((t: { id: string; name: string }) => ({
+              id: t.id,
+              name: t.name,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
     fetch("/api/domains")
       .then((r) => r.json())
       .then((data) => {
@@ -807,11 +823,22 @@ function CreateCampaignDialog({
               <NativeSelectOption value="blank">
                 Blank - start from scratch
               </NativeSelectOption>
-              {PREBUILT_TEMPLATES.map((template) => (
-                <NativeSelectOption key={template.id} value={template.id}>
-                  {template.title}
-                </NativeSelectOption>
-              ))}
+              <optgroup label="LetterStack templates">
+                {PREBUILT_TEMPLATES.map((template) => (
+                  <NativeSelectOption key={template.id} value={template.id}>
+                    {template.title}
+                  </NativeSelectOption>
+                ))}
+              </optgroup>
+              {savedTemplates.length > 0 && (
+                <optgroup label="Your templates">
+                  {savedTemplates.map((template) => (
+                    <NativeSelectOption key={template.id} value={template.id}>
+                      {template.name}
+                    </NativeSelectOption>
+                  ))}
+                </optgroup>
+              )}
             </NativeSelect>
           </Field>
 
