@@ -190,7 +190,7 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
   const isLive = status === "enabled";
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4">
+    <div className="flex h-full min-h-[560px] flex-col gap-4">
       <header className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Button variant="outline" size="icon-sm" asChild>
