@@ -1317,7 +1317,7 @@ export function CampaignDetail({
                   </div>
 
                   {/* Can't send warning */}
-                  {!canSend && (
+                  {(!canSend || !ready.sendtime) && (
                     <div className="border-t border-border p-4">
                       <Alert>
                         <AlertDescription>
@@ -1327,7 +1327,9 @@ export function CampaignDetail({
                               ? "Add a subject before sending."
                               : !ready.from
                                 ? "Set a from name and email before sending."
-                                : "This email has no unsubscribe link, which is required to send."}
+                                : !ready.unsubscribe
+                                  ? "This email has no unsubscribe link, which is required to send."
+                                  : "Pick a date and time in the Send time step to schedule this campaign."}
                         </AlertDescription>
                       </Alert>
                     </div>
