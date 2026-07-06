@@ -52,9 +52,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
 import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
 import { cn } from "@/lib/utils";
@@ -1265,32 +1270,32 @@ export function CampaignDetail({
               undone.
             </DialogDescription>
           </DialogHeader>
-          <NativeSelect
-            value={switchTemplateId}
-            onChange={(event) => setSwitchTemplateId(event.target.value)}
-            className="w-full"
-            aria-label="Template"
-          >
-            <NativeSelectOption value="blank">
-              Blank - start from scratch
-            </NativeSelectOption>
-            <optgroup label="LetterStack templates">
-              {PREBUILT_TEMPLATES.map((template) => (
-                <NativeSelectOption key={template.id} value={template.id}>
-                  {template.title}
-                </NativeSelectOption>
-              ))}
-            </optgroup>
-            {savedTemplates.length > 0 && (
-              <optgroup label="Your templates">
-                {savedTemplates.map((template) => (
-                  <NativeSelectOption key={template.id} value={template.id}>
-                    {template.name}
-                  </NativeSelectOption>
+          <Select value={switchTemplateId} onValueChange={setSwitchTemplateId}>
+            <SelectTrigger className="w-full" aria-label="Template">
+              <SelectValue placeholder="Choose a template" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="blank">Blank — start from scratch</SelectItem>
+              <SelectGroup>
+                <SelectLabel>LetterStack templates</SelectLabel>
+                {PREBUILT_TEMPLATES.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.title}
+                  </SelectItem>
                 ))}
-              </optgroup>
-            )}
-          </NativeSelect>
+              </SelectGroup>
+              {savedTemplates.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Your templates</SelectLabel>
+                  {savedTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+            </SelectContent>
+          </Select>
           <DialogFooter>
             <Button
               variant="outline"

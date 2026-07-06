@@ -51,9 +51,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Pagination,
   PaginationContent,
@@ -767,26 +772,26 @@ function CreateCampaignDialog({
 
           <Field>
             <FieldLabel htmlFor="campaign-sender">Send from</FieldLabel>
-            <NativeSelect
-              id="campaign-sender"
-              value={senderSource}
-              onChange={(event) => setSenderSource(event.target.value)}
-              className="w-full"
-            >
-              <NativeSelectOption value="shared">
-                {sharedFromEmail || "Shared LetterStack address"} — shared
-              </NativeSelectOption>
-              {domains.map((entry) => (
-                <NativeSelectOption
-                  key={entry.domain}
-                  value={entry.domain}
-                  disabled={!entry.readyToSend}
-                >
-                  {entry.domain} — your domain
-                  {entry.readyToSend ? "" : " (pending verification)"}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            <Select value={senderSource} onValueChange={setSenderSource}>
+              <SelectTrigger id="campaign-sender" className="w-full">
+                <SelectValue placeholder="Choose a sender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="shared">
+                  {sharedFromEmail || "Shared LetterStack address"} — shared
+                </SelectItem>
+                {domains.map((entry) => (
+                  <SelectItem
+                    key={entry.domain}
+                    value={entry.domain}
+                    disabled={!entry.readyToSend}
+                  >
+                    {entry.domain} — your domain
+                    {entry.readyToSend ? "" : " (pending verification)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {senderSource !== "shared" && (
               <div className="flex items-center gap-1">
                 <Input
@@ -814,32 +819,32 @@ function CreateCampaignDialog({
 
           <Field>
             <FieldLabel htmlFor="campaign-template">Start from</FieldLabel>
-            <NativeSelect
-              id="campaign-template"
-              value={templateId}
-              onChange={(event) => setTemplateId(event.target.value)}
-              className="w-full"
-            >
-              <NativeSelectOption value="blank">
-                Blank - start from scratch
-              </NativeSelectOption>
-              <optgroup label="LetterStack templates">
-                {PREBUILT_TEMPLATES.map((template) => (
-                  <NativeSelectOption key={template.id} value={template.id}>
-                    {template.title}
-                  </NativeSelectOption>
-                ))}
-              </optgroup>
-              {savedTemplates.length > 0 && (
-                <optgroup label="Your templates">
-                  {savedTemplates.map((template) => (
-                    <NativeSelectOption key={template.id} value={template.id}>
-                      {template.name}
-                    </NativeSelectOption>
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger id="campaign-template" className="w-full">
+                <SelectValue placeholder="Choose a starting point" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="blank">Blank — start from scratch</SelectItem>
+                <SelectGroup>
+                  <SelectLabel>LetterStack templates</SelectLabel>
+                  {PREBUILT_TEMPLATES.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.title}
+                    </SelectItem>
                   ))}
-                </optgroup>
-              )}
-            </NativeSelect>
+                </SelectGroup>
+                {savedTemplates.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Your templates</SelectLabel>
+                    {savedTemplates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
           </Field>
 
           {error && (
