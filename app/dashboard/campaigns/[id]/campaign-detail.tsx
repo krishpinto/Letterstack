@@ -9,6 +9,7 @@ import {
   CheckIcon,
   Edit3Icon,
   PlusIcon,
+  ReplaceIcon,
   RotateCcwIcon,
   SendIcon,
   Trash2Icon,
@@ -42,7 +43,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
+import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
 import { cn } from "@/lib/utils";
 import { ImportWizard } from "../../contacts/import-wizard";
 
@@ -123,6 +137,31 @@ export function CampaignDetail({
 
   // Send progress (non-draft only)
   const [progress, setProgress] = useState<ProgressState | null>(null);
+
+  // Switch-template dialog (draft only)
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [switchTemplateId, setSwitchTemplateId] = useState("blank");
+  const [switching, setSwitching] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<
+    { id: string; name: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!switchOpen) return;
+    fetch("/api/templates")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setSavedTemplates(
+            (data.templates ?? []).map((t: { id: string; name: string }) => ({
+              id: t.id,
+              name: t.name,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, [switchOpen]);
 
   // Sync if parent re-fetches and passes a new campaign prop
   useEffect(() => {
@@ -288,6 +327,56 @@ export function CampaignDetail({
       doc.fromName = fromName.trim();
       doc.fromEmail = fromEmail;
     });
+  }
+
+  async function switchTemplate() {
+    setSwitching(true);
+    setError(null);
+    try {
+      // Build the replacement design from the chosen starting point.
+      let doc: EmailDocument | null = null;
+      const prebuilt = PREBUILT_TEMPLATES.find((t) => t.id === switchTemplateId);
+      if (prebuilt) {
+        doc = prebuilt.build();
+      } else if (switchTemplateId === "blank") {
+        doc = blankDocument();
+      } else {
+        const r = await fetch(`/api/templates/${switchTemplateId}`);
+        const data = await r.json();
+        if (data.ok && data.template?.document) {
+          doc = JSON.parse(JSON.stringify(data.template.document));
+        }
+      }
+      if (!doc) {
+        setError("Could not load that template.");
+        setSwitching(false);
+        return;
+      }
+
+      // The design changes; the campaign's identity fields stay.
+      doc.name = campaign.name;
+      if (campaign.subject) doc.subject = campaign.subject;
+      if (campaign.fromName) doc.fromName = campaign.fromName;
+      doc.fromEmail = campaign.fromEmail;
+
+      const r = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document: doc }),
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        setError(data.error || "Could not switch the template.");
+        setSwitching(false);
+        return;
+      }
+      setCampaign(data.campaign);
+      setSwitchOpen(false);
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setSwitching(false);
+    }
   }
 
   async function reuseCampaign() {
@@ -1002,6 +1091,14 @@ export function CampaignDetail({
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => setSwitchOpen(true)}
+                    >
+                      <ReplaceIcon data-icon="inline-start" />
+                      Switch template
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={editDesign}
                     >
                       <Edit3Icon data-icon="inline-start" />
@@ -1156,6 +1253,59 @@ export function CampaignDetail({
           </Card>
         </div>
       </div>
+
+      {/* Switch template dialog */}
+      <Dialog open={switchOpen} onOpenChange={setSwitchOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Switch template</DialogTitle>
+            <DialogDescription>
+              Replaces this campaign&apos;s design with the chosen template.
+              Your recipients, subject, and sender are kept. This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <NativeSelect
+            value={switchTemplateId}
+            onChange={(event) => setSwitchTemplateId(event.target.value)}
+            className="w-full"
+            aria-label="Template"
+          >
+            <NativeSelectOption value="blank">
+              Blank - start from scratch
+            </NativeSelectOption>
+            <optgroup label="LetterStack templates">
+              {PREBUILT_TEMPLATES.map((template) => (
+                <NativeSelectOption key={template.id} value={template.id}>
+                  {template.title}
+                </NativeSelectOption>
+              ))}
+            </optgroup>
+            {savedTemplates.length > 0 && (
+              <optgroup label="Your templates">
+                {savedTemplates.map((template) => (
+                  <NativeSelectOption key={template.id} value={template.id}>
+                    {template.name}
+                  </NativeSelectOption>
+                ))}
+              </optgroup>
+            )}
+          </NativeSelect>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSwitchOpen(false)}
+              disabled={switching}
+            >
+              Cancel
+            </Button>
+            <Button onClick={switchTemplate} disabled={switching}>
+              {switching && <Spinner data-icon="inline-start" />}
+              {switching ? "Switching…" : "Switch template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Import wizard */}
       {importOpen && (
