@@ -440,6 +440,18 @@ export function FlowCanvas(props: FlowCanvasProps) {
       edges={edges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
+      // React Flow sets pointer-events: none on nodes that are neither
+      // draggable nor selectable and have no click handler — clicks must be
+      // registered here, not only inside the custom node components.
+      onNodeClick={(_, node) => {
+        if (node.type === "add") {
+          const data = node.data as { parentId: string; handle: BranchHandle };
+          props.onRequestInsert(data.parentId, data.handle);
+        } else if (node.type === "step") {
+          const data = node.data as { flowNode: AutomationNode };
+          props.onSelectNode(data.flowNode.id);
+        }
+      }}
       colorMode="dark"
       fitView
       fitViewOptions={{ padding: 0.35, maxZoom: 1 }}
