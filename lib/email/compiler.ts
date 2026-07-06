@@ -119,10 +119,14 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument): string {
     case "paragraph":
       return renderParagraphBlock(block, document);
     case "image":
+      // Centered like the editor canvas (margin:auto for modern clients,
+      // align="center" for table-based ones). The width attribute is scaled
+      // to the block's percentage so Outlook doesn't stretch partial-width
+      // images to the full column.
       return `
             <tr>
-              <td style="padding:0;">
-                <img src="${escapeAttribute(block.src)}" width="${document.settings.maxWidth}" alt="${escapeAttribute(block.alt)}" style="display:block;width:${block.width}%;max-width:${document.settings.maxWidth}px;height:auto;border:0;">
+              <td align="center" style="padding:0;">
+                <img src="${escapeAttribute(block.src)}" width="${Math.round((document.settings.maxWidth * block.width) / 100)}" alt="${escapeAttribute(block.alt)}" style="display:block;margin:0 auto;width:${block.width}%;max-width:${document.settings.maxWidth}px;height:auto;border:0;">
               </td>
             </tr>`;
     case "button":
@@ -183,11 +187,22 @@ function renderHeadingBlock(block: HeadingBlock, document: EmailDocument) {
   const ff = document.settings.fontFamily;
   const p = document.settings.padding;
   const sizes: Record<1 | 2 | 3, string> = { 1: "32px", 2: "24px", 3: "18px" };
-  const text = stripOuterP(block.text);
+  const base = `color:${textColor};font-family:${ff};font-size:${sizes[block.level]};line-height:1.2;font-weight:800;`;
+  // The editor can emit multi-paragraph headings. Block-level <p> tags inside
+  // an <h1> get split apart by HTML parsers (losing every inline style), so
+  // render in a <div> — like the canvas does — and style inner <p>s directly.
+  // stripOuterP only handles a single paragraph; leave multi-paragraph HTML
+  // intact so every line keeps its wrapper.
+  const paragraphCount = (block.text.match(/<p[\s>]/gi) ?? []).length;
+  const source = paragraphCount > 1 ? block.text : stripOuterP(block.text);
+  const text = source.replace(
+    /<p(\s[^>]*)?>(?!<\/p>)/g,
+    (_, attrs = "") => mergeStyle("p", `margin:0;${base}`, attrs),
+  );
   return `
             <tr>
               <td align="${block.align}" style="padding:24px ${p}px 12px ${p}px;">
-                <h${block.level} style="margin:0;color:${textColor};font-family:${ff};font-size:${sizes[block.level]};line-height:1.2;font-weight:800;">${text}</h${block.level}>
+                <div style="margin:0;${base}">${text}</div>
               </td>
             </tr>`;
 }
@@ -226,12 +241,23 @@ const SOCIAL_DISPLAY: Record<string, string> = {
   youtube: "YouTube",
 };
 
+// Same chip letters the editor canvas shows — keep the two in sync.
+const SOCIAL_CHARS: Record<string, string> = {
+  facebook: "f",
+  twitter: "𝕏",
+  instagram: "ig",
+  linkedin: "in",
+  youtube: "yt",
+};
+
 function renderSocialBlock(block: SocialBlock, document: EmailDocument) {
   const p = document.settings.padding;
+  // Round icon chips matching the editor canvas. Clients that ignore
+  // border-radius (old Outlook) show square chips — still branded, still links.
   const links = block.links
     .map(
       (link) =>
-        `<a href="${escapeAttribute(link.url)}" style="display:inline-block;margin:0 6px;color:${document.settings.linkColor};font-family:${document.settings.fontFamily};font-size:13px;font-weight:700;text-decoration:none;">${SOCIAL_DISPLAY[link.platform] ?? link.platform}</a>`
+        `<a href="${escapeAttribute(link.url)}" title="${escapeAttribute(SOCIAL_DISPLAY[link.platform] ?? link.platform)}" style="display:inline-block;width:32px;height:32px;margin:0 4px;border-radius:16px;background:${document.settings.linkColor};color:#ffffff;font-family:${document.settings.fontFamily};font-size:11px;font-weight:700;line-height:32px;text-align:center;text-decoration:none;">${SOCIAL_CHARS[link.platform] ?? link.platform[0].toUpperCase()}</a>`
     )
     .join("");
   return `
