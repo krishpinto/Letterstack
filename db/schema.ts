@@ -169,6 +169,9 @@ export const emailTemplates = pgTable("email_templates", {
   fromName: text("from_name").default(""),
   fromEmail: text("from_email").default(""),
   document: jsonb("document").$type<EmailDocument>(),
+  // Unguessable token backing the public share link (/templates/shared/<token>).
+  // Null = not shared.
+  shareToken: text("share_token").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
