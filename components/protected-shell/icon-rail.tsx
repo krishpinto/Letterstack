@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import {
   GlobeIcon,
+  LayoutDashboardIcon,
   LayoutTemplateIcon,
   SendIcon,
   SettingsIcon,
@@ -116,15 +117,26 @@ export function IconRail() {
   return (
     <TooltipProvider delayDuration={400}>
       <aside className="flex w-11 shrink-0 flex-col items-center py-2">
-        {/* Logo mark */}
-        <Link
-          href="/dashboard"
-          className="mb-3 flex size-9 items-center justify-center rounded-lg hover:bg-sidebar-accent/50 transition-colors"
-        >
-          <span className="text-xs font-black tracking-tighter text-primary leading-none select-none">
-            LS
-          </span>
-        </Link>
+        {/* Dashboard home */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href="/dashboard"
+              className={cn(
+                "mb-3 flex size-9 items-center justify-center rounded-lg transition-colors",
+                pathname === "/dashboard"
+                  ? "bg-sidebar-accent text-primary shadow-sm"
+                  : "text-primary hover:bg-sidebar-accent/50",
+              )}
+            >
+              <LayoutDashboardIcon className="size-4" />
+              <span className="sr-only">Dashboard</span>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8} className="text-xs">
+            Dashboard
+          </TooltipContent>
+        </Tooltip>
 
         {/* Primary nav */}
         <nav className="flex flex-1 flex-col items-center gap-1">

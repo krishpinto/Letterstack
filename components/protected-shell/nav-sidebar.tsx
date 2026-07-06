@@ -596,7 +596,7 @@ function DefaultSidebar() {
         <NavItem
           href="/dashboard"
           icon={HomeIcon}
-          label="Overview"
+          label="Dashboard"
           active={pathname === "/dashboard"}
         />
         <NavItem

@@ -31,6 +31,10 @@ export function ProtectedShell({
   const pathname = usePathname();
 
   const isSettings = pathname.startsWith("/dashboard/settings");
+  // The workspace dashboard is content-only: no nav sidebar, no sub-header,
+  // no filter panel — just the stats page.
+  const isDashboardHome = pathname === "/dashboard";
+  const contentOnly = isSettings || isDashboardHome;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -51,14 +55,14 @@ export function ProtectedShell({
         {/* ── Main bordered container ── */}
         <div className="flex flex-1 overflow-hidden rounded-xl border border-border bg-muted/30 shadow-sm">
 
-          {/* Left nav sidebar — hidden on settings */}
-          {!isSettings && navOpen && <NavSidebar />}
+          {/* Left nav sidebar — hidden on content-only routes */}
+          {!contentOnly && navOpen && <NavSidebar />}
 
           {/* ── Content column ── */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
 
-            {/* Content header — hidden on settings */}
-            {!isSettings && (
+            {/* Content header — hidden on content-only routes */}
+            {!contentOnly && (
               <ContentHeader
                 onToggleSidebar={() => setNavOpen((v) => !v)}
                 sidebarOpen={navOpen}
@@ -79,8 +83,8 @@ export function ProtectedShell({
             </main>
           </div>
 
-          {/* Right sidebar — hidden on settings */}
-          {!isSettings && rightOpen && (
+          {/* Right sidebar — hidden on content-only routes */}
+          {!contentOnly && rightOpen && (
             <RightSidebar onClose={() => setRightOpen(false)} />
           )}
         </div>

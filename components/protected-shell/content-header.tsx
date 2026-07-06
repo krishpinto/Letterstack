@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 // ─── Page metadata ────────────────────────────────────────────────────────────
 
 const PAGE_METADATA: Record<string, { title: string; emoji: string }> = {
-  "/dashboard": { title: "Overview", emoji: "🏠" },
+  "/dashboard": { title: "Dashboard", emoji: "🏠" },
   "/dashboard/campaigns": { title: "Campaigns", emoji: "📤" },
   "/dashboard/audience": { title: "Audience", emoji: "👥" },
   "/dashboard/contacts": { title: "Audience", emoji: "👥" },
