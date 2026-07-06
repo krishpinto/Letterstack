@@ -65,7 +65,7 @@ import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
 import { cn } from "@/lib/utils";
 import { ImportWizard } from "../../contacts/import-wizard";
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CampaignData = {
   id: string;
@@ -96,7 +96,7 @@ type ProgressState = {
   pending: number;
 };
 
-// â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function CampaignDetail({
   campaign: initial,
@@ -253,7 +253,7 @@ export function CampaignDetail({
     };
   }, [campaign.id, isDraft]);
 
-  // â”€â”€â”€ Derived state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Derived state ──────────────────────────────────────────────────────────
 
   const hasDoc = Boolean(campaign.document);
   const htmlBytes = useMemo(
@@ -289,7 +289,7 @@ export function CampaignDetail({
       ? Math.round((progressSent / progressTotal) * 100)
       : 0;
 
-  // â”€â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Handlers ───────────────────────────────────────────────────────────────
 
   async function saveSection(
     key: SectionKey,
@@ -507,11 +507,11 @@ export function CampaignDetail({
     }
   }
 
-  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-5">
-      {/* â”€â”€ Header â”€â”€ */}
+      {/* ── Header ── */}
       <header className="flex items-center justify-between gap-4 border p-3 rounded-lg border-border">
         <div className="flex min-w-0 items-center gap-3">
           <Button variant="outline" size="icon-sm" asChild>
@@ -555,13 +555,13 @@ export function CampaignDetail({
                 ) : (
                   <SendIcon data-icon="inline-start" />
                 )}
-                {sending ? "Sendingâ€¦" : "Send"}
+                {sending ? "Sending…" : "Send"}
               </Button>
             </>
           )}
         </div>
       </header>
-      {/* â”€â”€ Alerts â”€â”€ */}
+      {/* ── Alerts ── */}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -571,14 +571,14 @@ export function CampaignDetail({
         <Alert>
           <TriangleAlertIcon data-icon="inline-start" />
           <AlertDescription>
-            This email is {Math.round(htmlBytes / 1024)}KB â€” over Gmail&apos;s
+            This email is {Math.round(htmlBytes / 1024)}KB — over Gmail&apos;s
             ~102KB clipping limit. Content near the end (including the
             unsubscribe link) may be hidden.
           </AlertDescription>
         </Alert>
       )}
 
-      {/* â”€â”€ Send progress bar (non-draft only) â”€â”€ */}
+      {/* ── Send progress bar (non-draft only) ── */}
       {!isDraft && progress && (
         <Card size="sm">
           <CardContent className="flex flex-col gap-3">
@@ -586,7 +586,7 @@ export function CampaignDetail({
               <span className="font-medium">
                 {isFinished
                   ? `${deliveryRate}% delivered`
-                  : `Sendingâ€¦ ${progressDone}/${progressTotal}`}
+                  : `Sending… ${progressDone}/${progressTotal}`}
               </span>
               <span className="tabular-nums text-muted-foreground">
                 {isFinished
@@ -599,10 +599,10 @@ export function CampaignDetail({
         </Card>
       )}
 
-      {/* â”€â”€ Main grid â”€â”€ */}
+      {/* ── Main grid ── */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)]">
 
-        {/* â”€â”€ LEFT: Send checklist â”€â”€ */}
+        {/* ── LEFT: Send checklist ── */}
         <div className="flex min-w-0 flex-col gap-4">
           <Card className="py-0 gap-0">
             <CardHeader className="py-4 px-4 bg-card">
@@ -633,7 +633,7 @@ export function CampaignDetail({
 
             <CardContent className="flex flex-col p-0 bg-card">
               {isDraft ? (
-                // â”€â”€ DRAFT: interactive accordion â”€â”€
+                // ── DRAFT: interactive accordion ──
                 <>
                   <Accordion
                     type="single"
@@ -662,12 +662,12 @@ export function CampaignDetail({
                             <span className="mt-0.5 block text-xs">
                               <span className="font-semibold text-foreground">
                                 {recipientCount === null
-                                  ? "â€¦"
+                                  ? "…"
                                   : `${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
                               </span>
                               <span className="text-muted-foreground">
                                 {" "}
-                                â€” Campaign audience
+                                — Campaign audience
                               </span>
                             </span>
                           </span>
@@ -742,7 +742,7 @@ export function CampaignDetail({
                                     <UsersRoundIcon data-icon="inline-start" />
                                   )}
                                   {audienceImporting
-                                    ? "Addingâ€¦"
+                                    ? "Adding…"
                                     : "Add org audience"}
                                 </Button>
                                 <Button
@@ -835,7 +835,7 @@ export function CampaignDetail({
                               </span>
                               <span className="text-muted-foreground">
                                 {" "}
-                                â€”{" "}
+                                —{" "}
                                 {campaign.fromEmail || "no email"}
                               </span>
                             </span>
@@ -989,7 +989,7 @@ export function CampaignDetail({
                               {previewText && (
                                 <span className="text-muted-foreground">
                                   {" "}
-                                  Â· {previewText}
+                                  · {previewText}
                                 </span>
                               )}
                             </span>
@@ -1142,19 +1142,19 @@ export function CampaignDetail({
                   )}
                 </>
               ) : (
-                // â”€â”€ NON-DRAFT: read-only steps â”€â”€
+                // ── NON-DRAFT: read-only steps ──
                 <div className="flex flex-col divide-y divide-border">
                   {[
                     {
                       label: "To",
-                      description: `${recipientCount ?? "â€¦"} recipient${recipientCount === 1 ? "" : "s"}`,
+                      description: `${recipientCount ?? "…"} recipient${recipientCount === 1 ? "" : "s"}`,
                       done: ready.to,
                     },
                     {
                       label: "From",
                       description:
                         campaign.fromName && campaign.fromEmail
-                          ? `${campaign.fromName} Â· ${campaign.fromEmail}`
+                          ? `${campaign.fromName} · ${campaign.fromEmail}`
                           : "Not set",
                       done: ready.from,
                     },
@@ -1202,7 +1202,7 @@ export function CampaignDetail({
           </Card>
         </div>
 
-        {/* â”€â”€ RIGHT: Email preview â”€â”€ */}
+        {/* ── RIGHT: Email preview ── */}
         <div className="hidden min-w-0 lg:flex">
           <Card className="flex flex-1 flex-col p-0 gap-0">
             <CardContent className="flex-1 p-0">
@@ -1217,7 +1217,7 @@ export function CampaignDetail({
                       <span className="min-w-0 truncate text-foreground">
                         {campaign.fromName
                           ? `${campaign.fromName} <${campaign.fromEmail}>`
-                          : campaign.fromEmail || "â€”"}
+                          : campaign.fromEmail || "—"}
                       </span>
                     </div>
                     <div className="flex items-baseline gap-3 text-xs">
@@ -1226,7 +1226,7 @@ export function CampaignDetail({
                       </span>
                       <span className="text-foreground">
                         {recipientCount === null
-                          ? "â€”"
+                          ? "—"
                           : `${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
                       </span>
                     </div>
@@ -1235,7 +1235,7 @@ export function CampaignDetail({
                         Subject
                       </span>
                       <span className="min-w-0 truncate font-medium text-foreground">
-                        {campaign.subject || "â€”"}
+                        {campaign.subject || "—"}
                       </span>
                     </div>
                   </div>
@@ -1327,7 +1327,7 @@ export function CampaignDetail({
   );
 }
 
-// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StepCircle({ done, num, active }: { done: boolean; num: number; active?: boolean }) {
   if (done) {
@@ -1366,7 +1366,7 @@ function SaveCancel({
     <div className="flex items-center gap-2">
       <Button onClick={onSave} disabled={saving || disabled}>
         {saving && <Spinner data-icon="inline-start" />}
-        {saving ? "Savingâ€¦" : "Save"}
+        {saving ? "Saving…" : "Save"}
       </Button>
       <Button variant="outline" onClick={onCancel}>
         Cancel
