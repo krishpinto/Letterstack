@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import {
-  BarChart3Icon,
   GlobeIcon,
   LayoutTemplateIcon,
   SendIcon,
@@ -27,6 +26,8 @@ type RailNavItem = {
   icon: React.ElementType;
   label: string;
   matchPrefix?: boolean;
+  /** Additional path prefixes that count as this module (e.g. analytics → Campaigns). */
+  extraPrefixes?: string[];
 };
 
 const NAV_ITEMS: RailNavItem[] = [
@@ -35,6 +36,7 @@ const NAV_ITEMS: RailNavItem[] = [
     icon: SendIcon,
     label: "Campaigns",
     matchPrefix: true,
+    extraPrefixes: ["/dashboard/analytics"],
   },
   {
     href: "/dashboard/audience",
@@ -52,12 +54,6 @@ const NAV_ITEMS: RailNavItem[] = [
     href: "/dashboard/automations",
     icon: WorkflowIcon,
     label: "Automations",
-    matchPrefix: true,
-  },
-  {
-    href: "/dashboard/analytics",
-    icon: BarChart3Icon,
-    label: "Analytics",
     matchPrefix: true,
   },
   {
@@ -110,6 +106,9 @@ export function IconRail() {
   const pathname = usePathname();
 
   function isActive(item: RailNavItem) {
+    if (item.extraPrefixes?.some((prefix) => pathname.startsWith(prefix))) {
+      return true;
+    }
     if (item.matchPrefix) return pathname.startsWith(item.href);
     return pathname === item.href || pathname.startsWith(item.href + "/");
   }

@@ -1,18 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import {
   BarChart3Icon,
+  CalendarClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   GlobeIcon,
   HomeIcon,
   LayoutTemplateIcon,
+  MailCheckIcon,
   MailIcon,
   MoreHorizontalIcon,
+  PenLineIcon,
   PlusIcon,
   SendIcon,
   UsersIcon,
@@ -88,10 +91,34 @@ function SectionHeader({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// Module detection: each icon-rail module gets its own contextual sidebar.
+// Rolled out module by module — routes without a module sidebar yet fall
+// back to the generic workspace nav.
+function isCampaignsModule(pathname: string) {
+  return (
+    pathname.startsWith("/dashboard/campaigns") ||
+    pathname.startsWith("/dashboard/analytics")
+  );
+}
+
 export function NavSidebar() {
   const pathname = usePathname();
-  const [workspaceOpen, setWorkspaceOpen] = useState(true);
-  const [campaignsOpen, setCampaignsOpen] = useState(true);
+
+  if (isCampaignsModule(pathname)) {
+    // useSearchParams (inside) needs a Suspense boundary for prerendering.
+    return (
+      <Suspense fallback={<aside className="w-52 shrink-0 border-r border-border/60 bg-background" />}>
+        <CampaignsSidebar />
+      </Suspense>
+    );
+  }
+
+  return <DefaultSidebar />;
+}
+
+// ─── Campaigns module ─────────────────────────────────────────────────────────
+
+function useRecentCampaigns() {
   const [recent, setRecent] = useState<RecentCampaign[]>([]);
 
   useEffect(() => {
@@ -119,6 +146,129 @@ export function NavSidebar() {
       off();
     };
   }, []);
+
+  return recent;
+}
+
+function RecentSection({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(true);
+  const recent = useRecentCampaigns();
+
+  return (
+    <div className="mt-2 flex flex-1 flex-col overflow-hidden px-2">
+      <SectionHeader label="Recent" open={open} onToggle={() => setOpen((v) => !v)} />
+      {open && (
+        <div className="mt-0.5 flex flex-col gap-0.5 overflow-y-auto pb-2">
+          {recent.length === 0 && (
+            <p className="px-2 py-1 text-xs text-muted-foreground/60">
+              No campaigns yet
+            </p>
+          )}
+          {recent.map((c) => (
+            <Link
+              key={c.id}
+              href={`/dashboard/campaigns/${c.id}`}
+              className={cn(
+                "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
+                pathname === `/dashboard/campaigns/${c.id}`
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  : "text-sidebar-foreground/55 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              )}
+            >
+              <span className="text-xs leading-none">{statusEmoji(c.status)}</span>
+              <span className="truncate">{c.name}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CampaignsSidebar() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const status = searchParams.get("status");
+  const onList = pathname === "/dashboard/campaigns";
+
+  const statusViews = [
+    { key: "draft", label: "Drafts", icon: PenLineIcon },
+    { key: "scheduled", label: "Scheduled", icon: CalendarClockIcon },
+    { key: "sent", label: "Sent", icon: MailCheckIcon },
+  ] as const;
+
+  return (
+    <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background">
+      {/* ── Module header ── */}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-sidebar-border/50 px-3">
+        <span className="text-sm font-semibold text-sidebar-foreground">
+          Campaigns
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/campaigns" aria-label="New campaign">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
+
+      {/* ── Quick add ── */}
+      <div className="px-2 pt-2.5">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/campaigns">
+            <PlusIcon className="size-3.5 shrink-0" />
+            New campaign
+          </Link>
+        </Button>
+      </div>
+
+      {/* ── Views ── */}
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/campaigns"
+          icon={SendIcon}
+          label="All campaigns"
+          active={onList && !status}
+        />
+        {statusViews.map((view) => (
+          <NavItem
+            key={view.key}
+            href={`/dashboard/campaigns?status=${view.key}`}
+            icon={view.icon}
+            label={view.label}
+            active={onList && status === view.key}
+          />
+        ))}
+        <NavItem
+          href="/dashboard/analytics"
+          icon={BarChart3Icon}
+          label="Analytics"
+          active={pathname.startsWith("/dashboard/analytics")}
+        />
+      </nav>
+
+      {/* ── Divider ── */}
+      <div className="mx-3 my-1 border-t border-sidebar-border/50" />
+
+      <RecentSection pathname={pathname} />
+    </aside>
+  );
+}
+
+// ─── Default (generic) sidebar ────────────────────────────────────────────────
+
+function DefaultSidebar() {
+  const pathname = usePathname();
+  const [workspaceOpen, setWorkspaceOpen] = useState(true);
 
   return (
     <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background">
@@ -193,12 +343,6 @@ export function NavSidebar() {
           active={pathname.startsWith("/dashboard/automations")}
         />
         <NavItem
-          href="/dashboard/analytics"
-          icon={BarChart3Icon}
-          label="Analytics"
-          active={pathname.startsWith("/dashboard/analytics")}
-        />
-        <NavItem
           href="/dashboard/domains"
           icon={GlobeIcon}
           label="Domains"
@@ -234,38 +378,7 @@ export function NavSidebar() {
         )}
       </div>
 
-      {/* ── Campaigns section ── */}
-      <div className="mt-2 flex flex-1 flex-col overflow-hidden px-2">
-        <SectionHeader
-          label="Recent"
-          open={campaignsOpen}
-          onToggle={() => setCampaignsOpen((v) => !v)}
-        />
-        {campaignsOpen && (
-          <div className="mt-0.5 flex flex-col gap-0.5 overflow-y-auto pb-2">
-            {recent.length === 0 && (
-              <p className="px-2 py-1 text-xs text-muted-foreground/60">
-                No campaigns yet
-              </p>
-            )}
-            {recent.map((c) => (
-              <Link
-                key={c.id}
-                href={`/dashboard/campaigns/${c.id}`}
-                className={cn(
-                  "flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors",
-                  pathname === `/dashboard/campaigns/${c.id}`
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "text-sidebar-foreground/55 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-                )}
-              >
-                <span className="text-xs leading-none">{statusEmoji(c.status)}</span>
-                <span className="truncate">{c.name}</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+      <RecentSection pathname={pathname} />
     </aside>
   );
 }

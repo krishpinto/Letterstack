@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   FilterIcon,
   MailIcon,
@@ -127,15 +127,34 @@ function formatDate(iso: string) {
   });
 }
 
+const STATUS_KEYS: StatusKey[] = ["all", "draft", "scheduled", "sending", "sent"];
+
 export default function CampaignsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [list, setList] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+
+  // The status filter lives in the URL (?status=draft) so the module sidebar
+  // views (Drafts / Scheduled / Sent) can drive it and deep links work.
+  const statusParam = searchParams.get("status") as StatusKey | null;
+  const statusFilter: StatusKey =
+    statusParam && STATUS_KEYS.includes(statusParam) ? statusParam : "all";
+
+  const setStatusFilter = useCallback(
+    (next: StatusKey) => {
+      router.replace(
+        next === "all"
+          ? "/dashboard/campaigns"
+          : `/dashboard/campaigns?status=${next}`,
+      );
+    },
+    [router],
+  );
 
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
