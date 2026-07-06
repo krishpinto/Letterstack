@@ -160,6 +160,24 @@ export const recipientCategories = pgTable(
   ],
 );
 
+export const automations = pgTable("automations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  // "enabled" automations run on trigger events; "disabled" ones are drafts.
+  status: text("status").notNull().default("disabled"),
+  // AutomationFlow (lib/automations/flow.ts): a node tree, not raw ReactFlow
+  // state — the canvas derives its layout from this.
+  flow: jsonb("flow").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const emailTemplates = pgTable("email_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id")

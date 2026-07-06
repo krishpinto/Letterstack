@@ -20,6 +20,7 @@ import {
   SettingsIcon,
   UserCircleIcon,
   UsersRoundIcon,
+  WorkflowIcon,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -77,6 +78,11 @@ const workspaceNav = [
     title: "Templates",
     href: "/dashboard/templates",
     icon: PenLineIcon,
+  },
+  {
+    title: "Automations",
+    href: "/dashboard/automations",
+    icon: WorkflowIcon,
   },
   {
     title: "Analytics",

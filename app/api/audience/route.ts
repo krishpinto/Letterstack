@@ -5,6 +5,7 @@ import {
   listRecipientsForOrganization,
 } from "@/db/recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
+import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -73,6 +74,16 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+
+    // Fire "contact added" automations. Never blocks the add itself.
+    await enqueueAutomationsForEvent(organizationId, "contact.added", [
+      {
+        id: recipient.id,
+        email: recipient.email,
+        name: recipient.name,
+        userId: recipient.userId,
+      },
+    ]);
 
     return NextResponse.json({ ok: true, recipient });
   } catch (error) {

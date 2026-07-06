@@ -4,6 +4,7 @@ import {
   listRecipientsForOrganization,
 } from "@/db/recipients";
 import { listSuppressedSetForOrganization } from "@/db/suppression";
+import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -70,6 +71,19 @@ export async function POST(request: Request) {
   }
 
   const inserted = await addRecipientsBulk(organizationId, userId, toInsert);
+
+  // Fire "contact added" automations for imported contacts. Capped so a huge
+  // import can't fan out tens of thousands of welcome emails in one shot.
+  await enqueueAutomationsForEvent(
+    organizationId,
+    "contact.added",
+    inserted.slice(0, 1_000).map((recipient) => ({
+      id: recipient.id,
+      email: recipient.email,
+      name: recipient.name,
+      userId: recipient.userId,
+    })),
+  );
 
   return NextResponse.json({
     ok: true,
