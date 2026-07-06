@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { BarSpinner } from "@/components/bar-spinner";
+import { PageLoader } from "@/components/bar-spinner";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -158,10 +158,7 @@ export default function AutomationsPage() {
             {loading && (
               <TableRow>
                 <TableCell colSpan={5}>
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <BarSpinner size={18} />
-                    Loading automations…
-                  </div>
+                  <PageLoader className="min-h-0 py-10" label="Loading automations…" />
                 </TableCell>
               </TableRow>
             )}

@@ -22,7 +22,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { BarSpinner } from "@/components/bar-spinner";
+import { PageLoader } from "@/components/bar-spinner";
 import {
   Table,
   TableBody,
@@ -109,10 +109,7 @@ export default function AnalyticsPage() {
 
   if (rows === null) {
     return (
-      <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <BarSpinner size={18} />
-        Loading analytics...
-      </div>
+      <PageLoader label="Loading analytics..." />
     );
   }
 

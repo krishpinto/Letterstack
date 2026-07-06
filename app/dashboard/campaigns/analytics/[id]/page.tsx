@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { BarSpinner } from "@/components/bar-spinner";
+import { PageLoader } from "@/components/bar-spinner";
 import {
   Table,
   TableBody,
@@ -212,10 +212,7 @@ export default function CampaignAnalyticsPage() {
 
   if (!campaign || !progress) {
     return (
-      <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <BarSpinner size={18} />
-        Loading analytics…
-      </div>
+      <PageLoader label="Loading analytics…" />
     );
   }
 

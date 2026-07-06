@@ -66,7 +66,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
-import { BarSpinner } from "@/components/bar-spinner";
+import { PageLoader } from "@/components/bar-spinner";
 import { cn } from "@/lib/utils";
 
 type Tab = "letterstack" | "saved" | "recent";
@@ -372,10 +372,7 @@ function RecentlySentTab() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-        <BarSpinner size={18} />
-        Loading sent campaigns...
-      </div>
+      <PageLoader className="min-h-0 py-12" label="Loading sent campaigns..." />
     );
   }
 
@@ -634,10 +631,7 @@ function SavedTab({
   return (
     <div className="flex flex-col gap-6 w-full py-2">
       {loading ? (
-        <div className="flex justify-center items-center py-12 gap-2 text-muted-foreground text-sm">
-          <BarSpinner size={18} />
-          Loading templates...
-        </div>
+        <PageLoader className="min-h-0 py-12" label="Loading templates..." />
       ) : templates.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {templates.map((template) => (

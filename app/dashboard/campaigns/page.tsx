@@ -68,7 +68,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Spinner } from "@/components/ui/spinner";
-import { BarSpinner } from "@/components/bar-spinner";
+import { PageLoader } from "@/components/bar-spinner";
 import {
   Table,
   TableBody,
@@ -389,10 +389,7 @@ export default function CampaignsPage() {
               {loading && (
                 <TableRow>
                   <TableCell colSpan={6} className="h-32">
-                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <BarSpinner size={18} />
-                      Loading campaigns...
-                    </div>
+                    <PageLoader className="min-h-0" label="Loading campaigns..." />
                   </TableCell>
                 </TableRow>
               )}

@@ -3,6 +3,7 @@
 // rather than sweeping. Original implementation — visual pattern only, no
 // third-party code.
 
+import { DotmMail } from "@/components/dotm-mail";
 import { cn } from "@/lib/utils";
 
 const BAR_COUNT = 12;
@@ -44,7 +45,11 @@ export function BarSpinner({
   );
 }
 
-/** Centered full-area loading state: spinner + optional label. */
+/**
+ * Centered full-area loading state: the dot-matrix envelope + optional
+ * label. This is the default loader for page and section loads; BarSpinner
+ * above stays for tiny inline spots.
+ */
 export function PageLoader({
   label,
   className,
@@ -55,11 +60,11 @@ export function PageLoader({
   return (
     <div
       className={cn(
-        "flex min-h-64 flex-1 flex-col items-center justify-center gap-3",
+        "flex min-h-64 flex-1 flex-col items-center justify-center gap-4",
         className,
       )}
     >
-      <BarSpinner size={22} className="text-muted-foreground" />
+      <DotmMail size={46} className="text-foreground" />
       {label && <p className="text-sm text-muted-foreground">{label}</p>}
     </div>
   );
