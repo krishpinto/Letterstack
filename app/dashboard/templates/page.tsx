@@ -9,6 +9,7 @@ import {
   FileArchiveIcon,
   MailIcon,
   PlusIcon,
+  SearchIcon,
   Share2Icon,
   Trash2Icon,
   UploadIcon,
@@ -62,6 +63,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -156,13 +158,19 @@ export default function TemplatesPage() {
     }
   }
 
-  const filtered = useMemo(
-    () =>
-      category === "all"
-        ? PREBUILT_TEMPLATES
-        : PREBUILT_TEMPLATES.filter((template) => template.category === category),
-    [category],
-  );
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return PREBUILT_TEMPLATES.filter(
+      (template) =>
+        (category === "all" || template.category === category) &&
+        (!q ||
+          `${template.title} ${template.description}`
+            .toLowerCase()
+            .includes(q)),
+    );
+  }, [category, query]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -237,83 +245,59 @@ export default function TemplatesPage() {
             {PREBUILT_TEMPLATES.length}
           </Badge>
         </div>
-          <div className="flex flex-col gap-6 md:flex-row md:items-start">
-            {/* Sidebar Category Selector (Desktop) */}
-            <aside className="hidden w-56 shrink-0 flex-col gap-1 md:flex">
-              <h2 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Categories</h2>
-              {TEMPLATE_CATEGORIES.map((item) => {
-                const isActive = category === item.key;
-                const count = item.key === "all" 
-                  ? PREBUILT_TEMPLATES.length 
-                  : PREBUILT_TEMPLATES.filter((t) => t.category === item.key).length;
-                
-                return (
-                  <Button
-                    key={item.key}
-                    variant={isActive ? "secondary" : "ghost"}
-                    className={cn(
-                      "justify-between font-semibold h-9 text-sm px-3",
-                      isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                    onClick={() => setCategory(item.key)}
-                  >
-                    <span>{item.label}</span>
-                    <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0 pointer-events-none shrink-0 font-normal">
-                      {count}
-                    </Badge>
-                  </Button>
-                );
-              })}
-            </aside>
-
-            {/* Mobile Category Selector */}
-            <div className="flex flex-col gap-2 md:hidden w-full overflow-hidden">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">Categories</h2>
-              <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none snap-x">
-                {TEMPLATE_CATEGORIES.map((item) => {
-                  const isActive = category === item.key;
-                  return (
-                    <Button
-                      key={item.key}
-                      variant={isActive ? "default" : "outline"}
-                      size="sm"
-                      className="snap-start text-xs shrink-0 rounded-full h-8 px-3"
-                      onClick={() => setCategory(item.key)}
-                    >
-                      {item.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Templates Grid */}
-            <div className="flex-1 min-w-0">
-              {filtered.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {filtered.map((template) => (
-                    <TemplateCard
-                      key={template.id}
-                      template={template}
-                      onOpen={() => openDoc(template.build())}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <Empty className="py-12 border border-dashed rounded-xl">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <MailIcon />
-                    </EmptyMedia>
-                    <EmptyTitle>No templates found</EmptyTitle>
-                    <EmptyDescription>
-                      Try choosing a different template category.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </div>
+        {/* Category pills + search, Mailchimp-style single row */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="scrollbar-none flex min-w-0 snap-x gap-1.5 overflow-x-auto pb-1">
+            {TEMPLATE_CATEGORIES.map((item) => {
+              const isActive = category === item.key;
+              return (
+                <Button
+                  key={item.key}
+                  variant={isActive ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 shrink-0 snap-start rounded-full px-3 text-xs"
+                  onClick={() => setCategory(item.key)}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
           </div>
+          <div className="relative shrink-0 lg:w-72">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search templates..."
+              className="pl-8"
+            />
+          </div>
+        </div>
+
+        {/* Templates Grid */}
+        {filtered.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {filtered.map((template) => (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                onOpen={() => openDoc(template.build())}
+              />
+            ))}
+          </div>
+        ) : (
+          <Empty className="py-12 border border-dashed rounded-xl">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MailIcon />
+              </EmptyMedia>
+              <EmptyTitle>No templates found</EmptyTitle>
+              <EmptyDescription>
+                Try a different search or template category.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
       </section>
 
       <ImportHtmlDialog
@@ -355,14 +339,9 @@ function TemplateCard({
           </Button>
         </div>
       </div>
-      <CardContent className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex flex-col gap-1">
-          <div className="font-semibold text-sm text-foreground">{template.title}</div>
-          <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground mt-0.5">
-            {template.description}
-          </p>
-        </div>
-        <div className="mt-auto flex items-center gap-2 pt-2">
+      <CardContent className="flex flex-1 flex-col gap-1.5 p-3.5">
+        <div className="text-sm font-medium text-foreground">{template.title}</div>
+        <div className="mt-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             <MailIcon className="size-3" />
             Email
@@ -382,7 +361,7 @@ function TemplateCard({
  */
 function HtmlThumb({ html, title }: { html: string; title: string }) {
   return (
-    <div className="pointer-events-none relative h-44 select-none overflow-hidden border-b border-border bg-white">
+    <div className="pointer-events-none relative aspect-[3/4] w-full select-none overflow-hidden border-b border-border bg-white">
       <iframe
         title={`Preview of ${title}`}
         srcDoc={html}
@@ -418,7 +397,7 @@ function SavedTemplateThumb({ template }: { template: SavedTemplate }) {
 
   if (!html) {
     return (
-      <div className="flex h-44 items-center justify-center border-b border-border bg-muted/30">
+      <div className="flex aspect-[3/4] w-full items-center justify-center border-b border-border bg-muted/30">
         <MailIcon className="size-8 text-muted-foreground/40" />
       </div>
     );
@@ -530,7 +509,7 @@ function SavedTab({
           Loading templates...
         </div>
       ) : templates.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {templates.map((template) => (
             <SavedTemplateCard
               key={template.id}
