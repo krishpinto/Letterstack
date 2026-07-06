@@ -457,16 +457,16 @@ function TemplateCard({
   onOpen: () => void;
 }) {
   return (
-    <Card
+    <div
       role="button"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter") onOpen();
       }}
-      className="cursor-pointer gap-0 py-0 transition-all duration-300 hover:shadow-md hover:border-muted-foreground/30 relative flex flex-col h-full rounded-xl overflow-hidden group border bg-card text-card-foreground"
+      className="group cursor-pointer"
     >
-      <div className="group relative overflow-hidden rounded-t-xl border-b border-border bg-muted/30">
+      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/40 transition-colors duration-300 group-hover:border-muted-foreground/40">
         <TemplateThumb template={template} />
         {/* Hover Overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
@@ -479,39 +479,45 @@ function TemplateCard({
           </Button>
         </div>
       </div>
-      <CardContent className="flex flex-1 flex-col gap-1.5 p-3.5">
-        <div className="text-sm font-medium text-foreground">{template.title}</div>
-        <div className="mt-auto flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            <MailIcon className="size-3" />
-            Email
-          </Badge>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium">Free</Badge>
+      <div className="mt-2.5 flex items-start justify-between gap-2 px-1">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {template.title}
+          </p>
+          <p className="truncate font-mono text-xs text-muted-foreground">
+            {template.id}
+          </p>
         </div>
-      </CardContent>
-    </Card>
+        <Badge variant="secondary" className="mt-0.5 shrink-0 text-[10px] px-1.5 py-0">
+          Email
+        </Badge>
+      </div>
+    </div>
   );
 }
 
 /**
- * Live thumbnail: the template's real compiled HTML rendered in an iframe at
- * 3x width and scaled to a third — an always-accurate miniature, no
- * screenshot pipeline needed. Inert to the page (sandboxed, no pointer
- * events) so clicking the card still works.
+ * Live thumbnail, Resend-style: the compiled email renders as a white sheet
+ * that peeks in from the top of the tile with side margins and is cropped at
+ * the bottom — only the top of the email shows. Real compiled HTML in a
+ * sandboxed iframe, no screenshot pipeline. Inert to the page so clicking
+ * the card still works.
  */
 function HtmlThumb({ html, title }: { html: string; title: string }) {
   return (
-    <div className="pointer-events-none relative aspect-[3/4] w-full select-none overflow-hidden border-b border-border bg-white">
-      <iframe
-        title={`Preview of ${title}`}
-        srcDoc={html}
-        sandbox=""
-        scrolling="no"
-        tabIndex={-1}
-        aria-hidden
-        className="absolute left-0 top-0 origin-top-left border-0"
-        style={{ width: "300%", height: "300%", transform: "scale(0.3334)" }}
-      />
+    <div className="pointer-events-none relative aspect-[16/11] w-full select-none">
+      <div className="absolute inset-x-8 top-7 bottom-0 overflow-hidden rounded-t-md bg-white shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+        <iframe
+          title={`Preview of ${title}`}
+          srcDoc={html}
+          sandbox=""
+          scrolling="no"
+          tabIndex={-1}
+          aria-hidden
+          className="absolute left-0 top-0 origin-top-left border-0"
+          style={{ width: "250%", height: "800%", transform: "scale(0.4)" }}
+        />
+      </div>
     </div>
   );
 }
@@ -537,7 +543,7 @@ function SavedTemplateThumb({ template }: { template: SavedTemplate }) {
 
   if (!html) {
     return (
-      <div className="flex aspect-[3/4] w-full items-center justify-center border-b border-border bg-muted/30">
+      <div className="flex aspect-[16/11] w-full items-center justify-center">
         <MailIcon className="size-8 text-muted-foreground/40" />
       </div>
     );
@@ -559,13 +565,13 @@ function SavedTemplateCard({
   shareCopied: boolean;
 }) {
   return (
-    <Card
+    <div
       role="button"
       tabIndex={0}
       onClick={onOpen}
-      className="cursor-pointer gap-0 py-0 transition-all duration-300 hover:shadow-md hover:border-muted-foreground/30 relative flex flex-col h-full rounded-xl overflow-hidden group border bg-card text-card-foreground"
+      className="group cursor-pointer"
     >
-      <div className="group relative overflow-hidden rounded-t-xl border-b border-border bg-muted/30">
+      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/40 transition-colors duration-300 group-hover:border-muted-foreground/40">
         <SavedTemplateThumb template={template} />
 
         {/* Hover Overlay */}
@@ -579,50 +585,47 @@ function SavedTemplateCard({
           </Button>
         </div>
       </div>
-      <CardContent className="flex flex-1 flex-col gap-3 p-4">
-        <div className="flex flex-col gap-1 min-w-0">
-          <div className="font-semibold text-sm text-foreground truncate">{template.name}</div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Last edited {new Date(template.updatedAt).toLocaleDateString()}
+      <div className="mt-2.5 flex items-start justify-between gap-2 px-1">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {template.name}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            Edited {new Date(template.updatedAt).toLocaleDateString()}
           </p>
         </div>
-        <div className="mt-auto flex items-center justify-between pt-2">
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            Custom
-          </Badge>
-          <div className="flex items-center gap-1">
-            {shareCopied && (
-              <span className="text-[10px] font-medium text-primary">
-                Link copied!
-              </span>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-7 p-0 text-muted-foreground hover:text-foreground"
-              title="Copy share link"
-              onClick={(e) => {
-                e.stopPropagation();
-                onShare();
-              }}
-            >
-              <Share2Icon className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2Icon className="size-3.5" />
-            </Button>
-          </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {shareCopied && (
+            <span className="text-[10px] font-medium text-primary">
+              Link copied!
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-7 p-0 text-muted-foreground hover:text-foreground"
+            title="Copy share link"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShare();
+            }}
+          >
+            <Share2Icon className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2Icon className="size-3.5" />
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
