@@ -67,7 +67,9 @@ export async function updateCampaignDraft(
       and(
         eq(campaigns.id, id),
         eq(campaigns.organizationId, campaign.organizationId),
-        eq(campaigns.status, "draft"),
+        // Scheduled campaigns stay editable — the send reads the snapshot at
+        // fire time, so edits before then are exactly what the user expects.
+        sql`${campaigns.status} in ('draft', 'scheduled')`,
       ),
     )
     .returning();
@@ -85,6 +87,7 @@ export async function listCampaignsForOrganization(organizationId: string) {
       fromEmail: campaigns.fromEmail,
       status: campaigns.status,
       createdAt: campaigns.createdAt,
+      scheduledAt: campaigns.scheduledAt,
       sentAt: campaigns.sentAt,
       // Hand-qualified: drizzle renders interpolated columns unqualified here,
       // so `${campaigns.id}` becomes bare "id" and correlates against the
@@ -145,6 +148,31 @@ export async function deleteCampaign(id: string, userId: string): Promise<boolea
     .returning({ id: campaigns.id });
 
   return rows.length > 0;
+}
+
+export async function markCampaignScheduled(id: string, scheduledAt: Date) {
+  const [row] = await db
+    .update(campaigns)
+    .set({ status: "scheduled", scheduledAt })
+    .where(
+      and(
+        eq(campaigns.id, id),
+        sql`${campaigns.status} in ('draft', 'scheduled')`,
+      ),
+    )
+    .returning();
+
+  return row ?? null;
+}
+
+export async function cancelCampaignSchedule(id: string) {
+  const [row] = await db
+    .update(campaigns)
+    .set({ status: "draft", scheduledAt: null })
+    .where(and(eq(campaigns.id, id), eq(campaigns.status, "scheduled")))
+    .returning();
+
+  return row ?? null;
 }
 
 export async function markCampaignSending(id: string) {

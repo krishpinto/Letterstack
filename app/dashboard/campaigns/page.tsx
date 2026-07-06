@@ -85,28 +85,32 @@ type Campaign = {
   fromEmail: string;
   status: string;
   createdAt: string;
+  scheduledAt: string | null;
   sentAt: string | null;
   audienceCount: number;
   sentCount: number;
 };
 
-type StatusKey = "all" | "draft" | "sending" | "sent";
+type StatusKey = "all" | "draft" | "scheduled" | "sending" | "sent";
 
 const STATUS_LABELS: Record<StatusKey, string> = {
   all: "All",
   draft: "Draft",
+  scheduled: "Scheduled",
   sending: "Sending",
   sent: "Sent",
 };
 
 const STATUS_BADGE_VARIANTS = {
   draft: "secondary",
+  scheduled: "outline",
   sending: "outline",
   sent: "default",
 } as const;
 
 const STATUS_DESCRIPTIONS: Record<Exclude<StatusKey, "all">, string> = {
   draft: "Not sent yet",
+  scheduled: "Waiting for send time",
   sending: "Queued / in progress",
   sent: "Completed",
 };
@@ -162,6 +166,7 @@ export default function CampaignsPage() {
     const c: Record<StatusKey, number> = {
       all: list.length,
       draft: 0,
+      scheduled: 0,
       sending: 0,
       sent: 0,
     };
@@ -169,6 +174,7 @@ export default function CampaignsPage() {
     list.forEach((item) => {
       if (
         item.status === "draft" ||
+        item.status === "scheduled" ||
         item.status === "sending" ||
         item.status === "sent"
       ) {
@@ -335,7 +341,7 @@ export default function CampaignsPage() {
                 <DropdownMenuLabel>Status</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  {(["all", "draft", "sending", "sent"] as StatusKey[]).map(
+                  {(["all", "draft", "scheduled", "sending", "sent"] as StatusKey[]).map(
                     (key) => (
                       <DropdownMenuItem
                         key={key}
@@ -401,10 +407,14 @@ export default function CampaignsPage() {
               {!loading &&
                 pageItems.map((campaign) => {
                   const status =
-                    campaign.status === "sending" || campaign.status === "sent"
+                    campaign.status === "scheduled" ||
+                    campaign.status === "sending" ||
+                    campaign.status === "sent"
                       ? campaign.status
                       : "draft";
-                  const isDraft = campaign.status === "draft";
+                  const isDraft =
+                    campaign.status === "draft" ||
+                    campaign.status === "scheduled";
 
                   return (
                     <TableRow
@@ -450,7 +460,9 @@ export default function CampaignsPage() {
                             {STATUS_LABELS[status]}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
-                            {STATUS_DESCRIPTIONS[status]}
+                            {status === "scheduled" && campaign.scheduledAt
+                              ? `Sends ${new Date(campaign.scheduledAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
+                              : STATUS_DESCRIPTIONS[status]}
                           </span>
                         </div>
                       </TableCell>

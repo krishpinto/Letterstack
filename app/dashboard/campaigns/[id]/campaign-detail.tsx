@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeftIcon,
   BarChart2Icon,
+  CalendarClockIcon,
   CheckIcon,
   Edit3Icon,
   PlusIcon,
@@ -74,9 +75,26 @@ export type CampaignData = {
   fromName: string;
   fromEmail: string;
   status: string;
+  scheduledAt?: string | null;
   htmlSnapshot: string;
   document: EmailDocument | null;
 };
+
+// datetime-local inputs want local wall-clock time, not the UTC ISO string.
+function toLocalInputValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatScheduleTime(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 type SectionKey = "to" | "from" | "subject" | "sendtime";
 
@@ -107,6 +125,9 @@ export function CampaignDetail({
 }) {
   const router = useRouter();
   const isDraft = initial.status === "draft";
+  const isScheduled = initial.status === "scheduled";
+  // Scheduled campaigns stay editable — the snapshot is read at fire time.
+  const isEditable = isDraft || isScheduled;
   const initialRef = useRef(initial);
 
   const [campaign, setCampaign] = useState<CampaignData>(initial);
@@ -115,6 +136,16 @@ export function CampaignDetail({
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Send-time state
+  const [sendMode, setSendMode] = useState<"now" | "schedule">(
+    initial.status === "scheduled" ? "schedule" : "now",
+  );
+  const [scheduleAt, setScheduleAt] = useState(() =>
+    initial.scheduledAt ? toLocalInputValue(new Date(initial.scheduledAt)) : "",
+  );
+  const [scheduling, setScheduling] = useState(false);
+  const [cancelingSchedule, setCancelingSchedule] = useState(false);
 
   // Editable field state
   const [fromName, setFromName] = useState(initial.fromName);
@@ -174,6 +205,10 @@ export function CampaignDetail({
     setFromName(initial.fromName);
     setSubject(initial.subject);
     setPreviewText(initial.document?.settings.previewText ?? "");
+    setSendMode(initial.status === "scheduled" ? "schedule" : "now");
+    setScheduleAt(
+      initial.scheduledAt ? toLocalInputValue(new Date(initial.scheduledAt)) : "",
+    );
   }, [initial]);
 
   // Load recipients
@@ -223,9 +258,9 @@ export function CampaignDetail({
       .catch(() => {});
   }, []);
 
-  // Poll send progress for non-draft campaigns
+  // Poll send progress once the campaign is actually sending
   useEffect(() => {
-    if (isDraft) return;
+    if (isEditable) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -251,7 +286,7 @@ export function CampaignDetail({
       alive = false;
       clearTimeout(timer);
     };
-  }, [campaign.id, isDraft]);
+  }, [campaign.id, isEditable]);
 
   // ─── Derived state ──────────────────────────────────────────────────────────
 
@@ -267,7 +302,7 @@ export function CampaignDetail({
     to: (recipientCount ?? 0) > 0,
     from: Boolean(campaign.fromName.trim() && campaign.fromEmail.trim()),
     subject: Boolean(campaign.subject.trim()),
-    sendtime: true,
+    sendtime: sendMode === "now" || Boolean(scheduleAt),
     content: true,
     unsubscribe: hasUnsubscribe,
   };
@@ -283,7 +318,7 @@ export function CampaignDetail({
   const progressPct =
     progressTotal > 0 ? Math.round((progressDone / progressTotal) * 100) : 0;
   const isFinished =
-    !isDraft && progressTotal > 0 && (progress?.pending ?? 0) === 0;
+    !isEditable && progressTotal > 0 && (progress?.pending ?? 0) === 0;
   const deliveryRate =
     progressTotal > 0
       ? Math.round((progressSent / progressTotal) * 100)
@@ -507,6 +542,55 @@ export function CampaignDetail({
     }
   }
 
+  async function scheduleCampaign() {
+    if (!scheduleAt) {
+      setError("Pick a date and time first.");
+      return;
+    }
+    setScheduling(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/campaigns/${campaign.id}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduledAt: new Date(scheduleAt).toISOString(),
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        setError(data.error || "Could not schedule");
+        return;
+      }
+      setOpen(null);
+      onRefresh();
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  async function cancelSchedule() {
+    setCancelingSchedule(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/campaigns/${campaign.id}/schedule`, {
+        method: "DELETE",
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        setError(data.error || "Could not cancel the schedule");
+        return;
+      }
+      onRefresh();
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setCancelingSchedule(false);
+    }
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -526,7 +610,7 @@ export function CampaignDetail({
           />
         </div>
         <div className="flex items-center gap-2">
-          {!isDraft && (
+          {!isEditable && (
             <>
               <Button variant="outline" asChild>
                 <Link href={`/dashboard/campaigns/analytics/${campaign.id}`}>
@@ -544,10 +628,15 @@ export function CampaignDetail({
               </Button>
             </>
           )}
-          {isDraft && (
+          {isScheduled && (
             <>
-              <Button variant="outline" asChild>
-                <Link href="/dashboard/campaigns">Finish later</Link>
+              <Button
+                variant="outline"
+                onClick={cancelSchedule}
+                disabled={cancelingSchedule}
+              >
+                {cancelingSchedule && <Spinner data-icon="inline-start" />}
+                Cancel schedule
               </Button>
               <Button onClick={send} disabled={sending || !canSend}>
                 {sending ? (
@@ -555,8 +644,37 @@ export function CampaignDetail({
                 ) : (
                   <SendIcon data-icon="inline-start" />
                 )}
-                {sending ? "Sending…" : "Send"}
+                {sending ? "Sending…" : "Send now"}
               </Button>
+            </>
+          )}
+          {isDraft && (
+            <>
+              <Button variant="outline" asChild>
+                <Link href="/dashboard/campaigns">Finish later</Link>
+              </Button>
+              {sendMode === "schedule" ? (
+                <Button
+                  onClick={scheduleCampaign}
+                  disabled={scheduling || !canSend || !scheduleAt}
+                >
+                  {scheduling ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <CalendarClockIcon data-icon="inline-start" />
+                  )}
+                  {scheduling ? "Scheduling…" : "Schedule"}
+                </Button>
+              ) : (
+                <Button onClick={send} disabled={sending || !canSend}>
+                  {sending ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <SendIcon data-icon="inline-start" />
+                  )}
+                  {sending ? "Sending…" : "Send"}
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -578,8 +696,22 @@ export function CampaignDetail({
         </Alert>
       )}
 
-      {/* ── Send progress bar (non-draft only) ── */}
-      {!isDraft && progress && (
+      {/* ── Scheduled banner ── */}
+      {isScheduled && campaign.scheduledAt && (
+        <Alert>
+          <CalendarClockIcon data-icon="inline-start" />
+          <AlertDescription>
+            This campaign is scheduled to send on{" "}
+            <span className="font-medium text-foreground">
+              {formatScheduleTime(campaign.scheduledAt)}
+            </span>
+            . You can still edit it, change the time, or cancel until then.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ── Send progress bar (once sending) ── */}
+      {!isEditable && progress && (
         <Card size="sm">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -632,8 +764,8 @@ export function CampaignDetail({
             </CardHeader>
 
             <CardContent className="flex flex-col p-0 bg-card">
-              {isDraft ? (
-                // ── DRAFT: interactive accordion ──
+              {isEditable ? (
+                // ── DRAFT / SCHEDULED: interactive accordion ──
                 <>
                   <Accordion
                     type="single"
@@ -1052,31 +1184,93 @@ export function CampaignDetail({
                               Send time
                             </span>
                             <span className="mt-0.5 block text-xs font-semibold text-foreground">
-                              Send now
+                              {isScheduled && campaign.scheduledAt
+                                ? `Scheduled for ${formatScheduleTime(campaign.scheduledAt)}`
+                                : sendMode === "schedule"
+                                  ? scheduleAt
+                                    ? `Scheduled send · ${formatScheduleTime(new Date(scheduleAt).toISOString())}`
+                                    : "Schedule for later"
+                                  : "Send now"}
                             </span>
                           </span>
                         </span>
                       </AccordionTrigger>
                       <AccordionContent className="px-4 pb-4 pt-1">
                         <FieldGroup className="gap-3">
-                          <label className="flex items-center gap-3 rounded-lg border border-primary bg-primary/5 p-3">
+                          <label
+                            className={cn(
+                              "flex cursor-pointer items-center gap-3 rounded-lg border p-3",
+                              sendMode === "now"
+                                ? "border-primary bg-primary/5"
+                                : "border-border hover:bg-muted/20",
+                            )}
+                          >
                             <input
                               type="radio"
-                              checked
-                              readOnly
+                              name="sendtime-mode"
+                              checked={sendMode === "now"}
+                              onChange={() => setSendMode("now")}
+                              disabled={isScheduled}
                               className="accent-current"
                             />
                             <span className="text-sm font-medium">
                               Send now
                             </span>
                           </label>
-                          <label className="flex items-center gap-3 rounded-lg border border-border p-3 opacity-70">
-                            <input type="radio" disabled />
-                            <span className="flex-1 text-sm text-muted-foreground">
+                          <label
+                            className={cn(
+                              "flex cursor-pointer items-center gap-3 rounded-lg border p-3",
+                              sendMode === "schedule"
+                                ? "border-primary bg-primary/5"
+                                : "border-border hover:bg-muted/20",
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="sendtime-mode"
+                              checked={sendMode === "schedule"}
+                              onChange={() => setSendMode("schedule")}
+                              className="accent-current"
+                            />
+                            <span className="text-sm font-medium">
                               Schedule for later
                             </span>
-                            <Badge variant="outline">Soon</Badge>
                           </label>
+                          {sendMode === "schedule" && (
+                            <Field>
+                              <FieldLabel htmlFor="schedule-at">
+                                Date &amp; time
+                              </FieldLabel>
+                              <Input
+                                id="schedule-at"
+                                type="datetime-local"
+                                value={scheduleAt}
+                                min={toLocalInputValue(
+                                  new Date(Date.now() + 5 * 60 * 1000),
+                                )}
+                                onChange={(e) => setScheduleAt(e.target.value)}
+                              />
+                              <FieldDescription>
+                                Uses your local time zone. Must be at least a
+                                few minutes from now.
+                              </FieldDescription>
+                              {isScheduled && (
+                                <Button
+                                  size="sm"
+                                  className="self-start"
+                                  onClick={scheduleCampaign}
+                                  disabled={scheduling || !scheduleAt}
+                                >
+                                  {scheduling && (
+                                    <Spinner data-icon="inline-start" />
+                                  )}
+                                  {scheduling
+                                    ? "Updating…"
+                                    : "Update schedule"}
+                                </Button>
+                              )}
+                            </Field>
+                          )}
                         </FieldGroup>
                       </AccordionContent>
                     </AccordionItem>
@@ -1163,7 +1357,9 @@ export function CampaignDetail({
                     },
                     {
                       label: "Send time",
-                      description: "Send now",
+                      description: campaign.scheduledAt
+                        ? `Scheduled for ${formatScheduleTime(campaign.scheduledAt)}`
+                        : "Sent immediately",
                       done: true,
                     },
                     {
@@ -1382,6 +1578,14 @@ function CampaignStatusBadge({
 }) {
   if (status === "draft") {
     return <Badge variant="secondary">Draft</Badge>;
+  }
+  if (status === "scheduled") {
+    return (
+      <Badge variant="outline">
+        <CalendarClockIcon className="size-3" />
+        Scheduled
+      </Badge>
+    );
   }
   if (!isFinished) {
     return (

@@ -21,7 +21,9 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     if (!campaign) {
       return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
     }
-    if (campaign.status !== "draft") {
+    // "scheduled" is sendable too — Send now overrides the schedule, and the
+    // delayed dispatch message no-ops once the status leaves "scheduled".
+    if (campaign.status !== "draft" && campaign.status !== "scheduled") {
       return NextResponse.json(
         { ok: false, error: "Campaign has already been sent" },
         { status: 400 },

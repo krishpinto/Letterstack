@@ -116,6 +116,7 @@ export const campaigns = pgTable("campaigns", {
   textSnapshot: text("text_snapshot").notNull(),
   status: text("status").notNull().default("draft"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),
 });
 

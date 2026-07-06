@@ -189,6 +189,15 @@ export async function deleteCampaignRecipient(campaignId: string, id: string) {
   return rows.length > 0;
 }
 
+export async function countRecipientsForCampaign(campaignId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId));
+
+  return row?.count ?? 0;
+}
+
 export async function countPendingForCampaign(campaignId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
