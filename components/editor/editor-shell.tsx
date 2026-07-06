@@ -75,7 +75,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
-import { MoreHorizontalIcon } from "lucide-react"
+import { MoreHorizontalIcon, Redo2Icon, Undo2Icon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -155,12 +155,100 @@ export function EditorShell({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
+  // ── Undo/redo history ────────────────────────────────────────────────────
+  // Every edit lands through updateDocument, which snapshots the previous
+  // document. Rapid bursts (typing) within 500ms collapse into one undo step.
+  // documentRef mirrors the latest document synchronously so multiple edits in
+  // one tick (and undo/redo themselves) never read a stale value.
+  const HISTORY_LIMIT = 100
+  const documentRef = React.useRef(document)
+  const historyRef = React.useRef<{
+    past: EmailDocument[]
+    future: EmailDocument[]
+    lastPushAt: number
+  }>({ past: [], future: [], lastPushAt: 0 })
+  const [historyTick, setHistoryTick] = React.useState(0)
+
+  React.useEffect(() => {
+    documentRef.current = document
+  }, [document])
+
   const updateDocument = React.useCallback(
     (updater: (current: EmailDocument) => EmailDocument) => {
-      setDocument((current) => updater(current))
+      const current = documentRef.current
+      const next = updater(current)
+      if (next === current) return
+
+      const history = historyRef.current
+      const now = Date.now()
+      if (now - history.lastPushAt > 500) {
+        history.past = [...history.past.slice(-(HISTORY_LIMIT - 1)), current]
+      }
+      history.lastPushAt = now
+      history.future = []
+
+      documentRef.current = next
+      setDocument(next)
+      setHistoryTick((tick) => tick + 1)
     },
     []
   )
+
+  const undo = React.useCallback(() => {
+    const history = historyRef.current
+    const previous = history.past[history.past.length - 1]
+    if (!previous) return
+    history.past = history.past.slice(0, -1)
+    history.future = [...history.future, documentRef.current]
+    history.lastPushAt = 0
+    documentRef.current = previous
+    setDocument(previous)
+    setHistoryTick((tick) => tick + 1)
+  }, [])
+
+  const redo = React.useCallback(() => {
+    const history = historyRef.current
+    const next = history.future[history.future.length - 1]
+    if (!next) return
+    history.future = history.future.slice(0, -1)
+    history.past = [...history.past, documentRef.current]
+    history.lastPushAt = 0
+    documentRef.current = next
+    setDocument(next)
+    setHistoryTick((tick) => tick + 1)
+  }, [])
+
+  void historyTick // state exists to refresh canUndo/canRedo below
+  const canUndo = historyRef.current.past.length > 0
+  const canRedo = historyRef.current.future.length > 0
+
+  // Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y to redo. Text fields
+  // and the rich-text editor keep their own native undo, so skip those.
+  React.useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return
+      }
+      const key = event.key.toLowerCase()
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [undo, redo])
 
   React.useEffect(() => {
     return () => {
@@ -214,7 +302,8 @@ export function EditorShell({
     try {
       const parsed = JSON.parse(pasteJsonText)
       if (isEmailDocument(parsed)) {
-        setDocument(parsed)
+        // Through updateDocument so a bad paste is one Ctrl+Z away from undone.
+        updateDocument(() => parsed)
         setPasteOpen(false)
         setPasteJsonText("")
         showDockStatus("saved")
@@ -224,7 +313,7 @@ export function EditorShell({
     } catch {
       alert("Invalid JSON format.")
     }
-  }, [pasteJsonText, showDockStatus])
+  }, [pasteJsonText, showDockStatus, updateDocument])
 
   const handleSaveAsTemplateSubmit = React.useCallback(async () => {
     if (!templateName.trim()) return
@@ -511,6 +600,10 @@ export function EditorShell({
           <EditorBottomDock
             inspectorOpen={inspectorOpen}
             dockStatus={dockStatus}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
             onCopyJson={copyTemplateJson}
             onPasteJson={() => setPasteOpen(true)}
             onSave={saveDocument}
@@ -644,6 +737,10 @@ export function EditorShell({
 function EditorBottomDock({
   inspectorOpen,
   dockStatus,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onCopyJson,
   onPasteJson,
   onSave,
@@ -653,6 +750,10 @@ function EditorBottomDock({
 }: {
   inspectorOpen: boolean
   dockStatus: "idle" | "saved" | "copied"
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
   onCopyJson: () => Promise<void>
   onPasteJson: () => void
   onSave: () => void
@@ -668,6 +769,31 @@ function EditorBottomDock({
       )}
       onClick={(event) => event.stopPropagation()}
     >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        onClick={onUndo}
+        disabled={!canUndo}
+        title="Undo (Ctrl+Z)"
+        aria-label="Undo"
+      >
+        <Undo2Icon className="size-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        onClick={onRedo}
+        disabled={!canRedo}
+        title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo"
+      >
+        <Redo2Icon className="size-4" />
+      </Button>
+
+      <Separator orientation="vertical" className="h-4 mx-0.5" />
+
       {/* 3 dots menu */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
