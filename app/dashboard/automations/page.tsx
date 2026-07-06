@@ -12,6 +12,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { IconStack } from "@/components/reui/icon-stack";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -166,21 +175,25 @@ export default function AutomationsPage() {
             {!loading && list.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5}>
-                  <div className="flex flex-col items-center gap-3 py-14 text-center">
-                    <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <WorkflowIcon className="size-5" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">No automations yet</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
+                  <Empty className="border-0 py-14">
+                    <EmptyHeader>
+                      <EmptyMedia>
+                        <IconStack aria-hidden="true" className="h-24 w-22">
+                          <WorkflowIcon className="size-5" />
+                        </IconStack>
+                      </EmptyMedia>
+                      <EmptyTitle>No automations yet</EmptyTitle>
+                      <EmptyDescription>
                         Start with a welcome email for every new subscriber.
-                      </p>
-                    </div>
-                    <Button size="sm" onClick={createAutomation} disabled={creating}>
-                      <PlusIcon data-icon="inline-start" />
-                      Create automation
-                    </Button>
-                  </div>
+                      </EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent>
+                      <Button size="sm" onClick={createAutomation} disabled={creating}>
+                        <PlusIcon data-icon="inline-start" />
+                        Create automation
+                      </Button>
+                    </EmptyContent>
+                  </Empty>
                 </TableCell>
               </TableRow>
             )}

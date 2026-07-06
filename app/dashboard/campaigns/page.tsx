@@ -43,6 +43,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { IconStack } from "@/components/reui/icon-stack";
 import {
   Field,
   FieldDescription,
@@ -616,8 +617,10 @@ function CampaignEmptyState({ hasCampaigns }: { hasCampaigns: boolean }) {
   return (
     <Empty className="border-0 py-14">
       <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <MailIcon />
+        <EmptyMedia>
+          <IconStack aria-hidden="true" className="h-24 w-22">
+            <MailIcon className="size-5" />
+          </IconStack>
         </EmptyMedia>
         <EmptyTitle>
           {hasCampaigns ? "No campaigns match your filters" : "No campaigns yet"}

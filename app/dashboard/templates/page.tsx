@@ -10,10 +10,12 @@ import {
   MailIcon,
   PlusIcon,
   SearchIcon,
+  SendIcon,
   Share2Icon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
+import { IconStack } from "@/components/reui/icon-stack";
 
 import {
   PREBUILT_TEMPLATES,
@@ -380,8 +382,10 @@ function RecentlySentTab() {
     return (
       <Empty className="rounded-xl border border-dashed py-12">
         <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <MailIcon />
+          <EmptyMedia>
+            <IconStack aria-hidden="true" className="h-24 w-22">
+              <SendIcon className="size-5" />
+            </IconStack>
           </EmptyMedia>
           <EmptyTitle>Nothing sent yet</EmptyTitle>
           <EmptyDescription>
@@ -647,14 +651,21 @@ function SavedTab({
         </div>
       ) : (
         <Card className="border-dashed border-2">
-          <CardContent className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4">
-              <MailIcon className="size-6" />
-            </div>
-            <h3 className="font-semibold text-base text-foreground">No saved templates</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-              Create a custom template in the editor, and click "Save as template" to see it here!
-            </p>
+          <CardContent className="p-0">
+            <Empty className="border-0 py-12">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <IconStack aria-hidden="true" className="h-24 w-22">
+                    <MailIcon className="size-5" />
+                  </IconStack>
+                </EmptyMedia>
+                <EmptyTitle>No saved templates</EmptyTitle>
+                <EmptyDescription>
+                  Create a custom template in the editor, and click &quot;Save
+                  as template&quot; to see it here!
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           </CardContent>
         </Card>
       )}

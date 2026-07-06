@@ -43,6 +43,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { IconStack } from "@/components/reui/icon-stack";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -1208,8 +1209,10 @@ function ContactsEmptyState({
   return (
     <Empty className="border-0 py-14">
       <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <UserRoundIcon />
+        <EmptyMedia>
+          <IconStack aria-hidden="true" className="h-24 w-22">
+            <UserRoundIcon className="size-5" />
+          </IconStack>
         </EmptyMedia>
         <EmptyTitle>
           {hasContacts ? "No contacts match your filters" : "No audience contacts yet"}

@@ -22,6 +22,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { IconStack } from "@/components/reui/icon-stack";
 import { PageLoader } from "@/components/bar-spinner";
 import {
   Table,
@@ -242,8 +243,10 @@ export default function AnalyticsPage() {
                     <TableCell colSpan={7}>
                       <Empty className="border-0 py-14">
                         <EmptyHeader>
-                          <EmptyMedia variant="icon">
-                            <BarChart3Icon />
+                          <EmptyMedia>
+                            <IconStack aria-hidden="true" className="h-24 w-22">
+                              <BarChart3Icon className="size-5" />
+                            </IconStack>
                           </EmptyMedia>
                           <EmptyTitle>No campaigns sent yet</EmptyTitle>
                           <EmptyDescription>
