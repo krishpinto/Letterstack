@@ -479,7 +479,6 @@ export function CanvasBlockPreview({
         >
           <p className="text-xs text-muted-foreground">© {block.companyName}</p>
           <p className="mt-0.5 text-xs text-muted-foreground/70">{block.address}</p>
-          <p className="mt-2 text-xs text-muted-foreground underline">{block.unsubscribeText}</p>
         </div>
       );
 

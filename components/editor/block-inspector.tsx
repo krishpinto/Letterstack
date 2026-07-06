@@ -890,11 +890,6 @@ function FooterBlockFields({
         <Input id="footer-addr" value={block.address}
           onChange={(e) => onChange((b) => ({ ...b, address: e.target.value }) as FooterBlock)} />
       </Field>
-      <Field>
-        <FieldLabel htmlFor="footer-unsub">Unsubscribe text</FieldLabel>
-        <Input id="footer-unsub" value={block.unsubscribeText}
-          onChange={(e) => onChange((b) => ({ ...b, unsubscribeText: e.target.value }) as FooterBlock)} />
-      </Field>
     </>
   );
 }

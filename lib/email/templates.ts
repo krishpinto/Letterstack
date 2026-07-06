@@ -97,7 +97,6 @@ const footer = () =>
   blk("footer", {
     companyName: "Your Organization",
     address: "123 Main Street, City, State 12345",
-    unsubscribeText: "Unsubscribe from these emails",
   });
 
 export const PREBUILT_TEMPLATES: PrebuiltTemplate[] = [

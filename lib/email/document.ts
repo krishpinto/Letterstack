@@ -184,7 +184,9 @@ export type LogoBlock = BaseBlock<"logo"> & {
 export type FooterBlock = BaseBlock<"footer"> & {
   companyName: string;
   address: string;
-  unsubscribeText: string;
+  /** Legacy: old saved documents may carry this; the compiler now appends its
+   * own unsubscribe section to every email instead of rendering this. */
+  unsubscribeText?: string;
 };
 
 export type TextAlign = "left" | "center" | "right";
@@ -442,7 +444,6 @@ export function createBlock(type: EmailBlock["type"]): EmailBlock {
         type: "footer",
         companyName: "Your Organization",
         address: "123 Main St, City, State 12345",
-        unsubscribeText: "Unsubscribe",
       };
   }
 }

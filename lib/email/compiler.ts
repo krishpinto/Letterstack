@@ -262,10 +262,7 @@ function renderFooterBlock(block: FooterBlock, document: EmailDocument) {
             <tr>
               <td align="center" style="padding:24px ${p}px;border-top:1px solid rgba(0,0,0,0.08);">
                 <p style="margin:0 0 4px 0;font-family:${document.settings.fontFamily};font-size:13px;color:#888;">© ${escapeHtml(block.companyName)}</p>
-                <p style="margin:0 0 10px 0;font-family:${document.settings.fontFamily};font-size:12px;color:#aaa;">${escapeHtml(block.address)}</p>
-                <p style="margin:0;font-family:${document.settings.fontFamily};font-size:12px;">
-                  <a href="{{unsubscribe_url}}" style="color:#aaa;text-decoration:underline;">${escapeHtml(block.unsubscribeText)}</a>
-                </p>
+                <p style="margin:0;font-family:${document.settings.fontFamily};font-size:12px;color:#aaa;">${escapeHtml(block.address)}</p>
               </td>
             </tr>`;
 }
@@ -426,7 +423,9 @@ function blockToText(block: EmailBlock): string[] {
     case "logo":
       return [block.alt];
     case "footer":
-      return [block.companyName, block.address, `Unsubscribe: {{unsubscribe_url}}`];
+      // The compiler already appends a guaranteed unsubscribe section to every
+      // email, so the footer block carries only the identity lines.
+      return [block.companyName, block.address];
     default:
       return [];
   }
