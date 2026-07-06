@@ -841,7 +841,9 @@ export function CampaignDetail({
                           </span>
                         </span>
                       </AccordionTrigger>
-                      <AccordionContent className="px-4 pb-4 pt-1">
+                      {/* h-auto: the ui component pins the measured open height, which clips
+                          content that appears after opening (e.g. the schedule picker) */}
+                      <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-4">
                           <Field>
                             <FieldLabel>Add recipient</FieldLabel>
@@ -1008,7 +1010,9 @@ export function CampaignDetail({
                           </span>
                         </span>
                       </AccordionTrigger>
-                      <AccordionContent className="px-4 pb-4 pt-1">
+                      {/* h-auto: the ui component pins the measured open height, which clips
+                          content that appears after opening (e.g. the schedule picker) */}
+                      <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-4">
                           <Field>
                             <FieldLabel htmlFor="from-name">
@@ -1162,7 +1166,9 @@ export function CampaignDetail({
                           </span>
                         </span>
                       </AccordionTrigger>
-                      <AccordionContent className="px-4 pb-4 pt-1">
+                      {/* h-auto: the ui component pins the measured open height, which clips
+                          content that appears after opening (e.g. the schedule picker) */}
+                      <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-4">
                           <Field>
                             <FieldLabel htmlFor="subject-line">
@@ -1231,7 +1237,9 @@ export function CampaignDetail({
                           </span>
                         </span>
                       </AccordionTrigger>
-                      <AccordionContent className="px-4 pb-4 pt-1">
+                      {/* h-auto: the ui component pins the measured open height, which clips
+                          content that appears after opening (e.g. the schedule picker) */}
+                      <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-3">
                           <label
                             className={cn(
