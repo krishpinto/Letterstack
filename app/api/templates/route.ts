@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
+import { uniqueTemplateName } from "@/db/email-templates";
 import { emailTemplates } from "@/db/schema";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 import type { EmailDocument } from "@/lib/email/document";
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
       .insert(emailTemplates)
       .values({
         organizationId,
-        name,
+        name: await uniqueTemplateName(organizationId, name),
         subject: document?.subject || "",
         fromName: document?.fromName || "",
         fromEmail: document?.fromEmail || "",

@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
+import { uniqueTemplateName } from "@/db/email-templates";
 import { emailTemplates } from "@/db/schema";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 import type { EmailDocument } from "@/lib/email/document";
@@ -63,7 +64,13 @@ export async function PATCH(
     const document = body?.document;
 
     const patchData: Partial<typeof emailTemplates.$inferInsert> = {};
-    if (name !== undefined) patchData.name = String(name).trim();
+    if (name !== undefined) {
+      patchData.name = await uniqueTemplateName(
+        organizationId,
+        String(name).trim(),
+        id,
+      );
+    }
     if (document !== undefined) {
       patchData.document = document;
       patchData.subject = document?.subject || "";
