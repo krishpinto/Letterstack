@@ -23,10 +23,11 @@ import {
   type TemplateCategory,
 } from "@/lib/email/templates";
 import {
+  normalizeDocument,
   STORAGE_KEY,
-  type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document";
+import { compileEmailDocument } from "@/lib/email/compiler";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -373,82 +374,56 @@ function TemplateCard({
   );
 }
 
-function TemplateThumb({ template }: { template: PrebuiltTemplate }) {
-  const doc = useMemo(() => template.build(), [template]);
-
+/**
+ * Live thumbnail: the template's real compiled HTML rendered in an iframe at
+ * 3x width and scaled to a third — an always-accurate miniature, no
+ * screenshot pipeline needed. Inert to the page (sandboxed, no pointer
+ * events) so clicking the card still works.
+ */
+function HtmlThumb({ html, title }: { html: string; title: string }) {
   return (
-    <div
-      className="flex h-44 items-start justify-center overflow-hidden border-b border-border p-4 transition-transform duration-500 group-hover:scale-105"
-      style={{ backgroundColor: doc.settings.backgroundColor }}
-    >
-      <div className="flex w-full max-w-44 flex-col gap-2 rounded-md bg-background p-3 shadow-sm ring-1 ring-foreground/10">
-        {doc.blocks.slice(0, 6).map((block) => (
-          <Silhouette key={block.id} block={block} accent={template.accent} />
-        ))}
-      </div>
+    <div className="pointer-events-none relative h-44 select-none overflow-hidden border-b border-border bg-white">
+      <iframe
+        title={`Preview of ${title}`}
+        srcDoc={html}
+        sandbox=""
+        scrolling="no"
+        tabIndex={-1}
+        aria-hidden
+        className="absolute left-0 top-0 origin-top-left border-0"
+        style={{ width: "300%", height: "300%", transform: "scale(0.3334)" }}
+      />
     </div>
   );
 }
 
-function Silhouette({
-  block,
-  accent,
-}: {
-  block: EmailBlock;
-  accent: string;
-}) {
-  switch (block.type) {
-    case "logo":
-      return <div className="h-2 w-12 rounded bg-muted-foreground/30" />;
-    case "heading":
-      return <div className="h-2.5 w-2/3 rounded bg-muted-foreground/50" />;
-    case "text":
-      return (
-        <div className="flex flex-col gap-1">
-          <div className="h-1.5 w-1/3 rounded bg-muted-foreground/30" />
-          <div className="h-2 w-3/4 rounded bg-muted-foreground/50" />
-          <div className="h-1.5 w-full rounded bg-muted" />
-        </div>
-      );
-    case "paragraph":
-      return (
-        <div className="flex flex-col gap-1">
-          <div className="h-1.5 w-full rounded bg-muted" />
-          <div className="h-1.5 w-5/6 rounded bg-muted" />
-        </div>
-      );
-    case "image":
-      return <div className="h-12 w-full rounded bg-muted" />;
-    case "articleCard":
-      return (
-        <div className="flex gap-2">
-          <div className="h-8 w-10 shrink-0 rounded bg-muted" />
-          <div className="flex flex-1 flex-col gap-1 pt-0.5">
-            <div className="h-1.5 w-3/4 rounded bg-muted-foreground/50" />
-            <div className="h-1.5 w-full rounded bg-muted" />
-            <div className="h-1.5 w-2/3 rounded bg-muted" />
-          </div>
-        </div>
-      );
-    case "button":
-      return (
-        <div
-          className="h-3 w-20 rounded"
-          style={{ backgroundColor: accent }}
-        />
-      );
-    case "divider":
-      return <div className="h-px w-full bg-border" />;
-    case "footer":
-      return (
-        <div className="flex flex-col gap-1 pt-1">
-          <div className="h-1.5 w-1/2 rounded bg-muted" />
-          <div className="h-1.5 w-1/3 rounded bg-muted" />
-        </div>
-      );
-    default:
-      return <div className="h-2 w-1/2 rounded bg-muted" />;
+function TemplateThumb({ template }: { template: PrebuiltTemplate }) {
+  const html = useMemo(
+    () => compileEmailDocument(template.build()).html,
+    [template],
+  );
+
+  return <HtmlThumb html={html} title={template.title} />;
+}
+
+function SavedTemplateThumb({ template }: { template: SavedTemplate }) {
+  const html = useMemo(() => {
+    if (!template.document) return null;
+    try {
+      return compileEmailDocument(normalizeDocument(template.document)).html;
+    } catch {
+      return null; // partial/legacy document — fall back to the empty state
+    }
+  }, [template.document]);
+
+  if (!html) {
+    return (
+      <div className="flex h-44 items-center justify-center border-b border-border bg-muted/30">
+        <MailIcon className="size-8 text-muted-foreground/40" />
+      </div>
+    );
   }
+  return <HtmlThumb html={html} title={template.name} />;
 }
 
 function SavedTemplateCard({
@@ -472,17 +447,7 @@ function SavedTemplateCard({
       className="cursor-pointer gap-0 py-0 transition-all duration-300 hover:shadow-md hover:border-muted-foreground/30 relative flex flex-col h-full rounded-xl overflow-hidden group border bg-card text-card-foreground"
     >
       <div className="group relative overflow-hidden rounded-t-xl border-b border-border bg-muted/30">
-        {/* Silhouette preview */}
-        <div
-          className="flex h-44 items-start justify-center overflow-hidden border-b border-border p-4 transition-transform duration-500 group-hover:scale-105"
-          style={{ backgroundColor: template.document?.settings?.backgroundColor || "#f4f4f5" }}
-        >
-          <div className="flex w-full max-w-44 flex-col gap-2 rounded-md bg-background p-3 shadow-sm ring-1 ring-foreground/10">
-            {template.document?.blocks?.slice(0, 6).map((block: EmailBlock) => (
-              <Silhouette key={block.id} block={block} accent={template.document?.settings?.accentColor || "#18181b"} />
-            ))}
-          </div>
-        </div>
+        <SavedTemplateThumb template={template} />
 
         {/* Hover Overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
