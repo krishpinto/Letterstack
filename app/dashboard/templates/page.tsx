@@ -9,6 +9,7 @@ import {
   FileArchiveIcon,
   MailIcon,
   PlusIcon,
+  Share2Icon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
@@ -118,6 +119,27 @@ export default function TemplatesPage() {
       // If storage is unavailable, the editor falls back to its default document.
     }
     router.push("/editor");
+  }
+
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
+
+  async function handleShareTemplate(id: string) {
+    try {
+      const r = await fetch(`/api/templates/${id}/share`, { method: "POST" });
+      const data = await r.json();
+      if (!data.ok) return;
+      const url = `${window.location.origin}/templates/shared/${data.shareToken}`;
+      await navigator.clipboard.writeText(url).catch(() => {
+        window.prompt("Copy this share link:", url);
+      });
+      setCopiedShareId(id);
+      setTimeout(
+        () => setCopiedShareId((current) => (current === id ? null : current)),
+        2000,
+      );
+    } catch (err) {
+      console.error("Failed to share template:", err);
+    }
   }
 
   async function handleDeleteSavedTemplate(id: string) {
@@ -276,6 +298,8 @@ export default function TemplatesPage() {
             loading={loadingSaved}
             templates={savedTemplates}
             onDelete={handleDeleteSavedTemplate}
+            onShare={handleShareTemplate}
+            copiedShareId={copiedShareId}
             onEditTemplate={(id) => router.push(`/editor/template/${id}`)}
           />
         </TabsContent>
@@ -421,10 +445,14 @@ function SavedTemplateCard({
   template,
   onOpen,
   onDelete,
+  onShare,
+  shareCopied,
 }: {
   template: SavedTemplate;
   onOpen: () => void;
   onDelete: () => void;
+  onShare: () => void;
+  shareCopied: boolean;
 }) {
   return (
     <Card
@@ -468,17 +496,36 @@ function SavedTemplateCard({
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             Custom
           </Badge>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <Trash2Icon className="size-3.5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {shareCopied && (
+              <span className="text-[10px] font-medium text-primary">
+                Link copied!
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="size-7 p-0 text-muted-foreground hover:text-foreground"
+              title="Copy share link"
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare();
+              }}
+            >
+              <Share2Icon className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Trash2Icon className="size-3.5" />
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -489,11 +536,15 @@ function SavedTab({
   loading,
   templates,
   onDelete,
+  onShare,
+  copiedShareId,
   onEditTemplate,
 }: {
   loading: boolean;
   templates: SavedTemplate[];
   onDelete: (id: string) => void;
+  onShare: (id: string) => void;
+  copiedShareId: string | null;
   onEditTemplate: (id: string) => void;
 }) {
   return (
@@ -511,6 +562,8 @@ function SavedTab({
               template={template}
               onOpen={() => onEditTemplate(template.id)}
               onDelete={() => onDelete(template.id)}
+              onShare={() => onShare(template.id)}
+              shareCopied={copiedShareId === template.id}
             />
           ))}
         </div>
