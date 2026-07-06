@@ -46,6 +46,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { BarSpinner } from "@/components/bar-spinner";
 import {
   Table,
   TableBody,
@@ -542,7 +543,7 @@ export default function AudiencePage() {
   if (loading) {
     return (
       <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Spinner />
+        <BarSpinner size={18} />
         Loading audience...
       </div>
     );

@@ -161,6 +161,16 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* 12-bar loading indicator: the wheel ticks between fixed positions
+     (steps), it does not sweep. Used by components/bar-spinner.tsx. */
+  --animate-bar-spinner: bar-spinner 0.9s steps(12) infinite;
+
+  @keyframes bar-spinner {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
 
 @layer base {

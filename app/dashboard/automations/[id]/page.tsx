@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Spinner } from "@/components/ui/spinner";
+import { BarSpinner } from "@/components/bar-spinner";
 import { AutomationBuilder, type AutomationData } from "./automation-builder";
 
 export default function AutomationBuilderPage() {
@@ -30,7 +30,7 @@ export default function AutomationBuilderPage() {
   if (!automation) {
     return (
       <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Spinner />
+        <BarSpinner size={18} />
         Loading automation…
       </div>
     );

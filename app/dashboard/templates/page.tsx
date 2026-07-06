@@ -66,6 +66,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { BarSpinner } from "@/components/bar-spinner";
 import { cn } from "@/lib/utils";
 
 type Tab = "letterstack" | "saved" | "recent";
@@ -372,7 +373,7 @@ function RecentlySentTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-        <Spinner />
+        <BarSpinner size={18} />
         Loading sent campaigns...
       </div>
     );
@@ -634,7 +635,7 @@ function SavedTab({
     <div className="flex flex-col gap-6 w-full py-2">
       {loading ? (
         <div className="flex justify-center items-center py-12 gap-2 text-muted-foreground text-sm">
-          <Spinner />
+          <BarSpinner size={18} />
           Loading templates...
         </div>
       ) : templates.length > 0 ? (

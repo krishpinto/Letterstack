@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Spinner } from "@/components/ui/spinner";
+import { BarSpinner } from "@/components/bar-spinner";
 import { CampaignDetail, type CampaignData } from "./campaign-detail";
 
 export default function CampaignDetailPage() {
@@ -32,7 +32,7 @@ export default function CampaignDetailPage() {
   if (!campaign) {
     return (
       <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Spinner />
+        <BarSpinner size={18} />
         Loading campaign…
       </div>
     );
