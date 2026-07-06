@@ -9,6 +9,11 @@ import { NextResponse } from "next/server";
 import { Receiver } from "@upstash/qstash";
 import { getCampaign } from "@/db/campaigns";
 import { startCampaign } from "@/lib/send/send-campaign";
+import {
+  appBaseUrl,
+  publishQstashJSON,
+  qstashNotBefore,
+} from "@/lib/send/qstash";
 
 export const runtime = "nodejs";
 
@@ -50,6 +55,20 @@ export async function POST(request: Request) {
     const rowMs = campaign.scheduledAt?.getTime() ?? 0;
     if (Math.abs(rowMs - scheduledAtMs) > MATCH_TOLERANCE_MS) {
       return NextResponse.json({ ok: true, skipped: "rescheduled" });
+    }
+
+    // Send times beyond QStash's max delay arrive here early, in hops: sleep
+    // another max-delay stretch and check again.
+    if (rowMs - Date.now() > MATCH_TOLERANCE_MS) {
+      await publishQstashJSON({
+        url: `${appBaseUrl()}/api/send/scheduled-dispatch`,
+        notBefore: qstashNotBefore(rowMs),
+        body: { campaignId, scheduledAtMs },
+      });
+      console.log(
+        `scheduled-dispatch: campaign ${campaignId} not due yet — hopped toward ${new Date(rowMs).toISOString()}`,
+      );
+      return NextResponse.json({ ok: true, hopped: true });
     }
 
     const result = await startCampaign(campaignId);

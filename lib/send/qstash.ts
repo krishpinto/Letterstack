@@ -44,6 +44,20 @@ export async function publishQstashJSON(args: PublishJsonArgs) {
   }
 }
 
+/**
+ * QStash rejects delayed messages beyond its plan quota (7 days on the free
+ * plan: "quota maxDelay exceeded, current limit: 604800"). Anything further
+ * out must hop: sleep the max delay, then re-enqueue on arrival. An hour of
+ * headroom keeps us clear of the exact limit.
+ */
+export const QSTASH_MAX_DELAY_MS = 604_800_000 - 3_600_000;
+
+/** notBefore (unix seconds) for a target time, capped to one allowed hop. */
+export function qstashNotBefore(targetMs: number): number {
+  const capped = Math.min(targetMs, Date.now() + QSTASH_MAX_DELAY_MS);
+  return Math.floor(capped / 1000);
+}
+
 export function appBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL;
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {

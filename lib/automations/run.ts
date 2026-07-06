@@ -28,7 +28,11 @@ import {
   unsubscribePageUrl,
 } from "@/lib/email/unsubscribe";
 import { sendEmail } from "@/lib/send/ses";
-import { appBaseUrl, publishQstashJSON } from "@/lib/send/qstash";
+import {
+  appBaseUrl,
+  publishQstashJSON,
+  qstashNotBefore,
+} from "@/lib/send/qstash";
 import {
   delayToMs,
   type AutomationFlow,
@@ -56,6 +60,8 @@ export type AutomationWorkerPayload = {
   organizationId: string;
   nodeId: string;
   contact: AutomationContact;
+  /** Set by Delay nodes: don't run nodeId before this time (enables hops past QStash's max delay). */
+  resumeAtMs?: number;
 };
 
 /**
@@ -118,6 +124,19 @@ export async function runAutomationFromNode(
   }
   if (automation.status !== "enabled") return ["automation disabled — skipped"];
 
+  // Delay resumption that arrived early (delays longer than QStash's max
+  // delay hop in stretches): sleep another stretch and come back.
+  if (payload.resumeAtMs && payload.resumeAtMs - Date.now() > 5_000) {
+    await publishQstashJSON({
+      url: `${appBaseUrl()}/api/send/automation-worker`,
+      notBefore: qstashNotBefore(payload.resumeAtMs),
+      body: payload,
+    });
+    return [
+      `delay: not due yet — hopped toward ${new Date(payload.resumeAtMs).toISOString()}`,
+    ];
+  }
+
   const flow = automation.flow as AutomationFlow;
   let nodeId: string | null | undefined = payload.nodeId;
   let contact = payload.contact;
@@ -161,14 +180,16 @@ export async function runAutomationFromNode(
           break;
         }
         const ms = delayToMs(node.config as DelayConfig);
+        const resumeAtMs = Date.now() + ms;
         await publishQstashJSON({
           url: `${appBaseUrl()}/api/send/automation-worker`,
-          notBefore: Math.floor((Date.now() + ms) / 1000),
+          notBefore: qstashNotBefore(resumeAtMs),
           body: {
             automationId: automation.id,
             organizationId: automation.organizationId,
             nodeId: node.next,
             contact,
+            resumeAtMs,
           } satisfies AutomationWorkerPayload,
         });
         trace.push(`delay: resuming in ${Math.round(ms / 60000)} min`);

@@ -11,7 +11,7 @@ import {
   markCampaignScheduled,
 } from "@/db/campaigns";
 import { countRecipientsForCampaign } from "@/db/campaign-recipients";
-import { appBaseUrl, publishQstashJSON } from "@/lib/send/qstash";
+import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "@/lib/send/qstash";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -76,9 +76,11 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     }
 
     try {
+      // Capped to QStash's max delay; the dispatch endpoint hops (re-enqueues
+      // itself) if it fires before the actual send time.
       await publishQstashJSON({
         url: `${appBaseUrl()}/api/send/scheduled-dispatch`,
-        notBefore: Math.floor(scheduledAt.getTime() / 1000),
+        notBefore: qstashNotBefore(scheduledAt.getTime()),
         body: { campaignId: id, scheduledAtMs: scheduledAt.getTime() },
       });
     } catch (err) {
