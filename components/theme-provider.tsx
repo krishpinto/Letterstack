@@ -1,46 +1,17 @@
 "use client";
 
 import * as React from "react";
+import { ThemeProvider as NextThemesProvider } from "next-themes";
 
-type Theme = "dark" | "light";
-
-type ThemeProviderProps = {
-  children: React.ReactNode;
-  defaultTheme?: Theme;
-  forcedTheme?: Theme;
-  disableTransitionOnChange?: boolean;
-};
-
+/**
+ * shadcn theme provider (next-themes). Unlike the previous hand-rolled
+ * version — which toggled the dark class in a layout effect, after first
+ * paint — next-themes injects a blocking script into the server HTML, so a
+ * hard load of a dark page never flashes white.
+ */
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
-  forcedTheme,
-  disableTransitionOnChange,
-}: ThemeProviderProps) {
-  const theme = forcedTheme ?? defaultTheme;
-
-  React.useLayoutEffect(() => {
-    const root = document.documentElement;
-    const transitionStyle = disableTransitionOnChange
-      ? disableTransitions()
-      : null;
-
-    root.classList.toggle("dark", theme === "dark");
-    root.style.colorScheme = theme;
-
-    window.requestAnimationFrame(() => {
-      transitionStyle?.remove();
-    });
-  }, [disableTransitionOnChange, theme]);
-
-  return <>{children}</>;
-}
-
-function disableTransitions() {
-  const style = document.createElement("style");
-  style.appendChild(
-    document.createTextNode("*{transition:none!important}"),
-  );
-  document.head.appendChild(style);
-  return style;
+  ...props
+}: React.ComponentProps<typeof NextThemesProvider>) {
+  return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
 }
