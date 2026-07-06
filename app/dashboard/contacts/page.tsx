@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   BanIcon,
   CheckIcon,
@@ -151,7 +152,10 @@ function formatDate(iso: string) {
   });
 }
 
+const STATUS_KEYS: StatusKey[] = ["all", "subscribed", "bounced", "suppressed"];
+
 export default function AudiencePage() {
+  const searchParams = useSearchParams();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [mappings, setMappings] = useState<Mapping[]>([]);
@@ -172,7 +176,15 @@ export default function AudiencePage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  
+
+  // The module sidebar drives these via the URL: ?status=suppressed filters
+  // the list, ?import=1 opens the import wizard.
+  useEffect(() => {
+    const status = searchParams.get("status") as StatusKey | null;
+    setStatusFilter(status && STATUS_KEYS.includes(status) ? status : "all");
+    if (searchParams.get("import") === "1") setImportOpen(true);
+  }, [searchParams]);
+
   // Folder quick create dialog
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");

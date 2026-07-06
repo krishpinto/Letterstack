@@ -1,23 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import {
+  BanIcon,
   BarChart3Icon,
+  BookmarkIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   GlobeIcon,
+  HistoryIcon,
   HomeIcon,
   LayoutTemplateIcon,
   MailCheckIcon,
   MailIcon,
+  MailWarningIcon,
   MoreHorizontalIcon,
   PenLineIcon,
   PlusIcon,
   SendIcon,
+  SquarePenIcon,
+  UploadIcon,
   UsersIcon,
   WorkflowIcon,
 } from "lucide-react";
@@ -92,29 +98,84 @@ function SectionHeader({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 // Module detection: each icon-rail module gets its own contextual sidebar.
-// Rolled out module by module — routes without a module sidebar yet fall
-// back to the generic workspace nav.
-function isCampaignsModule(pathname: string) {
-  return (
+// The overview (/dashboard) keeps the generic workspace nav.
+type Module = "campaigns" | "audience" | "templates" | "automations" | "domains";
+
+function moduleForPath(pathname: string): Module | null {
+  if (
     pathname.startsWith("/dashboard/campaigns") ||
     pathname.startsWith("/dashboard/analytics")
-  );
+  ) {
+    return "campaigns";
+  }
+  if (
+    pathname.startsWith("/dashboard/audience") ||
+    pathname.startsWith("/dashboard/contacts")
+  ) {
+    return "audience";
+  }
+  if (pathname.startsWith("/dashboard/templates")) return "templates";
+  if (pathname.startsWith("/dashboard/automations")) return "automations";
+  if (pathname.startsWith("/dashboard/domains")) return "domains";
+  return null;
 }
+
+const MODULE_SIDEBARS: Record<Module, () => React.JSX.Element> = {
+  campaigns: CampaignsSidebar,
+  audience: AudienceSidebar,
+  templates: TemplatesSidebar,
+  automations: AutomationsSidebar,
+  domains: DomainsSidebar,
+};
 
 export function NavSidebar() {
   const pathname = usePathname();
+  const module = moduleForPath(pathname);
 
-  if (isCampaignsModule(pathname)) {
-    // useSearchParams (inside) needs a Suspense boundary for prerendering.
-    return (
-      <Suspense fallback={<aside className="w-52 shrink-0 border-r border-border/60 bg-background" />}>
-        <CampaignsSidebar />
-      </Suspense>
-    );
-  }
+  if (!module) return <DefaultSidebar />;
 
-  return <DefaultSidebar />;
+  const ModuleSidebar = MODULE_SIDEBARS[module];
+  // useSearchParams (inside) needs a Suspense boundary for prerendering.
+  return (
+    <Suspense
+      fallback={<aside className="w-52 shrink-0 border-r border-border/60 bg-background" />}
+    >
+      <ModuleSidebar />
+    </Suspense>
+  );
 }
+
+// ─── Shared module chrome ─────────────────────────────────────────────────────
+
+function ModuleShell({
+  title,
+  plus,
+  quickAdd,
+  children,
+}: {
+  title: string;
+  /** Element rendered as the header + button (Link or Button). */
+  plus?: React.ReactNode;
+  /** Dashed quick-add button below the header. */
+  quickAdd?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-sidebar-border/50 px-3">
+        <span className="text-sm font-semibold text-sidebar-foreground">
+          {title}
+        </span>
+        {plus}
+      </div>
+      {quickAdd && <div className="px-2 pt-2.5">{quickAdd}</div>}
+      {children}
+    </aside>
+  );
+}
+
+const QUICK_ADD_CLASS =
+  "w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground";
 
 // ─── Campaigns module ─────────────────────────────────────────────────────────
 
@@ -261,6 +322,226 @@ function CampaignsSidebar() {
 
       <RecentSection pathname={pathname} />
     </aside>
+  );
+}
+
+// ─── Audience module ──────────────────────────────────────────────────────────
+
+function AudienceSidebar() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const status = searchParams.get("status");
+  const importing = searchParams.get("import") === "1";
+  const onList =
+    pathname === "/dashboard/audience" || pathname === "/dashboard/contacts";
+
+  return (
+    <ModuleShell
+      title="Audience"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/audience?import=1" aria-label="Import contacts">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      }
+      quickAdd={
+        <Button variant="outline" size="sm" className={QUICK_ADD_CLASS} asChild>
+          <Link href="/dashboard/audience?import=1">
+            <UploadIcon className="size-3.5 shrink-0" />
+            Import contacts
+          </Link>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/audience"
+          icon={UsersIcon}
+          label="All contacts"
+          active={onList && !status && !importing}
+        />
+        <NavItem
+          href="/dashboard/audience?status=bounced"
+          icon={MailWarningIcon}
+          label="Bounced"
+          active={onList && status === "bounced"}
+        />
+        <NavItem
+          href="/dashboard/audience?status=suppressed"
+          icon={BanIcon}
+          label="Suppressed"
+          active={onList && status === "suppressed"}
+        />
+      </nav>
+    </ModuleShell>
+  );
+}
+
+// ─── Templates module ─────────────────────────────────────────────────────────
+
+function TemplatesSidebar() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab") ?? "letterstack";
+  const onPage = pathname === "/dashboard/templates";
+
+  return (
+    <ModuleShell
+      title="Templates"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/editor" aria-label="New template">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      }
+      quickAdd={
+        <Button variant="outline" size="sm" className={QUICK_ADD_CLASS} asChild>
+          <Link href="/editor">
+            <SquarePenIcon className="size-3.5 shrink-0" />
+            New template
+          </Link>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/templates"
+          icon={LayoutTemplateIcon}
+          label="Gallery"
+          active={onPage && tab === "letterstack"}
+        />
+        <NavItem
+          href="/dashboard/templates?tab=saved"
+          icon={BookmarkIcon}
+          label="Saved templates"
+          active={onPage && tab === "saved"}
+        />
+        <NavItem
+          href="/dashboard/templates?tab=recent"
+          icon={HistoryIcon}
+          label="Recently sent"
+          active={onPage && tab === "recent"}
+        />
+        <NavItem
+          href="/editor"
+          icon={MailIcon}
+          label="Open editor"
+          active={false}
+        />
+      </nav>
+    </ModuleShell>
+  );
+}
+
+// ─── Automations module ───────────────────────────────────────────────────────
+
+function AutomationsSidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [creating, setCreating] = useState(false);
+
+  async function createAutomation() {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const r = await fetch("/api/automations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Untitled automation" }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        router.push(`/dashboard/automations/${data.automation.id}`);
+        return;
+      }
+    } catch {
+      // stay on page
+    }
+    setCreating(false);
+  }
+
+  return (
+    <ModuleShell
+      title="Automations"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={createAutomation}
+          disabled={creating}
+          aria-label="New automation"
+        >
+          <PlusIcon className="size-3.5" />
+        </Button>
+      }
+      quickAdd={
+        <Button
+          variant="outline"
+          size="sm"
+          className={QUICK_ADD_CLASS}
+          onClick={createAutomation}
+          disabled={creating}
+        >
+          <PlusIcon className="size-3.5 shrink-0" />
+          {creating ? "Creating…" : "New automation"}
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/automations"
+          icon={WorkflowIcon}
+          label="All automations"
+          active={pathname === "/dashboard/automations"}
+        />
+      </nav>
+    </ModuleShell>
+  );
+}
+
+// ─── Domains module ───────────────────────────────────────────────────────────
+
+function DomainsSidebar() {
+  const pathname = usePathname();
+
+  return (
+    <ModuleShell
+      title="Domains"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/domains" aria-label="Connect domain">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/domains"
+          icon={GlobeIcon}
+          label="Connected domains"
+          active={pathname.startsWith("/dashboard/domains")}
+        />
+      </nav>
+    </ModuleShell>
   );
 }
 

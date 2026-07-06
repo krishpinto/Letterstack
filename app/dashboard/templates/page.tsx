@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDownIcon,
   Code2Icon,
@@ -80,11 +80,20 @@ type SavedTemplate = {
   document: EmailDocument | null;
 };
 
+const TAB_KEYS: Tab[] = ["letterstack", "saved", "recent"];
+
 export default function TemplatesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("letterstack");
   const [category, setCategory] = useState<CategoryKey>("all");
   const [importOpen, setImportOpen] = useState(false);
+
+  // The module sidebar switches tabs via ?tab=saved etc.
+  useEffect(() => {
+    const requested = searchParams.get("tab") as Tab | null;
+    if (requested && TAB_KEYS.includes(requested)) setTab(requested);
+  }, [searchParams]);
 
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
