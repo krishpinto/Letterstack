@@ -181,4 +181,17 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Recharts elements pick up the global outline-ring/50 rule above which
+     produces a focus ring when clicking any chart. Suppress it for all
+     recharts containers and their children. */
+  .recharts-wrapper,
+  .recharts-wrapper *,
+  .recharts-surface,
+  .recharts-surface *,
+  [data-slot="chart"],
+  [data-slot="chart"] * {
+    outline: none !important;
+  }
 }
+

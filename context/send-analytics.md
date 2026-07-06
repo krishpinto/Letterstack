@@ -1,4 +1,4 @@
-﻿# Send And Analytics
+# Send And Analytics
 
 LetterStack sends email through Amazon SES and queues campaign work with QStash.
 
@@ -104,3 +104,6 @@ not only raw counts.
 The campaign worker marks a campaign `sent` when pending reaches zero. This can
 include a mixture of sent and failed recipients; `campaignProgress()` carries
 the outcome split.
+## Dashboard Analytics UI
+
+`app/dashboard/analytics/page.tsx` filters campaign rows by `sentAt`. For relative windows (`7d`, `30d`, `90d`, `6m`, `1y`), chart series are aggregated into local-day buckets and prefilled with zero-value days across the full selected range. The default route filter is ``7d``. This keeps sparse windows, such as Last 7 days with only one sent campaign, from collapsing to a single x-axis point.
