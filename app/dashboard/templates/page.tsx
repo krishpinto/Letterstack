@@ -65,7 +65,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-type Tab = "letterstack" | "saved";
 type CategoryKey = TemplateCategory | "all";
 type SavedTemplate = {
   id: string;
@@ -76,7 +75,6 @@ type SavedTemplate = {
 
 export default function TemplatesPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("letterstack");
   const [category, setCategory] = useState<CategoryKey>("all");
   const [importOpen, setImportOpen] = useState(false);
 
@@ -207,29 +205,37 @@ export default function TemplatesPage() {
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-6">
-        <TabsList variant="line">
-          <TabsTrigger value="letterstack">
-            LetterStack templates
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {PREBUILT_TEMPLATES.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="saved">
-            Saved
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {loadingSaved ? "…" : savedTemplates.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+      {/* Your templates first — the ones people actually reuse each month. */}
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Your templates</h2>
+          <Badge
+            variant="outline"
+            className="px-1.5 py-0 text-[10px] font-normal tabular-nums"
+          >
+            {loadingSaved ? "…" : savedTemplates.length}
+          </Badge>
+        </div>
+        <SavedTab
+          loading={loadingSaved}
+          templates={savedTemplates}
+          onDelete={handleDeleteSavedTemplate}
+          onShare={handleShareTemplate}
+          copiedShareId={copiedShareId}
+          onEditTemplate={(id) => router.push(`/editor/template/${id}`)}
+        />
+      </section>
 
-        <TabsContent value="letterstack" className="pt-4">
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">LetterStack templates</h2>
+          <Badge
+            variant="outline"
+            className="px-1.5 py-0 text-[10px] font-normal tabular-nums"
+          >
+            {PREBUILT_TEMPLATES.length}
+          </Badge>
+        </div>
           <div className="flex flex-col gap-6 md:flex-row md:items-start">
             {/* Sidebar Category Selector (Desktop) */}
             <aside className="hidden w-56 shrink-0 flex-col gap-1 md:flex">
@@ -307,19 +313,7 @@ export default function TemplatesPage() {
               )}
             </div>
           </div>
-        </TabsContent>
-
-        <TabsContent value="saved" className="pt-4">
-          <SavedTab
-            loading={loadingSaved}
-            templates={savedTemplates}
-            onDelete={handleDeleteSavedTemplate}
-            onShare={handleShareTemplate}
-            copiedShareId={copiedShareId}
-            onEditTemplate={(id) => router.push(`/editor/template/${id}`)}
-          />
-        </TabsContent>
-      </Tabs>
+      </section>
 
       <ImportHtmlDialog
         open={importOpen}
