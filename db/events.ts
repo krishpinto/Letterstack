@@ -1,7 +1,7 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "./client";
 import { getDefaultOrganizationForUser } from "./organizations";
-import { campaigns, emailEvents } from "./schema";
+import { campaigns, emailEvents, suppressedEmails } from "./schema";
 
 export type CampaignEngagement = {
   delivered: number;
@@ -29,6 +29,37 @@ export async function recordEvent(email: string, type: string, campaignId?: stri
 
 export async function listEvents(limit = 20) {
   return db.select().from(emailEvents).orderBy(desc(emailEvents.createdAt)).limit(limit);
+}
+
+/**
+ * Unsubscribes attributed to one campaign. The unsubscribe link identifies
+ * the person, not the campaign, so this is an attribution heuristic: count
+ * this campaign's recipients who unsubscribed after the send started. When
+ * two campaigns go out close together the later one absorbs the credit —
+ * fine for a monthly newsletter cadence.
+ */
+export async function campaignUnsubscribes(
+  campaignId: string,
+  organizationId: string,
+  since: Date | null,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(suppressedEmails)
+    .where(
+      and(
+        eq(suppressedEmails.organizationId, organizationId),
+        eq(suppressedEmails.reason, "unsubscribe"),
+        // Hand-qualified for the same drizzle quirk as db/campaigns.ts.
+        sql`suppressed_emails.email in (
+          select cr.email from campaign_recipients cr
+          where cr.campaign_id = ${campaignId}
+        )`,
+        ...(since ? [gte(suppressedEmails.createdAt, since)] : []),
+      ),
+    );
+
+  return row?.count ?? 0;
 }
 
 export async function campaignEngagement(campaignId: string): Promise<CampaignEngagement> {

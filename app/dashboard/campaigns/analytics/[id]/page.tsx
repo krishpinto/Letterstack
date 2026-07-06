@@ -71,6 +71,7 @@ type Engagement = {
   opensUnique: number;
   clicksTotal: number;
   clicksUnique: number;
+  unsubscribed: number;
 };
 
 type StatusKey = "all" | "sent" | "failed" | "bounced" | "pending";
@@ -227,6 +228,20 @@ export default function CampaignAnalyticsPage() {
     counts.sent > 0 ? Math.round((part / counts.sent) * 100) : 0;
   const openRate = rate(engagement?.opensUnique ?? 0);
   const clickRate = rate(engagement?.clicksUnique ?? 0);
+  const unsubscribed = engagement?.unsubscribed ?? 0;
+  const complained = engagement?.complained ?? 0;
+  const unsubscribeRate =
+    counts.sent > 0 ? ((unsubscribed / counts.sent) * 100).toFixed(1) : "0.0";
+  const complaintRate =
+    counts.sent > 0 ? ((complained / counts.sent) * 100).toFixed(2) : "0.00";
+  // Click-to-open: of the people who opened, how many clicked. A far better
+  // content-quality signal than raw click rate.
+  const clickToOpenRate =
+    (engagement?.opensUnique ?? 0) > 0
+      ? Math.round(
+          ((engagement?.clicksUnique ?? 0) / (engagement?.opensUnique ?? 1)) * 100,
+        )
+      : 0;
 
   const filterKeys = (
     ["all", "sent", "failed", "bounced", "pending"] as StatusKey[]
@@ -267,7 +282,7 @@ export default function CampaignAnalyticsPage() {
       </div>
 
       {/* ── Metrics grid ── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Metric label="Recipients" value={total} />
         <Metric label="Delivered" value={counts.sent} tone="primary" />
         <Metric
@@ -285,6 +300,25 @@ export default function CampaignAnalyticsPage() {
           soft
         />
         <Metric
+          label="Click-to-open"
+          value={`${clickToOpenRate}%`}
+          hint="clicked, of openers"
+          tone="primary"
+          soft
+        />
+        <Metric
+          label="Unsubscribed"
+          value={unsubscribed}
+          hint={`${unsubscribeRate}% of delivered`}
+          tone={unsubscribed > 0 ? "destructive" : "muted"}
+        />
+        <Metric
+          label="Spam reports"
+          value={complained}
+          hint={`${complaintRate}% · SES limit 0.5%`}
+          tone={complained > 0 ? "destructive" : "muted"}
+        />
+        <Metric
           label="Failed"
           value={counts.failed}
           tone={counts.failed > 0 ? "destructive" : "muted"}
@@ -292,6 +326,11 @@ export default function CampaignAnalyticsPage() {
         <Metric
           label="Bounced"
           value={counts.bounced}
+          hint={
+            counts.sent > 0
+              ? `${((counts.bounced / total) * 100).toFixed(1)}% · SES limit 10%`
+              : undefined
+          }
           tone={counts.bounced > 0 ? "destructive" : "muted"}
         />
       </div>
@@ -313,8 +352,10 @@ export default function CampaignAnalyticsPage() {
           </div>
           <Progress value={finished ? deliveryRate : progressPercent} />
           <p className="text-xs text-muted-foreground">
-            Delivered, failed, and bounced are exact. Opens and clicks are
-            estimates — inboxes can block or pre-fetch tracking pixels.
+            Delivered, failed, bounced, unsubscribes, and spam reports are
+            exact. Opens and clicks are estimates — inboxes can block or
+            pre-fetch tracking pixels. Unsubscribes count this
+            campaign&apos;s recipients who opted out after the send.
           </p>
         </CardContent>
       </Card>

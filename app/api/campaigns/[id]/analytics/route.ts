@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getCampaignForUser } from "@/db/campaigns";
-import { campaignEngagement } from "@/db/events";
+import { campaignEngagement, campaignUnsubscribes } from "@/db/events";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -22,6 +22,9 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
   }
 
-  const engagement = await campaignEngagement(id);
-  return NextResponse.json({ ok: true, engagement });
+  const [engagement, unsubscribed] = await Promise.all([
+    campaignEngagement(id),
+    campaignUnsubscribes(id, campaign.organizationId, campaign.sentAt),
+  ]);
+  return NextResponse.json({ ok: true, engagement: { ...engagement, unsubscribed } });
 }
