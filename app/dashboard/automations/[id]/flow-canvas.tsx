@@ -33,18 +33,8 @@ import {
   ZapIcon,
 } from "lucide-react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
-  NODE_CATALOG,
   TRIGGER_EVENTS,
   type AutomationFlow,
   type AutomationNode,
@@ -66,11 +56,12 @@ export type FlowCanvasProps = {
   templateNames: Record<string, string>;
   categoryNames: Record<string, string>;
   onSelectNode: (nodeId: string) => void;
-  onInsertNode: (
-    parentId: string,
-    handle: BranchHandle,
-    type: Exclude<AutomationNodeType, "trigger">,
-  ) => void;
+  /**
+   * Called when a + button is clicked. The palette itself is a normal dialog
+   * owned by the builder — Radix triggers anchored inside the React Flow
+   * canvas fight its pointer handling and silently fail to open.
+   */
+  onRequestInsert: (parentId: string, handle: BranchHandle) => void;
 };
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
@@ -178,7 +169,7 @@ function edgeFor(
 
 // ─── Node visuals ────────────────────────────────────────────────────────────
 
-const NODE_ICONS: Record<AutomationNodeType, typeof MailIcon> = {
+export const NODE_ICONS: Record<AutomationNodeType, typeof MailIcon> = {
   trigger: ZapIcon,
   send_email: MailIcon,
   condition: SplitIcon,
@@ -188,7 +179,7 @@ const NODE_ICONS: Record<AutomationNodeType, typeof MailIcon> = {
   delete_contact: UserXIcon,
 };
 
-const NODE_LABELS: Record<AutomationNodeType, string> = {
+export const NODE_LABELS: Record<AutomationNodeType, string> = {
   trigger: "Trigger",
   send_email: "Send email",
   condition: "Condition",
@@ -334,40 +325,6 @@ function StepNode({ data }: NodeProps) {
   );
 }
 
-function NodePalette({
-  onPick,
-  children,
-}: {
-  onPick: (type: Exclude<AutomationNodeType, "trigger">) => void;
-  children: React.ReactNode;
-}) {
-  const groups = ["Messages", "Flow control", "Audience"] as const;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-56">
-        {groups.map((group, index) => (
-          <DropdownMenuGroup key={group}>
-            {index > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              {group}
-            </DropdownMenuLabel>
-            {NODE_CATALOG.filter((item) => item.group === group).map((item) => {
-              const Icon = NODE_ICONS[item.type];
-              return (
-                <DropdownMenuItem key={item.type} onClick={() => onPick(item.type)}>
-                  <Icon />
-                  {item.label}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuGroup>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function AddNode({ data }: NodeProps) {
   const { parentId, handle, props } = data as {
     parentId: string;
@@ -378,15 +335,17 @@ function AddNode({ data }: NodeProps) {
   return (
     <div>
       <Handle type="target" position={Position.Top} className="!opacity-0" />
-      <NodePalette onPick={(type) => props.onInsertNode(parentId, handle, type)}>
-        <button
-          type="button"
-          aria-label="Add step"
-          className="flex size-9 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-        >
-          <PlusIcon className="size-4" />
-        </button>
-      </NodePalette>
+      <button
+        type="button"
+        aria-label="Add step"
+        className="nodrag nopan flex size-9 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onRequestInsert(parentId, handle);
+        }}
+      >
+        <PlusIcon className="size-4" />
+      </button>
     </div>
   );
 }
@@ -444,17 +403,17 @@ function InsertEdge(props: EdgeProps) {
               pointerEvents: "all",
             }}
           >
-            <NodePalette
-              onPick={(type) => canvasProps.onInsertNode(parentId, handle, type)}
+            <button
+              type="button"
+              aria-label="Insert step"
+              className="nodrag nopan flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              onClick={(event) => {
+                event.stopPropagation();
+                canvasProps.onRequestInsert(parentId, handle);
+              }}
             >
-              <button
-                type="button"
-                aria-label="Insert step"
-                className="flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-              >
-                <PlusIcon className="size-3" />
-              </button>
-            </NodePalette>
+              <PlusIcon className="size-3" />
+            </button>
           </div>
         )}
       </EdgeLabelRenderer>

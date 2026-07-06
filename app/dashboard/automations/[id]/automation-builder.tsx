@@ -11,9 +11,17 @@ import { ArrowLeftIcon, PlayIcon, SquareIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  NODE_CATALOG,
   type AutomationFlow,
   type AutomationNodeConfig,
   type AutomationNodeType,
@@ -24,7 +32,7 @@ import {
   updateNodeConfig,
   type BranchHandle,
 } from "@/lib/automations/flow-edit";
-import { FlowCanvas } from "./flow-canvas";
+import { FlowCanvas, NODE_ICONS } from "./flow-canvas";
 import { NodeConfigSheet, type SenderOption } from "./node-config-sheet";
 
 export type AutomationData = {
@@ -39,6 +47,12 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
   const [status, setStatus] = useState(automation.status);
   const [flow, setFlow] = useState<AutomationFlow>(automation.flow);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Where the next inserted step goes; set by the + buttons on the canvas,
+  // consumed by the palette dialog.
+  const [insertTarget, setInsertTarget] = useState<{
+    parentId: string;
+    handle: BranchHandle;
+  } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -119,13 +133,11 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
     setDirty(true);
   }
 
-  function handleInsert(
-    parentId: string,
-    handle: BranchHandle,
-    type: Exclude<AutomationNodeType, "trigger">,
-  ) {
-    const result = insertNode(flow, parentId, handle, type);
+  function handlePickStep(type: Exclude<AutomationNodeType, "trigger">) {
+    if (!insertTarget) return;
+    const result = insertNode(flow, insertTarget.parentId, insertTarget.handle, type);
     applyFlow(result.flow);
+    setInsertTarget(null);
     if (result.newNodeId) setSelectedNodeId(result.newNodeId);
   }
 
@@ -234,9 +246,52 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
           templateNames={templateNames}
           categoryNames={categoryNames}
           onSelectNode={setSelectedNodeId}
-          onInsertNode={handleInsert}
+          onRequestInsert={(parentId, handle) =>
+            setInsertTarget({ parentId, handle })
+          }
         />
       </div>
+
+      <Dialog
+        open={Boolean(insertTarget)}
+        onOpenChange={(open) => !open && setInsertTarget(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add a step</DialogTitle>
+            <DialogDescription>
+              What should happen next in this flow?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            {(["Messages", "Flow control", "Audience"] as const).map((group) => (
+              <div key={group} className="flex flex-col gap-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {group}
+                </p>
+                {NODE_CATALOG.filter((item) => item.group === group).map(
+                  (item) => {
+                    const Icon = NODE_ICONS[item.type];
+                    return (
+                      <button
+                        key={item.type}
+                        type="button"
+                        className="flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-left text-sm font-medium transition-colors hover:border-border hover:bg-muted/40"
+                        onClick={() => handlePickStep(item.type)}
+                      >
+                        <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                          <Icon className="size-4" />
+                        </span>
+                        {item.label}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <NodeConfigSheet
         node={selectedNode}
