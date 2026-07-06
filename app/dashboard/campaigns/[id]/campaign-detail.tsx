@@ -758,8 +758,8 @@ export function CampaignDetail({
                             </div>
                             <div className="overflow-hidden rounded-lg border border-border">
                               {recipients.length > 0 ? (
-                                <div className="divide-y divide-border">
-                                  {recipients.slice(0, 6).map((r) => (
+                                <div className="max-h-64 divide-y divide-border overflow-y-auto">
+                                  {recipients.slice(0, 200).map((r) => (
                                     <div
                                       key={r.id}
                                       className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
@@ -786,13 +786,11 @@ export function CampaignDetail({
                                       </Button>
                                     </div>
                                   ))}
-                                  {recipients.length > 6 && (
+                                  {recipients.length > 200 && (
                                     <div className="px-3 py-2 text-xs text-muted-foreground">
-                                      +{recipients.length - 6} more
-                                      recipient
-                                      {recipients.length - 6 === 1
-                                        ? ""
-                                        : "s"}
+                                      +{recipients.length - 200} more recipient
+                                      {recipients.length - 200 === 1 ? "" : "s"}{" "}
+                                      — all included in the send
                                     </div>
                                   )}
                                 </div>
