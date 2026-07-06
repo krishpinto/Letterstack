@@ -12,7 +12,7 @@ import {
   unsubscribePageUrl,
 } from "@/lib/email/unsubscribe";
 
-const BATCH_SIZE = 2;
+const BATCH_SIZE = 50;
 
 export type FrozenContent = {
   subject: string;
