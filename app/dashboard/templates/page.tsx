@@ -98,11 +98,11 @@ export default function TemplatesPage() {
     }
   };
 
+  // Load on mount (not on tab switch) so the Saved tab count is right away.
   useEffect(() => {
-    if (tab === "saved") {
-      loadSavedTemplates();
-    }
-  }, [tab]);
+    loadSavedTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openDoc(doc: EmailDocument) {
     try {
@@ -209,8 +209,24 @@ export default function TemplatesPage() {
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-6">
         <TabsList variant="line">
-          <TabsTrigger value="letterstack">LetterStack templates</TabsTrigger>
-          <TabsTrigger value="saved">Saved</TabsTrigger>
+          <TabsTrigger value="letterstack">
+            LetterStack templates
+            <Badge
+              variant="outline"
+              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
+            >
+              {PREBUILT_TEMPLATES.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="saved">
+            Saved
+            <Badge
+              variant="outline"
+              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
+            >
+              {loadingSaved ? "…" : savedTemplates.length}
+            </Badge>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="letterstack" className="pt-4">
