@@ -40,12 +40,13 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -748,15 +749,15 @@ function ImportHtmlDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-6">
-        <DialogHeader className="p-0 pb-4">
+      <DialogPopup className="sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>Import HTML</DialogTitle>
           <DialogDescription>
             Import your custom email HTML template. It opens in the editor as a custom block.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-2">
+        <DialogPanel className="flex flex-col gap-4">
           <Tabs value={mode} onValueChange={(v) => setMode(v as "upload" | "paste")} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Upload HTML file</TabsTrigger>
@@ -811,9 +812,9 @@ function ImportHtmlDialog({
               </FieldGroup>
             </TabsContent>
           </Tabs>
-        </div>
+        </DialogPanel>
 
-        <DialogFooter className="p-0 pt-4">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -824,7 +825,7 @@ function ImportHtmlDialog({
             Open in editor
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

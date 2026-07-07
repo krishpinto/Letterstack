@@ -21,12 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -769,7 +770,7 @@ function CreateCampaignDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogPopup className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create a new email</DialogTitle>
           <DialogDescription>
@@ -777,6 +778,7 @@ function CreateCampaignDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogPanel>
         <FieldGroup className="gap-5">
           <Field>
             <FieldLabel>Type</FieldLabel>
@@ -886,6 +888,7 @@ function CreateCampaignDialog({
             </Alert>
           )}
         </FieldGroup>
+        </DialogPanel>
 
         <DialogFooter>
           <Button
@@ -900,7 +903,7 @@ function CreateCampaignDialog({
             {creating ? "Creating..." : "Begin"}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }
