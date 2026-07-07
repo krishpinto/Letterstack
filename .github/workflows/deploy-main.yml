@@ -1,0 +1,22 @@
+# Vercel Hobby only auto-deploys commits pushed by the project owner's
+# account, so Ethan's pushes to main never build. This workflow pings a
+# Vercel Deploy Hook on every push to main, so merges deploy no matter who
+# authored them. The hook URL lives in the VERCEL_DEPLOY_HOOK repo secret.
+
+name: Deploy main to Vercel
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  trigger-vercel:
+    # krish's own pushes already deploy through Vercel's git integration —
+    # only ping the hook for everyone else, so builds don't run twice.
+    if: github.event.pusher.name != 'krishpinto'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Vercel deploy hook
+        run: curl -sf -X POST "$DEPLOY_HOOK" > /dev/null
+        env:
+          DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
