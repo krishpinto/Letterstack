@@ -747,23 +747,20 @@ export function CampaignDetail({
         </Alert>
       )}
 
-      {/* ── Send progress bar (once sending) ── */}
-      {!isEditable && progress && (
+      {/* ── Send progress bar — live sends only; finished campaigns show
+             their numbers in analytics, not a stuck 100% bar ── */}
+      {!isEditable && progress && !isFinished && (
         <Card size="sm">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="font-medium">
-                {isFinished
-                  ? `${deliveryRate}% delivered`
-                  : `Sending… ${progressDone}/${progressTotal}`}
+                Sending… {progressDone}/{progressTotal}
               </span>
               <span className="tabular-nums text-muted-foreground">
-                {isFinished
-                  ? `${progressSent}/${progressTotal} delivered`
-                  : `${progressPct}%`}
+                {progressPct}%
               </span>
             </div>
-            <Progress value={isFinished ? deliveryRate : progressPct} />
+            <Progress value={progressPct} />
           </CardContent>
         </Card>
       )}
