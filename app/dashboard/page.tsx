@@ -50,7 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatCard } from "@/components/dashboard-v2/stat-card";
+import { StatFrameCard } from "@/components/ui/stat-frame-card";
 import { PageLoader } from "@/components/bar-spinner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -192,27 +192,25 @@ export default function DashboardHome() {
 
       {/* ── Stat cards ── */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
+        <StatFrameCard
           label="Emails delivered"
           value={stats.delivered.toLocaleString()}
           trend={weekTrend(stats.delivered7, stats.deliveredPrev7)}
           icon={MailCheckIcon}
-          variant="primary"
         />
-        <StatCard
+        <StatFrameCard
           label="Open rate"
           value={`${stats.openRate}%`}
           subValue={`${stats.opensUnique.toLocaleString()} unique opens`}
           icon={MailOpenIcon}
-          variant="success"
         />
-        <StatCard
+        <StatFrameCard
           label="Audience"
           value={stats.audience.toLocaleString()}
           trend={weekTrend(stats.audienceNew7, stats.audiencePrev7)}
           icon={UsersIcon}
         />
-        <StatCard
+        <StatFrameCard
           label="Campaigns sent"
           value={stats.campaignsSent.toLocaleString()}
           trend={weekTrend(stats.campaignsSent7, stats.campaignsSentPrev7)}
