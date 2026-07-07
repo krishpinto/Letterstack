@@ -265,7 +265,7 @@ function CampaignsSidebar() {
           className="size-6 text-muted-foreground hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns" aria-label="New campaign">
+          <Link href="/dashboard/campaigns?create=1" aria-label="New campaign">
             <PlusIcon className="size-3.5" />
           </Link>
         </Button>
@@ -279,7 +279,7 @@ function CampaignsSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>
@@ -578,7 +578,7 @@ function DefaultSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>

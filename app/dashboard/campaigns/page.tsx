@@ -175,6 +175,17 @@ export default function CampaignsPage() {
     void loadCampaigns();
   }, [loadCampaigns]);
 
+  // The module sidebar's "New campaign" buttons land here as ?create=1 —
+  // open the dialog and strip the flag (keeping any status filter).
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") return;
+    setCreateOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
+    const qs = next.toString();
+    router.replace(qs ? `/dashboard/campaigns?${qs}` : "/dashboard/campaigns");
+  }, [searchParams, router]);
+
   useEffect(() => {
     return onOrganizationChanged(() => {
       setSelected(new Set());
@@ -319,19 +330,8 @@ export default function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Campaigns</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create, review, and monitor email campaigns from one workspace.
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <PlusIcon data-icon="inline-start" />
-          Create
-        </Button>
-      </div>
-
+      {/* The module sidebar + breadcrumb already title this page — the
+          toolbar goes straight to work instead of repeating "Campaigns". */}
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
@@ -380,6 +380,10 @@ export default function CampaignsPage() {
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button onClick={() => setCreateOpen(true)}>
+              <PlusIcon data-icon="inline-start" />
+              Create
+            </Button>
           </div>
         </div>
 
