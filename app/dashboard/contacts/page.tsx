@@ -23,6 +23,7 @@ import {
 
 import { ImportWizard } from "./import-wizard";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { confirmDialog } from "@/components/app-dialogs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -505,7 +506,13 @@ export default function AudiencePage() {
   }
 
   async function handleDeleteCategory(id: string) {
-    if (!confirm("Are you sure you want to delete this folder? Contacts inside will not be deleted.")) return;
+    const ok = await confirmDialog({
+      title: "Delete this folder?",
+      description: "Contacts inside will not be deleted.",
+      confirmLabel: "Delete folder",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       const r = await fetch(`/api/audience/categories?id=${id}`, {
         method: "DELETE",

@@ -10,6 +10,7 @@ import {
   TextAlignLeftIcon,
   TextAlignRightIcon,
 } from "@hugeicons/core-free-icons";
+import { promptDialog } from "@/components/app-dialogs";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -94,13 +95,17 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
     }
   };
 
-  const toggleLink = () => {
+  const toggleLink = async () => {
     if (editor.isActive("link")) {
       editor.chain().focus().unsetLink().run();
       return;
     }
 
-    const url = window.prompt("Enter URL:");
+    const url = await promptDialog({
+      title: "Add link",
+      placeholder: "https://...",
+      confirmLabel: "Add link",
+    });
     if (url) editor.chain().focus().setLink({ href: url }).run();
   };
 

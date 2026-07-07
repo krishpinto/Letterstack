@@ -15,6 +15,7 @@ import {
 import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { confirmDialog } from "@/components/app-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -292,25 +293,25 @@ export default function CampaignsPage() {
     const ids = [...selected];
     if (ids.length === 0) return;
 
-    if (
-      !window.confirm(
-        `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
 
     await deleteCampaigns(ids);
   }
 
   async function handleRowDelete(campaign: Campaign) {
-    if (
-      !window.confirm(
-        `Delete ${campaign.name || "this campaign"}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: `Delete ${campaign.name || "this campaign"}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
 
     await deleteCampaigns([campaign.id]);
   }

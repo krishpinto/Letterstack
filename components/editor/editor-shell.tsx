@@ -31,6 +31,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
+import { alertDialog } from "@/components/app-dialogs"
 import { BlockInspector } from "@/components/editor/block-inspector"
 import { CanvasBlockPreview } from "@/components/editor/canvas-block-preview"
 import {
@@ -308,10 +309,16 @@ export function EditorShell({
         setPasteJsonText("")
         showDockStatus("saved")
       } else {
-        alert("Invalid email template JSON structure.")
+        void alertDialog({
+          title: "Invalid template JSON",
+          description: "The pasted JSON is not a valid email template structure.",
+        })
       }
     } catch {
-      alert("Invalid JSON format.")
+      void alertDialog({
+        title: "Invalid JSON",
+        description: "The pasted text could not be parsed as JSON.",
+      })
     }
   }, [pasteJsonText, showDockStatus, updateDocument])
 

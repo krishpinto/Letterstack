@@ -31,6 +31,7 @@ import {
   type EmailDocument,
 } from "@/lib/email/document";
 import { compileEmailDocument } from "@/lib/email/compiler";
+import { confirmDialog, promptDialog } from "@/components/app-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -119,13 +120,16 @@ export default function TemplatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function openDoc(doc: EmailDocument) {
+  async function openDoc(doc: EmailDocument) {
     try {
       const existing = localStorage.getItem(STORAGE_KEY);
       if (existing && existing !== "null") {
-        const ok = window.confirm(
-          "Opening this will replace your current editor draft. Continue?",
-        );
+        const ok = await confirmDialog({
+          title: "Replace your current draft?",
+          description:
+            "Opening this template will replace the draft currently in the editor.",
+          confirmLabel: "Open template",
+        });
         if (!ok) return;
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
@@ -144,9 +148,13 @@ export default function TemplatesPage() {
       const data = await r.json();
       if (!data.ok) return;
       const url = `${window.location.origin}/templates/shared/${data.shareToken}`;
-      await navigator.clipboard.writeText(url).catch(() => {
-        window.prompt("Copy this share link:", url);
-      });
+      await navigator.clipboard.writeText(url).catch(() =>
+        promptDialog({
+          title: "Copy this share link",
+          description: "Clipboard access was blocked — copy it manually.",
+          defaultValue: url,
+        }),
+      );
       setCopiedShareId(id);
       setTimeout(
         () => setCopiedShareId((current) => (current === id ? null : current)),
@@ -158,7 +166,13 @@ export default function TemplatesPage() {
   }
 
   async function handleDeleteSavedTemplate(id: string) {
-    if (!confirm("Are you sure you want to delete this template?")) return;
+    const ok = await confirmDialog({
+      title: "Delete this template?",
+      description: "This permanently removes the template. This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       const r = await fetch(`/api/templates/${id}`, {
         method: "DELETE",
