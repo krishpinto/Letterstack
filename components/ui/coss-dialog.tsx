@@ -148,8 +148,12 @@ export function DialogFooter({
   const defaultProps = {
     className: cn(
       "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]",
-      // Tightened from the registry's py-4: the footer band read too tall.
-      variant === "default" && "border-t bg-muted/72 py-3",
+      // Tightened from the registry's py-4 (band read too tall). Our dark
+      // theme has --muted identical to --popover and --border barely off it,
+      // so the divider uses the input token and the band drops toward the
+      // page background for real contrast.
+      variant === "default" &&
+        "border-t border-input bg-muted py-3 dark:bg-background/50",
       variant === "bare" &&
         "in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pt-2 pt-3 pb-5",
       className,
