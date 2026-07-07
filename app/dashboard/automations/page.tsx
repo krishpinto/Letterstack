@@ -134,14 +134,8 @@ export default function AutomationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Automations</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Flows that run on their own — welcome emails for new subscribers,
-            cleanup when someone unsubscribes.
-          </p>
-        </div>
+      {/* The module sidebar + breadcrumb already title this page. */}
+      <header className="flex items-center justify-end gap-4">
         <Button onClick={createAutomation} disabled={creating}>
           {creating ? (
             <Spinner data-icon="inline-start" />

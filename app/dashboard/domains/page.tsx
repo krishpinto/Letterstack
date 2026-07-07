@@ -191,15 +191,7 @@ export default function DomainsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-normal">Domains</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Connect domains you own to send branded campaign email. You add a few
-          DNS records at your provider; Amazon verifies them automatically.
-          {state ? ` Up to ${state.limit} domains.` : ""}
-        </p>
-      </div>
-
+      {/* The module sidebar + breadcrumb already title this page. */}
       {error && (
         <Alert variant="destructive">
           <AlertTitle>Something went wrong</AlertTitle>
@@ -220,7 +212,7 @@ export default function DomainsPage() {
                 <CardDescription>
                   {atLimit
                     ? `You've connected ${state?.limit} domains — disconnect one to add another.`
-                    : "Use a domain you own to send branded campaign email."}
+                    : `Use a domain you own to send branded campaign email. You add a few DNS records at your provider; Amazon verifies them automatically.${state ? ` Up to ${state.limit} domains.` : ""}`}
                 </CardDescription>
               </div>
             </CardHeader>

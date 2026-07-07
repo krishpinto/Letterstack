@@ -91,10 +91,11 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState<CategoryKey>("all");
   const [importOpen, setImportOpen] = useState(false);
 
-  // The module sidebar switches tabs via ?tab=saved etc.
+  // The module sidebar is the only tab switcher (?tab=saved etc.) — no param
+  // means the Gallery view.
   useEffect(() => {
     const requested = searchParams.get("tab") as Tab | null;
-    if (requested && TAB_KEYS.includes(requested)) setTab(requested);
+    setTab(requested && TAB_KEYS.includes(requested) ? requested : "letterstack");
   }, [searchParams]);
 
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
@@ -203,15 +204,9 @@ export default function TemplatesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Templates</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Start from a LetterStack template, your own HTML, or a blank canvas.
-          </p>
-        </div>
-
+      {/* The module sidebar + breadcrumb already title this page; the sidebar
+          also owns the Gallery / Saved / Recently sent views. */}
+      <div className="flex flex-col justify-end gap-3 md:flex-row md:items-center">
         <div className="flex flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -244,27 +239,6 @@ export default function TemplatesPage() {
       </div>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-5">
-        <TabsList variant="line">
-          <TabsTrigger value="letterstack">
-            LetterStack templates
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {PREBUILT_TEMPLATES.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="saved">
-            Saved
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {loadingSaved ? "…" : savedTemplates.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="recent">Recently sent</TabsTrigger>
-        </TabsList>
 
         <TabsContent value="saved" className="pt-2">
           <SavedTab

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BanIcon,
   CheckIcon,
@@ -159,6 +159,8 @@ const STATUS_KEYS: StatusKey[] = ["all", "subscribed", "bounced", "suppressed"];
 
 export default function AudiencePage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [mappings, setMappings] = useState<Mapping[]>([]);
@@ -575,33 +577,7 @@ export default function AudiencePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Audience</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{contacts.length}</span>{" "}
-            contacts in this organization: {counts.subscribed} subscribed, {counts.bounced} bounced,
-            and {counts.suppressed} suppressed.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={exportContacts}>
-            <DownloadIcon data-icon="inline-start" />
-            Export
-          </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <UploadIcon data-icon="inline-start" />
-            Import
-          </Button>
-          <Button onClick={() => setAddOpen(true)}>
-            <PlusIcon data-icon="inline-start" />
-            Add contact
-          </Button>
-        </div>
-      </div>
-
+      {/* The module sidebar + breadcrumb already title this page. */}
       {/* Folders Grid - Compact Padding */}
       <div className="flex flex-col gap-2.5">
         <div className="flex items-center justify-between">
@@ -676,6 +652,20 @@ export default function AudiencePage() {
                 </Button>
               </Badge>
             )}
+            {/* Status views live in the module sidebar — show the active one. */}
+            {statusFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
+                {STATUS_LABELS[statusFilter]}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-3.5 p-0 hover:bg-muted"
+                  onClick={() => router.replace(pathname)}
+                >
+                  <XIcon className="size-2.5" />
+                </Button>
+              </Badge>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -688,39 +678,18 @@ export default function AudiencePage() {
                 className="pl-8"
               />
             </div>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <FilterIcon data-icon="inline-start" />
-                  Filter
-                  {statusFilter !== "all" && (
-                    <Badge variant="secondary">
-                      {STATUS_LABELS[statusFilter]}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Status</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  {(["all", "subscribed", "bounced", "suppressed"] as StatusKey[]).map(
-                    (key) => (
-                      <DropdownMenuItem
-                        key={key}
-                        onClick={() => setStatusFilter(key)}
-                      >
-                        <span>{STATUS_LABELS[key]}</span>
-                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                          {counts[key]}
-                        </span>
-                      </DropdownMenuItem>
-                    ),
-                  )}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" onClick={exportContacts}>
+              <DownloadIcon data-icon="inline-start" />
+              Export
+            </Button>
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <UploadIcon data-icon="inline-start" />
+              Import
+            </Button>
+            <Button onClick={() => setAddOpen(true)}>
+              <PlusIcon data-icon="inline-start" />
+              Add contact
+            </Button>
           </div>
         </div>
 

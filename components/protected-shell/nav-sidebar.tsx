@@ -388,6 +388,12 @@ function AudienceSidebar() {
           active={onList && !status && !importing}
         />
         <NavItem
+          href="/dashboard/audience?status=subscribed"
+          icon={MailCheckIcon}
+          label="Subscribed"
+          active={onList && status === "subscribed"}
+        />
+        <NavItem
           href="/dashboard/audience?status=bounced"
           icon={MailWarningIcon}
           label="Bounced"
