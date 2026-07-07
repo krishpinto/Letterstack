@@ -13,6 +13,7 @@ import {
   SearchIcon,
   SettingsIcon,
   SlidersHorizontalIcon,
+  UserPlusIcon,
   ZapIcon,
 } from "lucide-react";
 
@@ -30,7 +31,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -41,7 +41,17 @@ export type NavbarOrganization = {
   id: string;
   name: string;
   type: string;
+  role?: string;
+  memberCount?: number;
 };
+
+function orgMeta(org: NavbarOrganization) {
+  const role = org.role
+    ? org.role.charAt(0).toUpperCase() + org.role.slice(1)
+    : "Member";
+  const count = org.memberCount ?? 1;
+  return `${role} • ${count} ${count === 1 ? "Member" : "Members"}`;
+}
 
 type TopNavbarProps = {
   organization: NavbarOrganization;
@@ -63,6 +73,7 @@ export function TopNavbar({
     organizations.length > 0 ? organizations : [organization],
   );
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -138,7 +149,7 @@ export function TopNavbar({
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 bg-background px-3">
       {/* ── Left: org dropdown ── */}
-      <DropdownMenu>
+      <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
@@ -156,44 +167,95 @@ export function TopNavbar({
             <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-            Workspaces
-          </DropdownMenuLabel>
+        <DropdownMenuContent align="start" className="w-72 p-1.5">
+          <p className="truncate px-2 pb-1.5 pt-1 text-xs text-muted-foreground">
+            {userEmail}
+          </p>
+
+          {/* Workspace list: avatar, name, role • members, check on active */}
           {orgs.map((org) => (
             <DropdownMenuItem
               key={org.id}
-              className="gap-2"
+              className="gap-2.5 px-2 py-1.5"
               disabled={Boolean(switchingId)}
               onSelect={(event) => {
                 event.preventDefault();
                 void selectOrganization(org.id);
               }}
             >
-              <Avatar className="size-5 rounded-md">
-                <AvatarFallback className="rounded-md bg-primary text-[10px] font-bold text-primary-foreground">
+              <Avatar className="size-8 rounded-lg">
+                <AvatarFallback className="rounded-lg bg-primary text-xs font-bold text-primary-foreground">
                   {org.name.trim().slice(0, 1).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span className="min-w-0 flex-1 truncate">
-                {org.name}
-                {switchingId === org.id ? " …" : ""}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                  {org.name}
+                  {switchingId === org.id ? " …" : ""}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {orgMeta(org)}
+                </span>
               </span>
               {org.id === activeOrg.id && (
-                <CheckIcon className="size-3.5 text-muted-foreground" />
+                <CheckIcon className="size-4 shrink-0" />
               )}
             </DropdownMenuItem>
           ))}
+
+          {/* Actions for the active workspace */}
+          <div className="mt-1 flex gap-1.5 px-1 pb-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+              asChild
+            >
+              <Link
+                href="/dashboard/settings"
+                onClick={() => setOrgMenuOpen(false)}
+              >
+                <SettingsIcon className="size-3.5" />
+                Settings
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+              asChild
+            >
+              <Link
+                href="/dashboard/settings"
+                onClick={() => setOrgMenuOpen(false)}
+              >
+                <UserPlusIcon className="size-3.5" />
+                Invite members
+              </Link>
+            </Button>
+          </div>
+
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            className="gap-2 text-muted-foreground"
+            className="gap-2 px-2"
             onSelect={(event) => {
               event.preventDefault();
+              setOrgMenuOpen(false);
               setCreateOpen(true);
             }}
           >
-            <PlusIcon className="size-3.5" />
+            <PlusIcon className="size-4" />
             Create workspace
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            className="gap-2 px-2"
+            asChild
+          >
+            <Link href="/login">
+              <LogOutIcon className="size-4" />
+              Sign out
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

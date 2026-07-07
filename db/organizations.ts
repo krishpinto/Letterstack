@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
 
@@ -22,6 +22,11 @@ function organizationSelect() {
     name: organizations.name,
     type: organizations.type,
     role: organizationMembers.role,
+    // Hand-qualified: an interpolated column would render unqualified and
+    // silently resolve against `om` inside the subquery.
+    memberCount: sql<number>`(select count(*)::int from organization_members om where om.organization_id = organizations.id)`.as(
+      "member_count",
+    ),
     createdAt: organizations.createdAt,
   };
 }
@@ -103,10 +108,24 @@ export async function createOrganizationForUser(
 
   if (!owner) throw new OwnerNotFoundError();
 
+  // Duplicate names among this user's workspaces get a numeric suffix
+  // ("Acme" → "Acme 2") so the switcher never shows two identical entries.
+  const taken = new Set(
+    (await listOrganizationsForUser(userId)).map((org) =>
+      org.name.trim().toLowerCase(),
+    ),
+  );
+  let name = input.name;
+  if (taken.has(name.toLowerCase())) {
+    let suffix = 2;
+    while (taken.has(`${name} ${suffix}`.toLowerCase())) suffix += 1;
+    name = `${name} ${suffix}`;
+  }
+
   const [organization] = await db
     .insert(organizations)
     .values({
-      name: input.name,
+      name,
       type: input.type,
     })
     .returning({
@@ -129,5 +148,5 @@ export async function createOrganizationForUser(
     throw error;
   }
 
-  return { ...organization, role: "owner" };
+  return { ...organization, role: "owner", memberCount: 1 };
 }

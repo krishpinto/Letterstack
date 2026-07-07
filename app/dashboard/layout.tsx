@@ -37,11 +37,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         id: organization.id,
         name: organization.name,
         type: organization.type,
+        role: organization.role,
+        memberCount: organization.memberCount,
       }}
       organizations={organizations.map((item) => ({
         id: item.id,
         name: item.name,
         type: item.type,
+        role: item.role,
+        memberCount: item.memberCount,
       }))}
       userName={session.user?.name ?? "User"}
       userEmail={session.user?.email ?? ""}
