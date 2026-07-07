@@ -8,7 +8,6 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   Edit2Icon,
-  FilterIcon,
   FolderIcon,
   FolderPlusIcon,
   FolderOpenIcon,
@@ -77,10 +76,13 @@ import {
 } from "@/components/ui/pagination";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -168,7 +170,10 @@ export default function AudiencePage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  // Mailchimp-style always-visible filters: folders are multi-select,
+  // "added" is a rolling window, status mirrors the sidebar via ?status=.
+  const [folderFilter, setFolderFilter] = useState<Set<string>>(new Set());
+  const [addedFilter, setAddedFilter] = useState<"any" | "7d" | "30d" | "90d">("any");
   const [page, setPage] = useState(1);
   
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -277,7 +282,7 @@ export default function AudiencePage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, activeCategoryFilter]);
+  }, [query, statusFilter, folderFilter, addedFilter]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -287,14 +292,28 @@ export default function AudiencePage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    
-    const categoryRecipientIds = activeCategoryFilter
-      ? new Set(mappings.filter((m) => m.categoryId === activeCategoryFilter).map((m) => m.recipientId))
-      : null;
+
+    const categoryRecipientIds =
+      folderFilter.size > 0
+        ? new Set(
+            mappings
+              .filter((m) => folderFilter.has(m.categoryId))
+              .map((m) => m.recipientId),
+          )
+        : null;
+
+    const addedDays = { "7d": 7, "30d": 30, "90d": 90 }[
+      addedFilter as "7d" | "30d" | "90d"
+    ];
+    const addedSince =
+      addedFilter === "any" ? null : Date.now() - addedDays * 24 * 60 * 60 * 1000;
 
     return contacts.filter((contact) => {
       if (statusFilter !== "all" && contact.status !== statusFilter) return false;
       if (categoryRecipientIds && !categoryRecipientIds.has(contact.id)) return false;
+      if (addedSince && new Date(contact.createdAt).getTime() < addedSince) {
+        return false;
+      }
       if (
         q &&
         !`${contact.name || ""} ${contact.email}`.toLowerCase().includes(q)
@@ -303,7 +322,7 @@ export default function AudiencePage() {
       }
       return true;
     });
-  }, [contacts, query, statusFilter, activeCategoryFilter, mappings]);
+  }, [contacts, query, statusFilter, folderFilter, addedFilter, mappings]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageStart = (page - 1) * PAGE_SIZE;
@@ -524,9 +543,12 @@ export default function AudiencePage() {
       const data = await r.json();
       if (data.ok) {
         showToast("Folder deleted");
-        if (activeCategoryFilter === id) {
-          setActiveCategoryFilter(null);
-        }
+        setFolderFilter((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
         await loadCategories();
       } else {
         showToast(data.error || "Failed to delete folder");
@@ -570,114 +592,155 @@ export default function AudiencePage() {
     );
   }
 
-  const top3 = categories.slice(0, 3);
-  const activeFilterName = activeCategoryFilter
-    ? categories.find((c) => c.id === activeCategoryFilter)?.name
-    : null;
+  const ADDED_LABELS = {
+    any: "Any time",
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+    "90d": "Last 90 days",
+  } as const;
+  const hasActiveFilters =
+    folderFilter.size > 0 || statusFilter !== "all" || addedFilter !== "any";
+
+  function clearAllFilters() {
+    setFolderFilter(new Set());
+    setAddedFilter("any");
+    if (statusFilter !== "all") router.replace(pathname);
+  }
+
+  function toggleFolder(id: string) {
+    setFolderFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <div className="flex flex-col gap-6">
       {/* The module sidebar + breadcrumb already title this page. */}
-      {/* Folders Grid - Compact Padding */}
-      <div className="flex flex-col gap-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">Folders</h2>
-          {categories.length > 3 && (
-            <Button variant="ghost" size="sm" onClick={() => setSeeMoreOpen(true)} className="h-7 text-xs text-primary hover:text-primary p-0">
-              See more ({categories.length - 3})
-            </Button>
-          )}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {top3.map((cat, idx) => {
-            const color = FOLDER_COLORS[idx % FOLDER_COLORS.length]!;
-            const isFiltered = activeCategoryFilter === cat.id;
-            return (
-              <Card
-                key={cat.id}
-                className={cn(
-                  "cursor-pointer transition-all hover:bg-muted/10 active:scale-[0.98] p-0",
-                  isFiltered && "ring-2 ring-primary bg-muted/20 hover:bg-muted/20"
-                )}
-                onClick={() => setActiveCategoryFilter(isFiltered ? null : cat.id)}
-              >
-                <CardContent className="flex items-center gap-3 p-3">
-                  <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", color.bg)}>
-                    {isFiltered ? (
-                      <FolderOpenIcon className={cn("size-4.5", color.text)} />
-                    ) : (
-                      <FolderIcon className={cn("size-4.5", color.text)} />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-xs font-semibold text-foreground">{cat.name}</h3>
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {categoryCounts[cat.id] || 0} contact{(categoryCounts[cat.id] || 0) === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          <Card
-            className="border-dashed cursor-pointer transition-all hover:bg-muted/10 active:scale-[0.98] flex items-center justify-center h-[62px]"
-            onClick={() => setCreateFolderOpen(true)}
-          >
-            <CardContent className="flex items-center gap-2 p-0 text-muted-foreground text-xs font-medium">
-              <FolderPlusIcon className="size-4" />
-              New folder
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
       {/* Main Table section */}
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-muted-foreground">
-              {filtered.length} of {contacts.length} contact{contacts.length === 1 ? "" : "s"} shown
-            </p>
-            {activeFilterName && (
-              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
-                Folder: {activeFilterName}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-3.5 p-0 hover:bg-muted"
-                  onClick={() => setActiveCategoryFilter(null)}
-                >
-                  <XIcon className="size-2.5" />
-                </Button>
-              </Badge>
-            )}
-            {/* Status views live in the module sidebar — show the active one. */}
-            {statusFilter !== "all" && (
-              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
-                {STATUS_LABELS[statusFilter]}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-3.5 p-0 hover:bg-muted"
-                  onClick={() => router.replace(pathname)}
-                >
-                  <XIcon className="size-2.5" />
-                </Button>
-              </Badge>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 sm:w-72">
+      <section className="flex flex-col gap-3">
+        {/* ── Mailchimp-style filter bar: everything visible, nothing hidden ── */}
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-64">
               <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search name or email..."
+                placeholder="Search contacts..."
                 className="pl-8"
               />
             </div>
+
+            {/* Folders: multi-select */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <FolderIcon data-icon="inline-start" />
+                  Folders
+                  {folderFilter.size > 0 && (
+                    <Badge variant="secondary">{folderFilter.size}</Badge>
+                  )}
+                  <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                {categories.length === 0 ? (
+                  <DropdownMenuLabel className="font-normal text-muted-foreground">
+                    No folders yet
+                  </DropdownMenuLabel>
+                ) : (
+                  categories.map((cat) => (
+                    <DropdownMenuCheckboxItem
+                      key={cat.id}
+                      checked={folderFilter.has(cat.id)}
+                      onCheckedChange={() => toggleFolder(cat.id)}
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{cat.name}</span>
+                      <span className="ml-2 text-xs tabular-nums text-muted-foreground">
+                        {categoryCounts[cat.id] || 0}
+                      </span>
+                    </DropdownMenuCheckboxItem>
+                  ))
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
+                  <FolderPlusIcon />
+                  New folder
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSeeMoreOpen(true)}>
+                  <Edit2Icon />
+                  Manage folders
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Status: mirrors the sidebar via ?status= */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  Status
+                  {statusFilter !== "all" && (
+                    <Badge variant="secondary">{STATUS_LABELS[statusFilter]}</Badge>
+                  )}
+                  <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuRadioGroup
+                  value={statusFilter}
+                  onValueChange={(value) =>
+                    router.replace(
+                      value === "all" ? pathname : `${pathname}?status=${value}`,
+                    )
+                  }
+                >
+                  {STATUS_KEYS.map((key) => (
+                    <DropdownMenuRadioItem key={key} value={key}>
+                      <span className="min-w-0 flex-1">{STATUS_LABELS[key]}</span>
+                      <span className="ml-2 text-xs tabular-nums text-muted-foreground">
+                        {counts[key]}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Added: rolling window */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  Added
+                  {addedFilter !== "any" && (
+                    <Badge variant="secondary">{ADDED_LABELS[addedFilter]}</Badge>
+                  )}
+                  <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-44">
+                <DropdownMenuRadioGroup
+                  value={addedFilter}
+                  onValueChange={(value) =>
+                    setAddedFilter(value as typeof addedFilter)
+                  }
+                >
+                  {(Object.keys(ADDED_LABELS) as (keyof typeof ADDED_LABELS)[]).map(
+                    (key) => (
+                      <DropdownMenuRadioItem key={key} value={key}>
+                        {ADDED_LABELS[key]}
+                      </DropdownMenuRadioItem>
+                    ),
+                  )}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={exportContacts}>
               <DownloadIcon data-icon="inline-start" />
               Export
@@ -692,6 +755,71 @@ export default function AudiencePage() {
             </Button>
           </div>
         </div>
+
+        {/* ── Active filters row ── */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              Filtering:
+            </span>
+            {[...folderFilter].map((id) => {
+              const cat = categories.find((c) => c.id === id);
+              if (!cat) return null;
+              return (
+                <Badge key={id} variant="secondary" className="gap-1 pl-2 pr-1">
+                  {cat.name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${cat.name} filter`}
+                    className="cursor-pointer rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => toggleFolder(id)}
+                  >
+                    <XIcon className="size-2.5" />
+                  </button>
+                </Badge>
+              );
+            })}
+            {statusFilter !== "all" && (
+              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
+                {STATUS_LABELS[statusFilter]}
+                <button
+                  type="button"
+                  aria-label="Clear status filter"
+                  className="cursor-pointer rounded-full p-0.5 hover:bg-muted"
+                  onClick={() => router.replace(pathname)}
+                >
+                  <XIcon className="size-2.5" />
+                </button>
+              </Badge>
+            )}
+            {addedFilter !== "any" && (
+              <Badge variant="secondary" className="gap-1 pl-2 pr-1">
+                {ADDED_LABELS[addedFilter]}
+                <button
+                  type="button"
+                  aria-label="Clear added filter"
+                  className="cursor-pointer rounded-full p-0.5 hover:bg-muted"
+                  onClick={() => setAddedFilter("any")}
+                >
+                  <XIcon className="size-2.5" />
+                </button>
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 px-2 text-xs"
+              onClick={clearAllFilters}
+            >
+              Clear all
+            </Button>
+          </div>
+        )}
+
+        <p className="text-sm text-muted-foreground">
+          {filtered.length} of {contacts.length} contact
+          {contacts.length === 1 ? "" : "s"} shown
+        </p>
 
         {/* Table wrapper with scroll to prevent page scroll */}
         <div className="overflow-auto max-h-[450px] rounded-lg border border-border bg-card">
@@ -1084,7 +1212,7 @@ export default function AudiencePage() {
                   {categories.map((cat, idx) => {
                     const isEditing = editingCategoryId === cat.id;
                     const color = FOLDER_COLORS[idx % FOLDER_COLORS.length]!;
-                    const isFiltered = activeCategoryFilter === cat.id;
+                    const isFiltered = folderFilter.has(cat.id);
 
                     return (
                       <div
@@ -1128,7 +1256,7 @@ export default function AudiencePage() {
                             <div
                               className="flex flex-1 items-center gap-3 cursor-pointer min-w-0"
                               onClick={() => {
-                                setActiveCategoryFilter(isFiltered ? null : cat.id);
+                                toggleFolder(cat.id);
                                 setSeeMoreOpen(false);
                               }}
                             >
