@@ -44,6 +44,7 @@ import {
   type VideoBlock,
 } from "@/lib/email/document";
 import { BLOCK_LABELS } from "./editor-types";
+import { ImageUploadInput } from "./image-upload-input";
 
 export function BlockInspector({
   block,
@@ -279,7 +280,7 @@ function ImageBlockFields({
     <>
       <Field>
         <FieldLabel htmlFor="img-src">Image URL</FieldLabel>
-        <Input id="img-src" value={block.src} onChange={(e) => onChange((b) => ({ ...b, src: e.target.value }) as ImageBlock)} />
+        <ImageUploadInput id="img-src" value={block.src} onChange={(src) => onChange((b) => ({ ...b, src }) as ImageBlock)} />
       </Field>
       <Field>
         <FieldLabel htmlFor="img-alt">Alt text</FieldLabel>
@@ -430,7 +431,7 @@ function ArticleCardBlockFields({
       </Field>
       <Field>
         <FieldLabel htmlFor="article-img">Image URL</FieldLabel>
-        <Input id="article-img" value={block.imageSrc} onChange={(e) => setArticle({ imageSrc: e.target.value })} />
+        <ImageUploadInput id="article-img" value={block.imageSrc} onChange={(imageSrc) => setArticle({ imageSrc })} />
       </Field>
       <Field>
         <FieldLabel>Image position</FieldLabel>
@@ -707,10 +708,10 @@ function ColumnsBlockFields({
             {column.showImage && (
               <Field>
                 <FieldLabel>Image URL</FieldLabel>
-                <Input
+                <ImageUploadInput
                   value={column.imageSrc}
                   placeholder="https://..."
-                  onChange={(e) => setColumn(column.id, { imageSrc: e.target.value })}
+                  onChange={(imageSrc) => setColumn(column.id, { imageSrc })}
                 />
               </Field>
             )}
@@ -849,8 +850,8 @@ function LogoBlockFields({
     <>
       <Field>
         <FieldLabel htmlFor="logo-src">Logo URL</FieldLabel>
-        <Input id="logo-src" value={block.src} placeholder="https://yoursite.com/logo.png"
-          onChange={(e) => onChange((b) => ({ ...b, src: e.target.value }) as LogoBlock)} />
+        <ImageUploadInput id="logo-src" value={block.src} placeholder="https://yoursite.com/logo.png"
+          onChange={(src) => onChange((b) => ({ ...b, src }) as LogoBlock)} />
       </Field>
       <Field>
         <FieldLabel htmlFor="logo-alt">Alt text</FieldLabel>
