@@ -2,27 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 // Themed, promise-based replacements for window.confirm / alert / prompt.
 // <AppDialogs /> mounts once in Providers; the exported functions can then be
@@ -124,13 +114,13 @@ export function AppDialogs() {
     const o = active.options;
     return (
       <Dialog open onOpenChange={(open) => !open && finish(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md" showCloseButton={false}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
               finish(promptValue);
             }}
-            className="grid gap-4"
+            className="flex min-h-0 flex-col"
           >
             <DialogHeader>
               <DialogTitle>{o.title}</DialogTitle>
@@ -138,12 +128,14 @@ export function AppDialogs() {
                 <DialogDescription>{o.description}</DialogDescription>
               )}
             </DialogHeader>
-            <Input
-              autoFocus
-              value={promptValue}
-              placeholder={o.placeholder}
-              onChange={(e) => setPromptValue(e.target.value)}
-            />
+            <DialogPanel>
+              <Input
+                autoFocus
+                value={promptValue}
+                placeholder={o.placeholder}
+                onChange={(e) => setPromptValue(e.target.value)}
+              />
+            </DialogPanel>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => finish(null)}>
                 {o.cancelLabel ?? "Cancel"}
@@ -151,7 +143,7 @@ export function AppDialogs() {
               <Button type="submit">{o.confirmLabel ?? "OK"}</Button>
             </DialogFooter>
           </form>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
     );
   }
@@ -160,36 +152,36 @@ export function AppDialogs() {
   const o = active.options;
 
   return (
-    <AlertDialog open onOpenChange={(open) => !open && finish(false)}>
-      <AlertDialogContent className="sm:max-w-md">
-        <AlertDialogHeader>
-          <AlertDialogTitle>{o.title}</AlertDialogTitle>
+    <Dialog open onOpenChange={(open) => !open && finish(false)}>
+      <DialogPopup className="sm:max-w-md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{o.title}</DialogTitle>
           {o.description && (
-            <AlertDialogDescription className="break-words">
+            <DialogDescription className="break-words">
               {o.description}
-            </AlertDialogDescription>
+            </DialogDescription>
           )}
-        </AlertDialogHeader>
-        <AlertDialogFooter>
+        </DialogHeader>
+        <DialogFooter>
           {isConfirm && (
-            <AlertDialogCancel onClick={() => finish(false)}>
+            <Button variant="outline" onClick={() => finish(false)}>
               {(o as ConfirmOptions).cancelLabel ?? "Cancel"}
-            </AlertDialogCancel>
+            </Button>
           )}
-          <AlertDialogAction
-            className={cn(
-              isConfirm &&
-                (o as ConfirmOptions).destructive &&
-                "bg-destructive text-white hover:bg-destructive/90",
-            )}
+          <Button
+            variant={
+              isConfirm && (o as ConfirmOptions).destructive
+                ? "destructive"
+                : "default"
+            }
             onClick={() => finish(true)}
           >
             {isConfirm
               ? ((o as ConfirmOptions).confirmLabel ?? "Continue")
               : ((o as AlertOptions).closeLabel ?? "OK")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }

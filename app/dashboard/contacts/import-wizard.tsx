@@ -16,12 +16,13 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   Field,
   FieldDescription,
@@ -180,7 +181,7 @@ export function ImportWizard({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogPopup className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {summary
@@ -195,6 +196,7 @@ export function ImportWizard({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogPanel>
         {summary ? (
           <SummaryStep summary={summary} />
         ) : parsed ? (
@@ -211,6 +213,7 @@ export function ImportWizard({
         ) : (
           <UploadStep parseError={parseError} onFile={onFile} />
         )}
+        </DialogPanel>
 
         <DialogFooter>
           {summary ? (
@@ -237,7 +240,7 @@ export function ImportWizard({
             </>
           )}
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

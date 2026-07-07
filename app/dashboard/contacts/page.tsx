@@ -31,12 +31,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   Empty,
   EmptyContent,
@@ -954,14 +955,15 @@ export default function AudiencePage() {
 
       {/* Folder quick create dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
             <DialogDescription>
               Create a new category folder to organize your contacts.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup className="py-2">
+          <DialogPanel>
+          <FieldGroup>
             <Field>
               <FieldLabel htmlFor="folder-name">Folder name</FieldLabel>
               <Input
@@ -976,6 +978,7 @@ export default function AudiencePage() {
               />
             </Field>
           </FieldGroup>
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>
               Cancel
@@ -985,20 +988,21 @@ export default function AudiencePage() {
               {creatingFolder ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Manage categories dialog for selection */}
       <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add to folders</DialogTitle>
             <DialogDescription>
               Associate the {selected.size} selected contact{selected.size === 1 ? "" : "s"} with folders.
             </DialogDescription>
           </DialogHeader>
+          <DialogPanel>
           {categories.length > 0 ? (
-            <FieldGroup className="py-2">
+            <FieldGroup>
               <Field>
                 <FieldLabel>Select folders</FieldLabel>
                 <Popover>
@@ -1062,6 +1066,7 @@ export default function AudiencePage() {
               No folders created yet. Please create a folder first.
             </div>
           )}
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManageCategoriesOpen(false)}>
               Cancel
@@ -1071,7 +1076,7 @@ export default function AudiencePage() {
               {savingMapping ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Folders CRUD see-more sidebar Sheet - With Padding */}
@@ -1278,7 +1283,7 @@ function AddContactDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogPopup className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add recipient</DialogTitle>
           <DialogDescription>
@@ -1286,6 +1291,7 @@ function AddContactDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogPanel>
         <FieldGroup className="gap-5">
           <Field>
             <FieldLabel htmlFor="contact-email">Email</FieldLabel>
@@ -1324,6 +1330,7 @@ function AddContactDialog({
             Import CSV / XLSX
           </Button>
         </FieldGroup>
+        </DialogPanel>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -1334,7 +1341,7 @@ function AddContactDialog({
             {adding ? "Adding..." : "Add contact"}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

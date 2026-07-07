@@ -53,12 +53,13 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   Select,
   SelectContent,
@@ -1549,7 +1550,7 @@ export function CampaignDetail({
 
       {/* Switch template dialog */}
       <Dialog open={switchOpen} onOpenChange={setSwitchOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Switch template</DialogTitle>
             <DialogDescription>
@@ -1558,6 +1559,7 @@ export function CampaignDetail({
               undone.
             </DialogDescription>
           </DialogHeader>
+          <DialogPanel>
           <Select value={switchTemplateId} onValueChange={setSwitchTemplateId}>
             <SelectTrigger className="w-full" aria-label="Template">
               <SelectValue placeholder="Choose a template" />
@@ -1584,6 +1586,7 @@ export function CampaignDetail({
               )}
             </SelectContent>
           </Select>
+          </DialogPanel>
           <DialogFooter>
             <Button
               variant="outline"
@@ -1597,7 +1600,7 @@ export function CampaignDetail({
               {switching ? "Switching…" : "Switch template"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Import wizard */}
