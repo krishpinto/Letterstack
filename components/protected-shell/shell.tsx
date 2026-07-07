@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { ContentHeader } from "./content-header";
 import { IconRail } from "./icon-rail";
 import { NavSidebar } from "./nav-sidebar";
-import { RightSidebar } from "./right-sidebar";
 import { TopNavbar, type NavbarOrganization } from "./top-navbar";
 
 type ProtectedShellProps = {
@@ -27,7 +26,6 @@ export function ProtectedShell({
   headerActions,
 }: ProtectedShellProps) {
   const [navOpen, setNavOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(false);
   const pathname = usePathname();
 
   const isSettings = pathname.startsWith("/dashboard/settings");
@@ -66,8 +64,6 @@ export function ProtectedShell({
               <ContentHeader
                 onToggleSidebar={() => setNavOpen((v) => !v)}
                 sidebarOpen={navOpen}
-                onToggleRight={() => setRightOpen((v) => !v)}
-                rightOpen={rightOpen}
                 actions={headerActions}
               />
             )}
@@ -82,11 +78,6 @@ export function ProtectedShell({
               {children}
             </main>
           </div>
-
-          {/* Right sidebar — hidden on content-only routes */}
-          {!contentOnly && rightOpen && (
-            <RightSidebar onClose={() => setRightOpen(false)} />
-          )}
         </div>
       </div>
     </div>

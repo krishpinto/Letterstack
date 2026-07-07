@@ -122,7 +122,7 @@ export default function OnboardingPage() {
                           <ToggleGroupItem
                             key={key}
                             value={key}
-                            className="h-auto justify-start rounded-xl p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                            className="h-auto min-w-0 shrink justify-start rounded-xl p-4 text-left whitespace-normal data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                           >
                             <span className="flex items-start gap-3">
                               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">

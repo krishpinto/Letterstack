@@ -53,12 +53,13 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   Select,
   SelectContent,
@@ -746,23 +747,20 @@ export function CampaignDetail({
         </Alert>
       )}
 
-      {/* ── Send progress bar (once sending) ── */}
-      {!isEditable && progress && (
+      {/* ── Send progress bar — live sends only; finished campaigns show
+             their numbers in analytics, not a stuck 100% bar ── */}
+      {!isEditable && progress && !isFinished && (
         <Card size="sm">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="font-medium">
-                {isFinished
-                  ? `${deliveryRate}% delivered`
-                  : `Sending… ${progressDone}/${progressTotal}`}
+                Sending… {progressDone}/{progressTotal}
               </span>
               <span className="tabular-nums text-muted-foreground">
-                {isFinished
-                  ? `${progressSent}/${progressTotal} delivered`
-                  : `${progressPct}%`}
+                {progressPct}%
               </span>
             </div>
-            <Progress value={isFinished ? deliveryRate : progressPct} />
+            <Progress value={progressPct} />
           </CardContent>
         </Card>
       )}
@@ -1549,7 +1547,7 @@ export function CampaignDetail({
 
       {/* Switch template dialog */}
       <Dialog open={switchOpen} onOpenChange={setSwitchOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Switch template</DialogTitle>
             <DialogDescription>
@@ -1558,6 +1556,7 @@ export function CampaignDetail({
               undone.
             </DialogDescription>
           </DialogHeader>
+          <DialogPanel>
           <Select value={switchTemplateId} onValueChange={setSwitchTemplateId}>
             <SelectTrigger className="w-full" aria-label="Template">
               <SelectValue placeholder="Choose a template" />
@@ -1584,6 +1583,7 @@ export function CampaignDetail({
               )}
             </SelectContent>
           </Select>
+          </DialogPanel>
           <DialogFooter>
             <Button
               variant="outline"
@@ -1597,7 +1597,7 @@ export function CampaignDetail({
               {switching ? "Switching…" : "Switch template"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Import wizard */}

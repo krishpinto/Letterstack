@@ -42,10 +42,11 @@ type NavItemProps = {
   icon: React.ElementType;
   label: string;
   active?: boolean;
+  count?: number;
   className?: string;
 };
 
-function NavItem({ href, icon: Icon, label, active, className }: NavItemProps) {
+function NavItem({ href, icon: Icon, label, active, count, className }: NavItemProps) {
   return (
     <Link
       href={href}
@@ -59,6 +60,11 @@ function NavItem({ href, icon: Icon, label, active, className }: NavItemProps) {
     >
       <Icon className="size-3.5 shrink-0 opacity-70 group-[.active]:opacity-100" />
       <span className="truncate">{label}</span>
+      {typeof count === "number" && (
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground/70">
+          {count}
+        </span>
+      )}
     </Link>
   );
 }
@@ -173,8 +179,16 @@ const QUICK_ADD_CLASS =
 
 // ─── Campaigns module ─────────────────────────────────────────────────────────
 
+type CampaignCounts = {
+  all: number;
+  draft: number;
+  scheduled: number;
+  sent: number;
+};
+
 function useRecentCampaigns() {
   const [recent, setRecent] = useState<RecentCampaign[]>([]);
+  const [counts, setCounts] = useState<CampaignCounts | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -183,15 +197,20 @@ function useRecentCampaigns() {
         .then((r) => r.json())
         .then((data) => {
           if (!alive || !data.ok) return;
+          const campaigns: RecentCampaign[] = data.campaigns ?? [];
           setRecent(
-            (data.campaigns ?? [])
-              .slice(0, 5)
-              .map((c: RecentCampaign) => ({
-                id: c.id,
-                name: c.name || "Untitled campaign",
-                status: c.status,
-              })),
+            campaigns.slice(0, 5).map((c) => ({
+              id: c.id,
+              name: c.name || "Untitled campaign",
+              status: c.status,
+            })),
           );
+          setCounts({
+            all: campaigns.length,
+            draft: campaigns.filter((c) => c.status === "draft").length,
+            scheduled: campaigns.filter((c) => c.status === "scheduled").length,
+            sent: campaigns.filter((c) => c.status === "sent").length,
+          });
         })
         .catch(() => {});
     load();
@@ -202,12 +221,17 @@ function useRecentCampaigns() {
     };
   }, []);
 
-  return recent;
+  return { recent, counts };
 }
 
-function RecentSection({ pathname }: { pathname: string }) {
+function RecentSection({
+  pathname,
+  recent,
+}: {
+  pathname: string;
+  recent: RecentCampaign[];
+}) {
   const [open, setOpen] = useState(true);
-  const recent = useRecentCampaigns();
 
   return (
     <div className="mt-2 flex flex-1 flex-col overflow-hidden px-2">
@@ -245,6 +269,7 @@ function CampaignsSidebar() {
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
   const onList = pathname === "/dashboard/campaigns";
+  const { recent, counts } = useRecentCampaigns();
 
   const statusViews = [
     { key: "draft", label: "Drafts", icon: PenLineIcon },
@@ -265,7 +290,7 @@ function CampaignsSidebar() {
           className="size-6 text-muted-foreground hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns" aria-label="New campaign">
+          <Link href="/dashboard/campaigns?create=1" aria-label="New campaign">
             <PlusIcon className="size-3.5" />
           </Link>
         </Button>
@@ -279,7 +304,7 @@ function CampaignsSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>
@@ -293,6 +318,7 @@ function CampaignsSidebar() {
           icon={SendIcon}
           label="All campaigns"
           active={onList && !status}
+          count={counts?.all}
         />
         {statusViews.map((view) => (
           <NavItem
@@ -301,6 +327,7 @@ function CampaignsSidebar() {
             icon={view.icon}
             label={view.label}
             active={onList && status === view.key}
+            count={counts?.[view.key]}
           />
         ))}
         <NavItem
@@ -314,7 +341,7 @@ function CampaignsSidebar() {
       {/* ── Divider ── */}
       <div className="mx-3 my-1 border-t border-sidebar-border/50" />
 
-      <RecentSection pathname={pathname} />
+      <RecentSection pathname={pathname} recent={recent} />
     </aside>
   );
 }
@@ -359,6 +386,12 @@ function AudienceSidebar() {
           icon={UsersIcon}
           label="All contacts"
           active={onList && !status && !importing}
+        />
+        <NavItem
+          href="/dashboard/audience?status=subscribed"
+          icon={MailCheckIcon}
+          label="Subscribed"
+          active={onList && status === "subscribed"}
         />
         <NavItem
           href="/dashboard/audience?status=bounced"
@@ -544,6 +577,7 @@ function DomainsSidebar() {
 function DefaultSidebar() {
   const pathname = usePathname();
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const { recent } = useRecentCampaigns();
 
   return (
     <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background">
@@ -578,7 +612,7 @@ function DefaultSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>
@@ -653,7 +687,7 @@ function DefaultSidebar() {
         )}
       </div>
 
-      <RecentSection pathname={pathname} />
+      <RecentSection pathname={pathname} recent={recent} />
     </aside>
   );
 }

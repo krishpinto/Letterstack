@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { alertDialog } from "@/components/app-dialogs";
 import { EditorBackLink } from "@/components/editor/editor-back-link";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
@@ -25,11 +26,17 @@ export default function EditorPage() {
         localStorage.removeItem(STORAGE_KEY);
         router.push("/dashboard/templates");
       } else {
-        alert(data.error || "Failed to save template");
+        await alertDialog({
+          title: "Could not save template",
+          description: data.error || "Something went wrong. Please try again.",
+        });
       }
     } catch (err) {
       console.error(err);
-      alert("An error occurred while saving the template");
+      await alertDialog({
+        title: "Could not save template",
+        description: "An error occurred while saving. Please try again.",
+      });
     }
   }
 

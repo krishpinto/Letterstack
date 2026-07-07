@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/features", homeHref: "#features", label: "Features" },
   { href: "/design", label: "Design" },
+  { href: "/templates", label: "Templates" },
   { href: "/pricing", homeHref: "#pricing", label: "Pricing" },
   { href: "/about", homeHref: "#about", label: "About" },
   { href: "/contact", homeHref: "#contact", label: "Contact" },

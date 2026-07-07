@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
+import { alertDialog } from "@/components/app-dialogs";
 import { EditorBackLink } from "@/components/editor/editor-back-link";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,12 +28,12 @@ export default function EditTemplatePage() {
         if (data.ok && data.template) {
           setInitialDoc(data.template.document);
         } else {
-          alert("Failed to load template");
+          await alertDialog({ title: "Failed to load template" });
           router.push("/dashboard/templates");
         }
       } catch (err) {
         console.error(err);
-        alert("Failed to load template");
+        await alertDialog({ title: "Failed to load template" });
         router.push("/dashboard/templates");
       } finally {
         setLoading(false);
@@ -50,11 +51,17 @@ export default function EditTemplatePage() {
       });
       const data = await r.json();
       if (!data.ok) {
-        alert(data.error || "Failed to save template");
+        await alertDialog({
+          title: "Could not save template",
+          description: data.error || "Something went wrong. Please try again.",
+        });
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to save template");
+      await alertDialog({
+        title: "Could not save template",
+        description: "Something went wrong. Please try again.",
+      });
     }
   }
 

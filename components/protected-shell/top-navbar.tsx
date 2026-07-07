@@ -20,14 +20,6 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
+import { CreateWorkspaceScreen } from "./create-workspace-screen";
 
 export type NavbarOrganization = {
   id: string;
@@ -75,9 +68,6 @@ export function TopNavbar({
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
@@ -109,41 +99,14 @@ export function TopNavbar({
     }
   }
 
-  async function createOrganization(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = newName.trim();
-    if (name.length < 2) {
-      setCreateError("Workspace name must be at least 2 characters.");
-      return;
-    }
-    setCreating(true);
-    setCreateError(null);
-    try {
-      const r = await fetch("/api/organizations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: "business" }),
-      });
-      const data = await r.json().catch(() => null);
-      if (!r.ok || !data?.ok) {
-        throw new Error(data?.error ?? "Could not create workspace.");
-      }
-      const created = data.organization as NavbarOrganization;
-      setOrgs((current) =>
-        Array.isArray(data.organizations) ? data.organizations : [...current, created],
-      );
-      setActiveOrg(created);
-      dispatchOrganizationChanged(created.id);
-      setCreateOpen(false);
-      setNewName("");
-      startRefresh(() => router.refresh());
-    } catch (error) {
-      setCreateError(
-        error instanceof Error ? error.message : "Could not create workspace.",
-      );
-    } finally {
-      setCreating(false);
-    }
+  function handleWorkspaceCreated(
+    created: NavbarOrganization,
+    organizations?: NavbarOrganization[],
+  ) {
+    setOrgs((current) => organizations ?? [...current, created]);
+    setActiveOrg(created);
+    dispatchOrganizationChanged(created.id);
+    startRefresh(() => router.refresh());
   }
 
   return (
@@ -354,57 +317,13 @@ export function TopNavbar({
         </DropdownMenu>
       </div>
 
-      {/* ── Create workspace dialog ── */}
-      <Dialog
+      {/* ── Create workspace: Plane-style full-screen takeover ── */}
+      <CreateWorkspaceScreen
         open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) {
-            setNewName("");
-            setCreateError(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <form onSubmit={createOrganization} className="grid gap-5">
-            <DialogHeader>
-              <DialogTitle>Create workspace</DialogTitle>
-              <DialogDescription>
-                Add a new business workspace. It becomes your active workspace
-                right away.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium" htmlFor="new-workspace-name">
-                Workspace name
-              </label>
-              <Input
-                id="new-workspace-name"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder="Acme Studio"
-                disabled={creating}
-              />
-            </div>
-            {createError && (
-              <p className="text-sm text-destructive">{createError}</p>
-            )}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateOpen(false)}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? "Creating..." : "Create workspace"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setCreateOpen}
+        userEmail={userEmail}
+        onCreated={handleWorkspaceCreated}
+      />
     </header>
   );
 }

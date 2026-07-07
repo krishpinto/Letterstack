@@ -27,6 +27,7 @@
     "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json",
     "@evilcharts": "https://evilcharts.com/r/{name}.json",
     "@componentry": "https://componentry.fun/r/{name}.json",
-    "@magicui": "https://magicui.design/r/{name}"
+    "@magicui": "https://magicui.design/r/{name}",
+    "@coss": "https://coss.com/ui/r/{name}.json"
   }
 }

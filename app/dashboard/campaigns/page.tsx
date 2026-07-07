@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  FilterIcon,
   MailIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -15,17 +14,20 @@ import {
 import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { confirmDialog } from "@/components/app-dialogs";
+import { SelectionPill } from "@/components/selection-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -173,6 +175,17 @@ export default function CampaignsPage() {
     void loadCampaigns();
   }, [loadCampaigns]);
 
+  // The module sidebar's "New campaign" buttons land here as ?create=1 —
+  // open the dialog and strip the flag (keeping any status filter).
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") return;
+    setCreateOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
+    const qs = next.toString();
+    router.replace(qs ? `/dashboard/campaigns?${qs}` : "/dashboard/campaigns");
+  }, [searchParams, router]);
+
   useEffect(() => {
     return onOrganizationChanged(() => {
       setSelected(new Set());
@@ -182,29 +195,6 @@ export default function CampaignsPage() {
       void loadCampaigns();
     });
   }, [loadCampaigns]);
-
-  const counts = useMemo(() => {
-    const c: Record<StatusKey, number> = {
-      all: list.length,
-      draft: 0,
-      scheduled: 0,
-      sending: 0,
-      sent: 0,
-    };
-
-    list.forEach((item) => {
-      if (
-        item.status === "draft" ||
-        item.status === "scheduled" ||
-        item.status === "sending" ||
-        item.status === "sent"
-      ) {
-        c[item.status]++;
-      }
-    });
-
-    return c;
-  }, [list]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -292,44 +282,33 @@ export default function CampaignsPage() {
     const ids = [...selected];
     if (ids.length === 0) return;
 
-    if (
-      !window.confirm(
-        `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
 
     await deleteCampaigns(ids);
   }
 
   async function handleRowDelete(campaign: Campaign) {
-    if (
-      !window.confirm(
-        `Delete ${campaign.name || "this campaign"}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: `Delete ${campaign.name || "this campaign"}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
 
     await deleteCampaigns([campaign.id]);
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Campaigns</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create, review, and monitor email campaigns from one workspace.
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <PlusIcon data-icon="inline-start" />
-          Create
-        </Button>
-      </div>
-
+      {/* The module sidebar + breadcrumb already title this page — the
+          toolbar goes straight to work instead of repeating "Campaigns". */}
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
@@ -346,38 +325,25 @@ export default function CampaignsPage() {
                 className="pl-8"
               />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <FilterIcon data-icon="inline-start" />
-                  Filter
-                  {statusFilter !== "all" && (
-                    <Badge variant="secondary">
-                      {STATUS_LABELS[statusFilter]}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Status</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  {(["all", "draft", "scheduled", "sending", "sent"] as StatusKey[]).map(
-                    (key) => (
-                      <DropdownMenuItem
-                        key={key}
-                        onClick={() => setStatusFilter(key)}
-                      >
-                        <span>{STATUS_LABELS[key]}</span>
-                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                          {counts[key]}
-                        </span>
-                      </DropdownMenuItem>
-                    ),
-                  )}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Status filtering lives in the module sidebar — the toolbar
+                only shows the active view when it isn't "all". */}
+            {statusFilter !== "all" && (
+              <Badge variant="secondary" className="h-9 gap-1.5 px-3">
+                {STATUS_LABELS[statusFilter]}
+                <button
+                  type="button"
+                  aria-label="Clear status filter"
+                  className="cursor-pointer text-muted-foreground hover:text-foreground"
+                  onClick={() => setStatusFilter("all")}
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+            <Button onClick={() => setCreateOpen(true)}>
+              <PlusIcon data-icon="inline-start" />
+              Create
+            </Button>
           </div>
         </div>
 
@@ -398,7 +364,7 @@ export default function CampaignsPage() {
                     aria-label="Select all visible campaigns"
                   />
                 </TableHead>
-                <TableHead>Campaign</TableHead>
+                <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden lg:table-cell">Recipients</TableHead>
                 <TableHead className="hidden xl:table-cell">Created</TableHead>
@@ -596,32 +562,20 @@ export default function CampaignsPage() {
           )}
         </div>
 
-        {selected.size > 0 && (
-          <Alert>
-            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                {selected.size} campaign{selected.size === 1 ? "" : "s"} selected
-              </span>
-              <span className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelected(new Set())}
-                >
-                  Clear
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                >
-                  <Trash2Icon data-icon="inline-start" />
-                  Delete
-                </Button>
-              </span>
-            </AlertDescription>
-          </Alert>
-        )}
+        <SelectionPill
+          count={selected.size}
+          onClear={() => setSelected(new Set())}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full text-destructive hover:text-destructive"
+            onClick={handleBulkDelete}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete
+          </Button>
+        </SelectionPill>
       </section>
 
       <CreateCampaignDialog
@@ -768,7 +722,7 @@ function CreateCampaignDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogPopup className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create a new email</DialogTitle>
           <DialogDescription>
@@ -776,6 +730,7 @@ function CreateCampaignDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogPanel>
         <FieldGroup className="gap-5">
           <Field>
             <FieldLabel>Type</FieldLabel>
@@ -885,6 +840,7 @@ function CreateCampaignDialog({
             </Alert>
           )}
         </FieldGroup>
+        </DialogPanel>
 
         <DialogFooter>
           <Button
@@ -899,7 +855,7 @@ function CreateCampaignDialog({
             {creating ? "Creating..." : "Begin"}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

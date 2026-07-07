@@ -31,6 +31,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
+import { alertDialog } from "@/components/app-dialogs"
 import { BlockInspector } from "@/components/editor/block-inspector"
 import { CanvasBlockPreview } from "@/components/editor/canvas-block-preview"
 import {
@@ -62,12 +63,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@/components/ui/coss-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -308,10 +310,16 @@ export function EditorShell({
         setPasteJsonText("")
         showDockStatus("saved")
       } else {
-        alert("Invalid email template JSON structure.")
+        void alertDialog({
+          title: "Invalid template JSON",
+          description: "The pasted JSON is not a valid email template structure.",
+        })
       }
     } catch {
-      alert("Invalid JSON format.")
+      void alertDialog({
+        title: "Invalid JSON",
+        description: "The pasted text could not be parsed as JSON.",
+      })
     }
   }, [pasteJsonText, showDockStatus, updateDocument])
 
@@ -618,14 +626,15 @@ export function EditorShell({
 
       {/* Save as Template Dialog */}
       <Dialog open={saveTemplateDialogOpen} onOpenChange={setSaveTemplateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Save as template</DialogTitle>
             <DialogDescription>
               Enter a name for this template to save it to your library.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup className="py-2">
+          <DialogPanel>
+          <FieldGroup>
             <Field>
               <FieldLabel htmlFor="template-name-input">Template name</FieldLabel>
               <Input
@@ -640,6 +649,7 @@ export function EditorShell({
               />
             </Field>
           </FieldGroup>
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveTemplateDialogOpen(false)}>
               Cancel
@@ -648,19 +658,20 @@ export function EditorShell({
               {savingTemplate ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Paste JSON Dialog */}
       <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogPopup className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Paste template JSON</DialogTitle>
             <DialogDescription>
               Paste the JSON code of a template below to load it into the editor canvas.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup className="py-2">
+          <DialogPanel>
+          <FieldGroup>
             <Field>
               <FieldLabel htmlFor="paste-json-input">JSON Code</FieldLabel>
               <Textarea
@@ -673,6 +684,7 @@ export function EditorShell({
               />
             </Field>
           </FieldGroup>
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasteOpen(false)}>
               Cancel
@@ -681,7 +693,7 @@ export function EditorShell({
               Import JSON
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
           </SidebarInset>
         </SidebarProvider>
