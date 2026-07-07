@@ -6,10 +6,10 @@ import {
 import { listSuppressedSetForOrganization } from "@/db/suppression";
 import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
+import { validateEmails } from "@/lib/import/validation";
 
 export const runtime = "nodejs";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_ROWS = 50_000;
 
 type Incoming = { email?: unknown; name?: unknown };
@@ -43,32 +43,37 @@ export async function POST(request: Request) {
   ]);
   const existingSet = new Set(existing.map((recipient) => recipient.email));
 
+  // Stage 1 filter: syntax + disposable + role + MX/DNS, deduped by domain.
+  const { results, report } = await validateEmails(
+    contacts.map((row) => String(row.email ?? "")),
+  );
+
   const seen = new Set<string>();
   const toInsert: { email: string; name: string | null }[] = [];
-  let invalid = 0;
   let duplicates = 0;
   let suppressedCount = 0;
+  let roleFlagged = 0;
 
-  for (const row of contacts) {
-    const email = String(row.email ?? "").trim().toLowerCase();
-    const name = String(row.name ?? "").trim() || null;
+  results.forEach((result, index) => {
+    // Dropped by the validator (bad syntax, dead domain, disposable) — already
+    // tallied in `report`, nothing more to do.
+    if (result.status !== "valid") return;
 
-    if (!EMAIL_RE.test(email)) {
-      invalid++;
-      continue;
-    }
+    const email = result.email;
     if (seen.has(email) || existingSet.has(email)) {
       duplicates++;
-      continue;
+      return;
     }
     if (suppressed.has(email)) {
       suppressedCount++;
-      continue;
+      return;
     }
 
+    const name = String(contacts[index].name ?? "").trim() || null;
     seen.add(email);
     toInsert.push({ email, name });
-  }
+    if (result.flags.includes("role")) roleFlagged++;
+  });
 
   const inserted = await addRecipientsBulk(organizationId, userId, toInsert);
 
@@ -91,7 +96,11 @@ export async function POST(request: Request) {
       received: contacts.length,
       imported: inserted.length,
       duplicates,
-      invalid,
+      invalid: report.invalidSyntax,
+      deadDomain: report.deadDomain,
+      disposable: report.disposable,
+      roleFlagged,
+      typos: report.typos,
       suppressed: suppressedCount,
     },
   });
