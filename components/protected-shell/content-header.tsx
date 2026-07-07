@@ -1,7 +1,20 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { PanelLeftIcon, PanelRightIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import {
+  BarChart3Icon,
+  GlobeIcon,
+  HomeIcon,
+  LayoutTemplateIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
+  SearchIcon,
+  SendIcon,
+  SettingsIcon,
+  SlidersHorizontalIcon,
+  UsersIcon,
+  WorkflowIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -9,16 +22,16 @@ import { cn } from "@/lib/utils";
 
 // ─── Page metadata ────────────────────────────────────────────────────────────
 
-const PAGE_METADATA: Record<string, { title: string; emoji: string }> = {
-  "/dashboard": { title: "Dashboard", emoji: "🏠" },
-  "/dashboard/campaigns": { title: "Campaigns", emoji: "📤" },
-  "/dashboard/audience": { title: "Audience", emoji: "👥" },
-  "/dashboard/contacts": { title: "Audience", emoji: "👥" },
-  "/dashboard/templates": { title: "Templates", emoji: "📋" },
-  "/dashboard/automations": { title: "Automations", emoji: "⚡" },
-  "/dashboard/analytics": { title: "Analytics", emoji: "📊" },
-  "/dashboard/domains": { title: "Domains", emoji: "🌐" },
-  "/dashboard/settings": { title: "Settings", emoji: "⚙️" },
+const PAGE_METADATA: Record<string, { title: string; icon: React.ElementType }> = {
+  "/dashboard": { title: "Dashboard", icon: HomeIcon },
+  "/dashboard/campaigns": { title: "Campaigns", icon: SendIcon },
+  "/dashboard/audience": { title: "Audience", icon: UsersIcon },
+  "/dashboard/contacts": { title: "Audience", icon: UsersIcon },
+  "/dashboard/templates": { title: "Templates", icon: LayoutTemplateIcon },
+  "/dashboard/automations": { title: "Automations", icon: WorkflowIcon },
+  "/dashboard/analytics": { title: "Analytics", icon: BarChart3Icon },
+  "/dashboard/domains": { title: "Domains", icon: GlobeIcon },
+  "/dashboard/settings": { title: "Settings", icon: SettingsIcon },
 };
 
 function getPageMeta(pathname: string) {
@@ -26,7 +39,7 @@ function getPageMeta(pathname: string) {
   const prefixMatch = Object.entries(PAGE_METADATA).find(
     ([key]) => key !== "/dashboard" && pathname.startsWith(key),
   );
-  return prefixMatch ? prefixMatch[1] : { title: "Dashboard", emoji: "📂" };
+  return prefixMatch ? prefixMatch[1] : { title: "Dashboard", icon: HomeIcon };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -74,10 +87,8 @@ export function ContentHeader({
       <Separator orientation="vertical" className="h-3.5" />
 
       {/* Breadcrumb / title */}
-      <div className="flex items-center gap-1 text-sm">
-        <span className="text-xs leading-none" aria-hidden>
-          {meta.emoji}
-        </span>
+      <div className="flex items-center gap-1.5 text-sm">
+        <meta.icon className="size-3.5 text-muted-foreground" aria-hidden />
         <span className="text-xs font-medium text-foreground">{meta.title}</span>
       </div>
 

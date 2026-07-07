@@ -29,17 +29,11 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CampaignStatusIcon } from "@/components/campaign-status-icon";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { cn } from "@/lib/utils";
 
 type RecentCampaign = { id: string; name: string; status: string };
-
-function statusEmoji(status: string) {
-  if (status === "sent") return "✅";
-  if (status === "sending") return "📤";
-  if (status === "scheduled") return "⏰";
-  return "📝";
-}
 
 // ─── Nav item ─────────────────────────────────────────────────────────────────
 
@@ -236,7 +230,7 @@ function RecentSection({ pathname }: { pathname: string }) {
                   : "text-sidebar-foreground/55 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
               )}
             >
-              <span className="text-xs leading-none">{statusEmoji(c.status)}</span>
+              <CampaignStatusIcon status={c.status} className="size-3" />
               <span className="truncate">{c.name}</span>
             </Link>
           ))}
