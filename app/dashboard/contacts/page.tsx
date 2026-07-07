@@ -24,6 +24,7 @@ import {
 import { ImportWizard } from "./import-wizard";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { confirmDialog } from "@/components/app-dialogs";
+import { SelectionPill } from "@/components/selection-pill";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -882,44 +883,46 @@ export default function AudiencePage() {
           )}
         </div>
 
-        {/* Selected contacts options alert placed below pagination */}
-        {selected.size > 0 && (
-          <Alert>
-            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                {selected.size} contact{selected.size === 1 ? "" : "s"} selected
-              </span>
-              <span className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={clearSelection}>
-                  Clear
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => {
-                  const initialCats = new Set<string>();
-                  selected.forEach((recipientId) => {
-                    mappings.forEach((m) => {
-                      if (m.recipientId === recipientId) {
-                        initialCats.add(m.categoryId);
-                      }
-                    });
-                  });
-                  setSelectedMappingCategories(initialCats);
-                  setManageCategoriesOpen(true);
-                }}>
-                  <TagIcon data-icon="inline-start" />
-                  Add to folders
-                </Button>
-                <Button variant="outline" size="sm" onClick={bulkSuppress}>
-                  <BanIcon data-icon="inline-start" />
-                  Suppress
-                </Button>
-                <Button variant="destructive" size="sm" onClick={bulkDelete}>
-                  <Trash2Icon data-icon="inline-start" />
-                  Delete
-                </Button>
-              </span>
-            </AlertDescription>
-          </Alert>
-        )}
+        <SelectionPill count={selected.size} onClear={clearSelection}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full"
+            onClick={() => {
+              const initialCats = new Set<string>();
+              selected.forEach((recipientId) => {
+                mappings.forEach((m) => {
+                  if (m.recipientId === recipientId) {
+                    initialCats.add(m.categoryId);
+                  }
+                });
+              });
+              setSelectedMappingCategories(initialCats);
+              setManageCategoriesOpen(true);
+            }}
+          >
+            <TagIcon data-icon="inline-start" />
+            Add to folders
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full"
+            onClick={bulkSuppress}
+          >
+            <BanIcon data-icon="inline-start" />
+            Suppress
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full text-destructive hover:text-destructive"
+            onClick={bulkDelete}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete
+          </Button>
+        </SelectionPill>
       </section>
 
       {/* dialog for single contact add */}

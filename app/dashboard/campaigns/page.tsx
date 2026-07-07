@@ -16,6 +16,7 @@ import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { confirmDialog } from "@/components/app-dialogs";
+import { SelectionPill } from "@/components/selection-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -602,32 +603,20 @@ export default function CampaignsPage() {
           )}
         </div>
 
-        {selected.size > 0 && (
-          <Alert>
-            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                {selected.size} campaign{selected.size === 1 ? "" : "s"} selected
-              </span>
-              <span className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelected(new Set())}
-                >
-                  Clear
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                >
-                  <Trash2Icon data-icon="inline-start" />
-                  Delete
-                </Button>
-              </span>
-            </AlertDescription>
-          </Alert>
-        )}
+        <SelectionPill
+          count={selected.size}
+          onClear={() => setSelected(new Set())}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full text-destructive hover:text-destructive"
+            onClick={handleBulkDelete}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete
+          </Button>
+        </SelectionPill>
       </section>
 
       <CreateCampaignDialog
