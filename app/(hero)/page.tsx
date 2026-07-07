@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ProgressiveBlur } from "@/components/progressive-blur";
 import { cn } from "@/lib/utils";
-import { LetterCascade } from "@/components/ui/letter-cascade";
+import { LetterCascade } from "@/components/letter-cascade";
 import { RichButton } from "@/components/rich-button";
 
 const featureOverviewCards = [
