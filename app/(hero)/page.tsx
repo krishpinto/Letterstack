@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ProgressiveBlur } from "@/components/progressive-blur";
 import { cn } from "@/lib/utils";
-import { LetterCascade } from "@/components/letter-cascade";
+import { LetterCascade } from "@/components/ui/letter-cascade";
 import { RichButton } from "@/components/rich-button";
 
 const featureOverviewCards = [
@@ -32,35 +32,67 @@ const featureOverviewCards = [
   },
 ] as const;
 
+const problemCards = [
+  {
+    label: "Expensive suites",
+    title: "Mailchimp gets heavy before your team does.",
+    description:
+      "Small monthly volumes can still inherit enterprise-style pricing, bundled tools, and contact-based billing that punishes simple campaigns.",
+    signal: "Cost grows faster than sends",
+  },
+  {
+    label: "Manual workflows",
+    title: "Zoho and hand-built emails slow every campaign down.",
+    description:
+      "Teams end up rebuilding templates, uploading image-heavy layouts, and checking the same details again before every send.",
+    signal: "Templates are hard to reuse",
+  },
+  {
+    label: "Image-based emails",
+    title: "Flattened campaign images break on real screens.",
+    description:
+      "Text becomes blurry, large displays expose quality loss, and emails stop behaving like responsive HTML.",
+    signal: "Design quality drops in inboxes",
+  },
+  {
+    label: "Focused alternative",
+    title: "LetterStack keeps the campaign system sharp.",
+    description:
+      "A visual editor, templates, own-domain sending, scheduling, bounces, and analytics stay in one focused workflow.",
+    signal: "Built for repeated sends",
+  },
+] as const;
+
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
       <Section id="hero" className="[&>div>div:last-child]:py-0">
         {/* Hero content above the background */}
-          <div className="relative z-10 flex min-h-[82svh] max-w-4xl flex-col items-start justify-start pt-16 pb-[26svh] sm:min-h-[88svh] sm:pt-20 sm:pb-[30svh] md:min-h-svh md:pt-28 md:pb-[40svh] lg:justify-center lg:pt-24 lg:pb-[34svh]">
+          <div className="relative z-10 flex min-h-[82svh] max-w-4xl flex-col items-start justify-start pt-16 pb-[28svh] sm:min-h-[88svh] sm:pt-20 sm:pb-[30svh] md:min-h-svh md:pt-28 md:pb-[36svh] lg:pt-28 lg:pb-[30svh]">
 
-          <h1 className="max-w-4xl pb-2 text-4xl font-semibold leading-[1.12] tracking-normal sm:text-5xl md:text-6xl lg:text-7xl">
+          {/* <h1 className=""> */}
             <LetterCascade
               text="Send bulk HTML email from your own domain."
-              className="flex flex-wrap justify-start text-left"
+              className="pb-1 text-[32px] font-semibold leading-[0.8] tracking-tight sm:max-w-[16ch] sm:text-[40px] md:max-w-[17ch] md:text-[56px] lg:text-[64px] xl:text-[68px] justify-start text-left [text-wrap:balance]"
             />
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground md:mt-6 md:text-xl md:leading-8">
+     
+          <p className="mt-4 max-w-2xl text-[15px] leading-6 text-muted-foreground md:mt-5 md:text-[16px] md:leading-7">
             LetterStack gives teams a visual campaign editor, reusable
             templates, and affordable sending without Mailchimp-style lock-in.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <RichButton color="primary" size="lg" asChild>
+          <div className="mt-5 flex flex-wrap items-center gap-3 md:mt-5">
+            <RichButton color="primary" size="sm" asChild>
               <Link href="/signup">Start Building</Link>
             </RichButton>
-            <Button size="lg" variant="outline" asChild>
+            <Button size="sm" variant="outline" asChild>
               <Link href="/design">Explore Templates</Link>
             </Button>
           </div>
         </div>
 
         {/* Hero background image */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[34svh] min-h-[250px] max-h-[560px] overflow-hidden select-none sm:h-[38svh] md:h-[42svh] lg:h-[44svh]">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[30svh] min-h-[220px] max-h-[460px] overflow-hidden select-none sm:h-[34svh] md:h-[38svh] lg:h-[40svh]">
+
           <Image
             src="/herobg.png"
             alt=""
@@ -78,6 +110,84 @@ export default function Home() {
         />
       </Section>
 
+
+
+      <Section id="problem" theme="neutral">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1fr)] lg:items-start">
+          <SectionHeading
+            label="Why teams switch"
+            heading={
+              <>
+                Email tools became too expensive, too manual, or too fragile.
+              </>
+            }
+            subheading="LetterStack is built around the work campaign teams repeat every month: design the email, collect the audience, send from the right domain, and understand what happened."
+            align="left"
+            className="lg:sticky lg:top-28"
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {problemCards.map((card, index) => (
+              <div
+                key={card.title}
+                className={cn(
+                  "group flex min-h-[260px] flex-col justify-between border border-border bg-background p-5 transition-colors hover:border-primary/40 md:p-6",
+                  index === problemCards.length - 1 &&
+                    "bg-primary text-primary-foreground hover:border-primary"
+                )}
+              >
+                <div>
+                  <div
+                    className={cn(
+                      "flex items-center justify-between gap-3 border-b border-border pb-4",
+                      index === problemCards.length - 1 && "border-primary-foreground/20"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "text-[12px] font-mono uppercase tracking-normal text-muted-foreground",
+                        index === problemCards.length - 1 && "text-primary-foreground/70"
+                      )}
+                    >
+                      {card.label}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[12px] font-mono text-muted-foreground/70",
+                        index === problemCards.length - 1 && "text-primary-foreground/60"
+                      )}
+                    >
+                      0{index + 1}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-5 text-[22px] font-semibold leading-[1.08] tracking-normal md:text-[26px]">
+                    {card.title}
+                  </h3>
+                  <p
+                    className={cn(
+                      "mt-4 text-[15px] leading-6 text-muted-foreground",
+                      index === problemCards.length - 1 && "text-primary-foreground/75"
+                    )}
+                  >
+                    {card.description}
+                  </p>
+                </div>
+
+                <div
+                  className={cn(
+                    "mt-8 border-t border-border pt-4 text-[13px] font-medium text-foreground",
+                    index === problemCards.length - 1 &&
+                      "border-primary-foreground/20 text-primary-foreground"
+                  )}
+                >
+                  {card.signal}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
 
 
       <Section id="features">

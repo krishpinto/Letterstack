@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Layers2Icon, MenuIcon } from "lucide-react";
+import { motion } from "motion/react";
 
 import { RichButton } from "@/components/rich-button";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,13 @@ const NAV_ITEMS = [
   { href: "/contact", homeHref: "#contact", label: "Contact" },
 ] as const;
 
+const NAV_TRANSITION = {
+  type: "spring",
+  stiffness: 260,
+  damping: 32,
+  mass: 0.9,
+} as const;
+
 export function Navbar() {
   const pathname = usePathname();
   const { status } = useSession();
@@ -43,19 +51,25 @@ export function Navbar() {
   }, []);
 
   return (
-    <header
-      className={cn(
-        "fixed inset-x-0 top-0 z-[60] transition-[padding] duration-300",
-        scrolled ? "px-3 py-2 sm:px-4" : "px-0 py-0",
-      )}
+    <motion.header
+      className="fixed inset-x-0 top-0 z-[60]"
+      animate={{
+        paddingTop: scrolled ? 8 : 0,
+        paddingBottom: scrolled ? 8 : 0,
+        paddingLeft: scrolled ? 16 : 0,
+        paddingRight: scrolled ? 16 : 0,
+      }}
+      transition={NAV_TRANSITION}
     >
-      <nav
+      <motion.nav
         className={cn(
-          "mx-auto flex h-14 items-center justify-between border-border bg-background/95 px-4 text-foreground shadow-none backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6",
+          "mx-auto flex h-14 items-center justify-between border-border bg-background/95 px-4 text-foreground backdrop-blur transition-[max-width,box-shadow] duration-300 ease-out supports-[backdrop-filter]:bg-background/80 sm:px-6",
           scrolled
             ? "max-w-5xl rounded-full border shadow-sm"
             : "max-w-none rounded-none border-b",
         )}
+        animate={{ borderRadius: scrolled ? 999 : 0 }}
+        transition={NAV_TRANSITION}
       >
         <Brand />
 
@@ -80,21 +94,19 @@ export function Navbar() {
               Sign out
             </Button>
           )}
-          <Button variant="ghost" asChild>
-            <Link href={isSignedIn ? "/dashboard" : "/login"}>
-              {isSignedIn ? "Dashboard" : "Log in"}
-            </Link>
-          </Button>
+          {!isSignedIn && (
+            <Button variant="ghost" asChild>
+              <Link href="/login">Log in</Link>
+            </Button>
+          )}
           <RichButton color="primary" size="sm" asChild>
-            <Link href={isSignedIn ? "/dashboard/campaigns" : "/signup"}>
-              {isSignedIn ? "New campaign" : "Get started"}
-            </Link>
+            <Link href="/dashboard">Dashboard</Link>
           </RichButton>
         </div>
 
         <MobileNav pathname={pathname} isSignedIn={isSignedIn} />
-      </nav>
-    </header>
+      </motion.nav>
+    </motion.header>
   );
 }
 
@@ -174,18 +186,16 @@ function MobileNav({
             ))}
           </div>
           <div className="mt-auto flex flex-col gap-2">
-            <SheetClose asChild>
-              <Button variant="outline" asChild>
-                <Link href={isSignedIn ? "/dashboard" : "/login"}>
-                  {isSignedIn ? "Dashboard" : "Log in"}
-                </Link>
-              </Button>
-            </SheetClose>
+            {!isSignedIn && (
+              <SheetClose asChild>
+                <Button variant="outline" asChild>
+                  <Link href="/login">Log in</Link>
+                </Button>
+              </SheetClose>
+            )}
             <SheetClose asChild>
               <RichButton color="primary" size="sm" asChild>
-                <Link href={isSignedIn ? "/dashboard/campaigns" : "/signup"}>
-                  {isSignedIn ? "New campaign" : "Get started"}
-                </Link>
+                <Link href="/dashboard">Dashboard</Link>
               </RichButton>
             </SheetClose>
             {isSignedIn && (

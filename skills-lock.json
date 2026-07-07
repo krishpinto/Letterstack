@@ -7,6 +7,12 @@
       "skillPath": "skills/email-sdk/SKILL.md",
       "computedHash": "397a20b6a4b505ceb9f359a7069593d2aebb43db34e2be93b99ccc8a98279e76"
     },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",

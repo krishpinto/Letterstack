@@ -124,11 +124,11 @@ const MODULE_SIDEBARS: Record<Module, () => React.JSX.Element> = {
 
 export function NavSidebar() {
   const pathname = usePathname();
-  const module = moduleForPath(pathname);
+  const activeModule = moduleForPath(pathname);
 
-  if (!module) return <DefaultSidebar />;
+  if (!activeModule) return <DefaultSidebar />;
 
-  const ModuleSidebar = MODULE_SIDEBARS[module];
+  const ModuleSidebar = MODULE_SIDEBARS[activeModule];
   // useSearchParams (inside) needs a Suspense boundary for prerendering.
   return (
     <Suspense
