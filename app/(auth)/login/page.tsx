@@ -30,6 +30,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
+// Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts — Google OAuth needs paid
+// verification, so the button is hidden until then.
+const GOOGLE_AUTH_ENABLED = false;
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -164,16 +168,18 @@ export default function LoginPage() {
                       {!loading && <ArrowRightIcon data-icon="inline-end" />}
                     </Button>
                   </Field>
-                  <FieldSeparator>or</FieldSeparator>
+                  {GOOGLE_AUTH_ENABLED && <FieldSeparator>or</FieldSeparator>}
                   <Field>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      type="button"
-                      onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-                    >
-                      Continue with Google
-                    </Button>
+                    {GOOGLE_AUTH_ENABLED && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        type="button"
+                        onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+                      >
+                        Continue with Google
+                      </Button>
+                    )}
                     <FieldDescription className="text-center">
                       New here?{" "}
                       <Link

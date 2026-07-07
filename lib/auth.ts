@@ -6,6 +6,11 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
+// Google OAuth is wired but switched off: Google requires paid verification
+// before the client can be used. Flip this (and the same flag on the login
+// and signup pages) when that's sorted.
+export const GOOGLE_AUTH_ENABLED = false;
+
 const authSecret =
   process.env.AUTH_SECRET ??
   process.env.NEXTAUTH_SECRET ??
@@ -70,10 +75,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
+    ...(GOOGLE_AUTH_ENABLED
+      ? [
+          Google({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt" },
   pages: {
