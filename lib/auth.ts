@@ -6,10 +6,8 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
-// Google OAuth is wired but switched off: Google requires paid verification
-// before the client can be used. Flip this (and the same flag on the login
-// and signup pages) when that's sorted.
-export const GOOGLE_AUTH_ENABLED = false;
+// Keep in sync with the same flag on the login and signup pages.
+export const GOOGLE_AUTH_ENABLED = true;
 
 const authSecret =
   process.env.AUTH_SECRET ??

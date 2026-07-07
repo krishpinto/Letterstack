@@ -31,9 +31,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
-// Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts — Google OAuth needs paid
-// verification, so the button is hidden until then.
-const GOOGLE_AUTH_ENABLED = false;
+// Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts.
+const GOOGLE_AUTH_ENABLED = true;
 
 export default function SignupPage() {
   const router = useRouter();
