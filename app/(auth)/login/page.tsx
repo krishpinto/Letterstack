@@ -133,7 +133,7 @@ export default function LoginPage() {
                     <div className="flex items-center justify-between gap-3">
                       <FieldLabel htmlFor="password">Password</FieldLabel>
                       <Link
-                        href="#"
+                        href="/forgot-password"
                         className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                       >
                         Forgot password?
