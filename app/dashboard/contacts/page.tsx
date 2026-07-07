@@ -274,7 +274,8 @@ export default function AudiencePage() {
       setSelected(new Set());
       setQuery("");
       setStatusFilter("all");
-      setActiveCategoryFilter(null);
+      setFolderFilter(new Set());
+      setAddedFilter("any");
       setPage(1);
       void load();
     });
@@ -918,8 +919,7 @@ export default function AudiencePage() {
                       hasContacts={contacts.length > 0}
                       onClear={() => {
                         setQuery("");
-                        setStatusFilter("all");
-                        setActiveCategoryFilter(null);
+                        clearAllFilters();
                       }}
                     />
                   </TableCell>
