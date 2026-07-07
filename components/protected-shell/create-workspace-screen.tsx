@@ -210,7 +210,9 @@ export function CreateWorkspaceScreen({
                       value={option.value}
                       disabled={creating}
                       className={cn(
-                        "h-auto justify-start rounded-xl p-3.5 text-left",
+                        // Toggle's base styles force nowrap/shrink-0, which
+                        // makes the descriptions bleed across cards.
+                        "h-auto min-w-0 shrink justify-start rounded-xl p-3.5 text-left whitespace-normal",
                         "data-[state=on]:border-primary data-[state=on]:bg-primary/5",
                       )}
                     >
