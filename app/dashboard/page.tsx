@@ -7,28 +7,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightIcon,
+  BarChart3Icon,
   CalendarIcon,
+  GlobeIcon,
   MailCheckIcon,
+  MailIcon,
   MailOpenIcon,
   PenLineIcon,
   PlusIcon,
   SendIcon,
+  TrendingUpIcon,
   UsersIcon,
+  WorkflowIcon,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from "recharts";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CampaignStatusIcon } from "@/components/campaign-status-icon";
 import {
   Card,
   CardContent,
@@ -36,12 +33,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartCard } from "@/components/ui/chart-card";
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { IconStack } from "@/components/reui/icon-stack";
 import {
   Table,
   TableBody,
@@ -52,6 +53,23 @@ import {
 } from "@/components/ui/table";
 import { StatFrameCard } from "@/components/ui/stat-frame-card";
 import { PageLoader } from "@/components/bar-spinner";
+import {
+  EvilAreaChart,
+  Area as EvilArea,
+  XAxis as EvilAreaXAxis,
+  YAxis as EvilAreaYAxis,
+  Grid as EvilAreaGrid,
+  Tooltip as EvilAreaTooltip,
+} from "@/components/evilcharts/charts/area-chart";
+import {
+  EvilBarChart,
+  Bar as EvilBar,
+  XAxis as EvilBarXAxis,
+  YAxis as EvilBarYAxis,
+  Grid as EvilBarGrid,
+  Tooltip as EvilBarTooltip,
+} from "@/components/evilcharts/charts/bar-chart";
+import type { ChartConfig as EvilChartConfig } from "@/components/evilcharts/ui/chart";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,11 +102,22 @@ type RecentCampaign = {
 
 type RecentTemplate = { id: string; name: string; updatedAt: string };
 
+type Services = {
+  campaignsTotal: number;
+  templatesTotal: number;
+  automationsTotal: number;
+  automationsEnabled: number;
+  domainsVerified: string[];
+  domainsTotal: number;
+  defaultSendingDomain: string;
+};
+
 type DashboardData = {
   stats: Stats;
   series: SeriesPoint[];
   recentCampaigns: RecentCampaign[];
   recentTemplates: RecentTemplate[];
+  services: Services;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,18 +139,16 @@ function shortDate(iso: string | null) {
   });
 }
 
-const STATUS_VARIANTS: Record<string, "default" | "secondary" | "outline"> = {
-  sent: "default",
-  sending: "outline",
-  scheduled: "outline",
-  draft: "secondary",
-};
+const RECENT_CAMPAIGNS_COLLAPSED_COUNT = 4;
 
-const chartConfig = {
-  delivered: { label: "Delivered", color: "var(--chart-1)" },
-  opened: { label: "Opened", color: "var(--chart-2)" },
-  openRate: { label: "Open rate", color: "var(--chart-1)" },
-} satisfies ChartConfig;
+const emailActivityConfig = {
+  delivered: { label: "Delivered", colors: { light: ["#0284c7"], dark: ["#38bdf8"] } },
+  opened: { label: "Opened", colors: { light: ["#059669"], dark: ["#34d399"] } },
+} satisfies EvilChartConfig;
+
+const openRateConfig = {
+  openRate: { label: "Open rate", colors: { light: ["#7c3aed"], dark: ["#a78bfa"] } },
+} satisfies EvilChartConfig;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -129,6 +156,7 @@ export default function DashboardHome() {
   const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [failed, setFailed] = useState(false);
+  const [showAllRecent, setShowAllRecent] = useState(false);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -149,7 +177,7 @@ export default function DashboardHome() {
   }
   if (!data) return <PageLoader className="h-full" />;
 
-  const { stats, series, recentCampaigns, recentTemplates } = data;
+  const { stats, series, recentCampaigns, recentTemplates, services } = data;
   const firstName = (session?.user?.name ?? "there").split(/\s+/)[0];
   const today = new Date().toLocaleDateString(undefined, {
     day: "numeric",
@@ -218,6 +246,122 @@ export default function DashboardHome() {
         />
       </div>
 
+      {/* ── Services overview ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Your services</CardTitle>
+          <CardDescription>
+            Everything LetterStack runs for you — jump into any of them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <ServiceTile
+              href="/dashboard/contacts"
+              icon={UsersIcon}
+              label="Audience"
+              status={`${stats.audience.toLocaleString()} contact${stats.audience === 1 ? "" : "s"}`}
+            />
+            <ServiceTile
+              href="/dashboard/campaigns"
+              icon={SendIcon}
+              label="Campaigns"
+              status={`${services.campaignsTotal} total · ${stats.campaignsSent} sent`}
+            />
+            <ServiceTile
+              href="/dashboard/templates"
+              icon={PenLineIcon}
+              label="Templates"
+              status={`${services.templatesTotal} saved`}
+            />
+            <ServiceTile
+              href="/dashboard/automations"
+              icon={WorkflowIcon}
+              label="Automations"
+              status={
+                services.automationsTotal === 0
+                  ? "None yet"
+                  : `${services.automationsEnabled}/${services.automationsTotal} live`
+              }
+            />
+            <ServiceTile
+              href="/dashboard/domains"
+              icon={GlobeIcon}
+              label="Domains"
+              status={
+                services.domainsVerified.length > 0
+                  ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
+                  : `Using shared default (${services.defaultSendingDomain})`
+              }
+              cta={services.domainsVerified.length === 0 ? "Add domain" : undefined}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Charts ── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Email activity" icon={TrendingUpIcon}>
+          <div className="px-4 pt-4">
+            <p className="text-sm text-muted-foreground">
+              Delivered and opened per day, last 14 days.
+            </p>
+          </div>
+          <div className="p-4 pt-2">
+            <EvilAreaChart
+              config={emailActivityConfig}
+              data={series}
+              className="h-56 w-full"
+              chartProps={{ margin: { left: -12, right: 8 } }}
+            >
+              <EvilAreaGrid strokeOpacity={0.35} />
+              <EvilAreaXAxis
+                dataKey="date"
+                minTickGap={28}
+                tickFormatter={(value: string) =>
+                  new Date(value).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "short",
+                  })
+                }
+              />
+              <EvilAreaYAxis allowDecimals={false} width={40} />
+              <EvilAreaTooltip />
+              <EvilArea dataKey="delivered" />
+              <EvilArea dataKey="opened" />
+            </EvilAreaChart>
+          </div>
+        </ChartCard>
+
+        <ChartCard title="Open rate by campaign" icon={BarChart3Icon}>
+          <div className="px-4 pt-4">
+            <p className="text-sm text-muted-foreground">
+              Unique opens over delivered, recent sends.
+            </p>
+          </div>
+          <div className="p-4 pt-2">
+            {openRateBars.length === 0 ? (
+              <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
+                Send a campaign to see engagement here.
+              </div>
+            ) : (
+              <EvilBarChart
+                config={openRateConfig}
+                data={openRateBars}
+                className="h-56 w-full"
+                chartProps={{ margin: { left: -12, right: 8 } }}
+              >
+                <EvilBarGrid />
+                <EvilBarXAxis dataKey="name" />
+                <EvilBarYAxis width={40} tickFormatter={(value: number) => `${value}%`} />
+                <EvilBarTooltip />
+                <EvilBar dataKey="openRate" variant="gradient" />
+              </EvilBarChart>
+            )}
+          </div>
+        </ChartCard>
+      </div>
+
       {/* ── Recent campaigns ── */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -232,144 +376,72 @@ export default function DashboardHome() {
             </Link>
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           {recentCampaigns.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No campaigns yet — create your first one to see activity here.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden sm:table-cell">Recipients</TableHead>
-                  <TableHead className="hidden md:table-cell">Open rate</TableHead>
-                  <TableHead className="hidden lg:table-cell">Sent</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentCampaigns.map((campaign) => (
-                  <TableRow key={campaign.id}>
-                    <TableCell className="max-w-56 truncate font-medium">
-                      {campaign.name || "Untitled campaign"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_VARIANTS[campaign.status] ?? "secondary"}>
-                        {campaign.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
-                      {campaign.audienceCount || "—"}
-                    </TableCell>
-                    <TableCell className="hidden tabular-nums text-muted-foreground md:table-cell">
-                      {campaign.openRate !== null ? `${campaign.openRate}%` : "—"}
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground lg:table-cell">
-                      {shortDate(campaign.sentAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/campaigns/${campaign.id}`}>View</Link>
-                      </Button>
-                    </TableCell>
+            <div className="relative overflow-hidden rounded-b-xl">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Campaign</TableHead>
+                    <TableHead className="hidden sm:table-cell">Recipients</TableHead>
+                    <TableHead className="hidden md:table-cell">Open rate</TableHead>
+                    <TableHead className="hidden lg:table-cell">Sent</TableHead>
+                    <TableHead className="pr-6 text-right">Action</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {(showAllRecent
+                    ? recentCampaigns
+                    : recentCampaigns.slice(0, RECENT_CAMPAIGNS_COLLAPSED_COUNT)
+                  ).map((campaign) => (
+                    <TableRow key={campaign.id}>
+                      <TableCell className="max-w-56 truncate pl-6 font-medium">
+                        <span className="flex items-center gap-2">
+                          <CampaignStatusIcon status={campaign.status} />
+                          <span className="truncate">
+                            {campaign.name || "Untitled campaign"}
+                          </span>
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden tabular-nums text-muted-foreground sm:table-cell">
+                        {campaign.audienceCount || "—"}
+                      </TableCell>
+                      <TableCell className="hidden tabular-nums text-muted-foreground md:table-cell">
+                        {campaign.openRate !== null ? `${campaign.openRate}%` : "—"}
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground lg:table-cell">
+                        {shortDate(campaign.sentAt)}
+                      </TableCell>
+                      <TableCell className="pr-6 text-right">
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/dashboard/campaigns/${campaign.id}`}>View</Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {!showAllRecent && recentCampaigns.length > RECENT_CAMPAIGNS_COLLAPSED_COUNT && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-28 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-3 backdrop-blur-sm [mask-image:linear-gradient(to_top,black_60%,transparent)]">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="pointer-events-auto"
+                    onClick={() => setShowAllRecent(true)}
+                  >
+                    See more
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
-
-      {/* ── Charts ── */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Email activity</CardTitle>
-            <CardDescription>
-              Delivered and opened per day, last 14 days.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className="h-56 w-full">
-              <AreaChart data={series} margin={{ left: -12, right: 8 }}>
-                <CartesianGrid vertical={false} strokeOpacity={0.35} />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={28}
-                  tickFormatter={(value: string) =>
-                    new Date(value).toLocaleDateString(undefined, {
-                      day: "numeric",
-                      month: "short",
-                    })
-                  }
-                />
-                <YAxis tickLine={false} axisLine={false} allowDecimals={false} width={40} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Area
-                  dataKey="delivered"
-                  type="monotone"
-                  fill="var(--color-delivered)"
-                  fillOpacity={0.18}
-                  stroke="var(--color-delivered)"
-                  strokeWidth={2}
-                />
-                <Area
-                  dataKey="opened"
-                  type="monotone"
-                  fill="var(--color-opened)"
-                  fillOpacity={0.18}
-                  stroke="var(--color-opened)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Open rate by campaign</CardTitle>
-            <CardDescription>Unique opens over delivered, recent sends.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {openRateBars.length === 0 ? (
-              <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
-                Send a campaign to see engagement here.
-              </div>
-            ) : (
-              <ChartContainer config={chartConfig} className="h-56 w-full">
-                <BarChart data={openRateBars} margin={{ left: -12, right: 8 }}>
-                  <CartesianGrid vertical={false} strokeOpacity={0.35} />
-                  <XAxis
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={40}
-                    tickFormatter={(value: number) => `${value}%`}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar
-                    dataKey="openRate"
-                    fill="var(--color-openRate)"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={44}
-                  />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
 
       {/* ── Recent templates ── */}
       <Card>
@@ -387,9 +459,28 @@ export default function DashboardHome() {
         </CardHeader>
         <CardContent>
           {recentTemplates.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No saved templates yet — design one in the editor and save it.
-            </p>
+            <Empty className="border-0 py-10">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <IconStack aria-hidden="true" className="h-24 w-22">
+                    <MailIcon className="size-5" />
+                  </IconStack>
+                </EmptyMedia>
+                <EmptyTitle>No saved templates</EmptyTitle>
+                <EmptyDescription>
+                  Create a custom template in the editor, and click &quot;Save
+                  as template&quot; to see it here!
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button size="sm" asChild>
+                  <Link href="/editor">
+                    <PlusIcon data-icon="inline-start" />
+                    Create a template
+                  </Link>
+                </Button>
+              </EmptyContent>
+            </Empty>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {recentTemplates.map((template) => (
@@ -416,5 +507,39 @@ export default function DashboardHome() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ServiceTile({
+  href,
+  icon: Icon,
+  label,
+  status,
+  cta,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  status: string;
+  cta?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-muted-foreground/40 hover:bg-muted/30"
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Icon className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{label}</span>
+        <span className="block truncate text-xs text-muted-foreground">{status}</span>
+      </span>
+      {cta ? (
+        <span className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors group-hover:border-muted-foreground/40 group-hover:text-foreground">
+          {cta}
+        </span>
+      ) : null}
+    </Link>
   );
 }
