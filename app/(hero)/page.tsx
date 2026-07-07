@@ -54,7 +54,7 @@ export default function Home() {
               <Link href="/signup">Start Building</Link>
             </RichButton>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/design">Explore Templates</Link>
+              <Link href="/templates">Explore Templates</Link>
             </Button>
           </div>
         </div>
