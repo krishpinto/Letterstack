@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  FilterIcon,
   MailIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -197,29 +196,6 @@ export default function CampaignsPage() {
     });
   }, [loadCampaigns]);
 
-  const counts = useMemo(() => {
-    const c: Record<StatusKey, number> = {
-      all: list.length,
-      draft: 0,
-      scheduled: 0,
-      sending: 0,
-      sent: 0,
-    };
-
-    list.forEach((item) => {
-      if (
-        item.status === "draft" ||
-        item.status === "scheduled" ||
-        item.status === "sending" ||
-        item.status === "sent"
-      ) {
-        c[item.status]++;
-      }
-    });
-
-    return c;
-  }, [list]);
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
@@ -349,38 +325,21 @@ export default function CampaignsPage() {
                 className="pl-8"
               />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <FilterIcon data-icon="inline-start" />
-                  Filter
-                  {statusFilter !== "all" && (
-                    <Badge variant="secondary">
-                      {STATUS_LABELS[statusFilter]}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Status</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  {(["all", "draft", "scheduled", "sending", "sent"] as StatusKey[]).map(
-                    (key) => (
-                      <DropdownMenuItem
-                        key={key}
-                        onClick={() => setStatusFilter(key)}
-                      >
-                        <span>{STATUS_LABELS[key]}</span>
-                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                          {counts[key]}
-                        </span>
-                      </DropdownMenuItem>
-                    ),
-                  )}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Status filtering lives in the module sidebar — the toolbar
+                only shows the active view when it isn't "all". */}
+            {statusFilter !== "all" && (
+              <Badge variant="secondary" className="h-9 gap-1.5 px-3">
+                {STATUS_LABELS[statusFilter]}
+                <button
+                  type="button"
+                  aria-label="Clear status filter"
+                  className="cursor-pointer text-muted-foreground hover:text-foreground"
+                  onClick={() => setStatusFilter("all")}
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
             <Button onClick={() => setCreateOpen(true)}>
               <PlusIcon data-icon="inline-start" />
               Create
@@ -405,7 +364,7 @@ export default function CampaignsPage() {
                     aria-label="Select all visible campaigns"
                   />
                 </TableHead>
-                <TableHead>Campaign</TableHead>
+                <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden lg:table-cell">Recipients</TableHead>
                 <TableHead className="hidden xl:table-cell">Created</TableHead>
