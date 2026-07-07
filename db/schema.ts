@@ -5,7 +5,8 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name"),
-  passwordHash: text("password_hash").notNull(),
+  // Null for OAuth-only accounts (Google sign-in, no password set).
+  passwordHash: text("password_hash"),
   sendingSlug: text("sending_slug"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

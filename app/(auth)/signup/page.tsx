@@ -198,7 +198,12 @@ export default function SignupPage() {
                   </Field>
                   <FieldSeparator>or</FieldSeparator>
                   <Field>
-                    <Button variant="outline" className="w-full" type="button">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      type="button"
+                      onClick={() => signIn("google", { callbackUrl: "/onboarding" })}
+                    >
                       Continue with Google
                     </Button>
                     <FieldDescription className="text-center">

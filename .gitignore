@@ -44,3 +44,6 @@ next-env.d.ts
 # local database backups
 /db/backups/
 
+
+# local credential scratch file
+/data
