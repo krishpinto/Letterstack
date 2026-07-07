@@ -8,8 +8,11 @@ import {
   CheckIcon,
   ChevronDownIcon,
   HelpCircleIcon,
+  LogOutIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
+  SlidersHorizontalIcon,
   ZapIcon,
 } from "lucide-react";
 
@@ -250,24 +253,40 @@ export function TopNavbar({
               </Avatar>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel>
-              <p className="text-sm font-medium leading-none">{userName}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{userEmail}</p>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
+          <DropdownMenuContent align="end" className="w-64 p-1.5">
+            {/* Profile card: banner, overlapping avatar, centered identity */}
+            <div className="mb-1.5 overflow-hidden rounded-lg border border-border/60 bg-muted/30">
+              <div className="h-10 bg-gradient-to-br from-primary/20 via-muted to-muted-foreground/15" />
+              <div className="-mt-5 flex flex-col items-center gap-1 px-3 pb-3">
+                <Avatar className="size-10 ring-4 ring-popover">
+                  <AvatarFallback className="bg-primary text-sm font-bold text-primary-foreground">
+                    {userInitial}
+                  </AvatarFallback>
+                </Avatar>
+                <p className="mt-1 text-sm font-semibold leading-none">
+                  {userName}
+                </p>
+                <p className="text-xs text-muted-foreground">{userEmail}</p>
+              </div>
+            </div>
+
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/settings">Profile settings</Link>
+              <Link href="/dashboard/settings">
+                <SettingsIcon />
+                Settings
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/settings">Billing & plans</Link>
+              <Link href="/dashboard/settings">
+                <SlidersHorizontalIcon />
+                Preferences
+              </Link>
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              asChild
-            >
-              <Link href="/login">Sign out</Link>
+            <DropdownMenuItem asChild>
+              <Link href="/login">
+                <LogOutIcon />
+                Sign out
+              </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
