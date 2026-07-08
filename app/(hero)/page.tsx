@@ -6,6 +6,7 @@ import { FounderTestimonials } from "./_components/founder-testimonials";
 import { PipelineSection } from "./_components/pipeline";
 import { Stats } from "./_components/stats";
 import { Testimonials } from "./_components/testimonials";
+import { MailHandoff } from "./_components/mail-handoff";
 
 export default function Home() {
   return (
@@ -33,6 +34,9 @@ export default function Home() {
 
       {/* ── Testimonials ────────────────────────────────────────────────── */}
       <Testimonials />
+
+      {/* ── Mail hand-off visual (two hands + envelope) ─────────────────── */}
+      <MailHandoff />
     </div>
   );
 }
