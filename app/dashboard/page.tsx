@@ -61,12 +61,13 @@ import {
   Tooltip as EvilAreaTooltip,
 } from "@/components/evilcharts/charts/area-chart";
 import {
-  EvilRadialChart,
-  RadialBar as EvilRadialBar,
-  Tooltip as EvilRadialTooltip,
-  Legend as EvilRadialLegend,
-} from "@/components/evilcharts/charts/radial-chart";
-import { PolarAngleAxis } from "recharts";
+  EvilRadarChart,
+  Radar as EvilRadar,
+  PolarGrid as EvilPolarGrid,
+  PolarAngleAxis as EvilPolarAngleAxis,
+  PolarRadiusAxis as EvilPolarRadiusAxis,
+  Tooltip as EvilRadarTooltip,
+} from "@/components/evilcharts/charts/radar-chart";
 import type { ChartConfig as EvilChartConfig } from "@/components/evilcharts/ui/chart";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -144,17 +145,12 @@ const emailActivityConfig = {
   opened: { label: "Opened", colors: { light: ["#059669"], dark: ["#34d399"] } },
 } satisfies EvilChartConfig;
 
-// One color per campaign ring in the radial open-rate chart, cycled if there
-// are more campaigns than colors.
-const OPEN_RATE_PALETTE = [
-  { light: ["#7c3aed"], dark: ["#a78bfa"] }, // purple
-  { light: ["#0284c7"], dark: ["#38bdf8"] }, // sky
-  { light: ["#059669"], dark: ["#34d399"] }, // emerald
-  { light: ["#db2777"], dark: ["#f472b6"] }, // pink
-  { light: ["#d97706"], dark: ["#fbbf24"] }, // amber
-];
+const openRateRadarConfig = {
+  openRate: { label: "Open rate", colors: { light: ["#7c3aed"], dark: ["#a78bfa"] } },
+} satisfies EvilChartConfig;
 
-const MAX_OPEN_RATE_RINGS = 5;
+// Radar looks best as a polygon, so cap the perimeter at a handful of campaigns.
+const MAX_RADAR_POINTS = 6;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -191,25 +187,18 @@ export default function DashboardHome() {
   });
   const activeDomain =
     services.domainsVerified[0] ?? services.defaultSendingDomain;
-  // Each campaign with a known open rate becomes one radial ring. Keys are
-  // CSS/SVG-safe slugs (they become gradient ids + color vars); the campaign
-  // name rides along as the config label for the tooltip/legend.
-  const ratedCampaigns = recentCampaigns
+  // Each campaign with a known open rate becomes one point on the radar's
+  // perimeter (labelled by name), and open rate is the single series polygon.
+  const openRateRadar = recentCampaigns
     .filter((c) => c.openRate !== null)
-    .slice(0, MAX_OPEN_RATE_RINGS);
-  const openRateRings = ratedCampaigns.map((c, i) => ({
-    key: `c${i}`,
-    openRate: c.openRate as number,
-  }));
-  const openRateRingConfig = Object.fromEntries(
-    ratedCampaigns.map((c, i) => [
-      `c${i}`,
-      {
-        label: c.name || "Untitled campaign",
-        colors: OPEN_RATE_PALETTE[i % OPEN_RATE_PALETTE.length],
-      },
-    ]),
-  ) satisfies EvilChartConfig;
+    .slice(0, MAX_RADAR_POINTS)
+    .map((c) => {
+      const name = c.name || "Untitled";
+      return {
+        campaign: name.length > 12 ? `${name.slice(0, 12)}…` : name,
+        openRate: c.openRate as number,
+      };
+    });
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -343,33 +332,27 @@ export default function DashboardHome() {
             </p>
           </div>
           <div className="p-4 pt-2">
-            {openRateRings.length === 0 ? (
+            {openRateRadar.length === 0 ? (
               <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
                 Send a campaign to see engagement here.
               </div>
             ) : (
               <div className="flex justify-center">
                 <div className="aspect-square h-56">
-                  <EvilRadialChart
-                    config={openRateRingConfig}
-                    data={openRateRings}
-                    nameKey="key"
+                  <EvilRadarChart
+                    config={openRateRadarConfig}
+                    data={openRateRadar}
                     className="h-full w-full"
-                    innerRadius="30%"
-                    outerRadius="100%"
+                    chartProps={{ outerRadius: "68%" }}
                   >
-                    {/* Pin the sweep to 0–100% so each ring fills to its real
-                        open rate instead of scaling to the largest campaign. */}
-                    <PolarAngleAxis
-                      type="number"
-                      domain={[0, 100]}
-                      tick={false}
-                      axisLine={false}
-                    />
-                    <EvilRadialBar dataKey="openRate" cornerRadius={6} />
-                    <EvilRadialTooltip />
-                    <EvilRadialLegend />
-                  </EvilRadialChart>
+                    <EvilPolarGrid />
+                    <EvilPolarAngleAxis dataKey="campaign" />
+                    {/* Fixed 0–100% scale so the polygon reflects real open
+                        rates rather than auto-scaling to the largest one. */}
+                    <EvilPolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                    <EvilRadar dataKey="openRate" variant="filled" />
+                    <EvilRadarTooltip />
+                  </EvilRadarChart>
                 </div>
               </div>
             )}
