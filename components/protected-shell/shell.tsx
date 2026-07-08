@@ -79,7 +79,9 @@ export function ProtectedShell({
             <main
               key={organization.id}
               className={
-                isSettings ? "flex-1 overflow-auto" : "flex-1 overflow-auto p-4 md:p-6"
+                isSettings
+                  ? "flex-1 overflow-auto"
+                  : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
               }
             >
               {children}
