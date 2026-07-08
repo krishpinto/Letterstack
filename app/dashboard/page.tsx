@@ -222,6 +222,7 @@ export default function DashboardHome() {
         <StatFrameCard
           label="Emails delivered"
           value={stats.delivered.toLocaleString()}
+          subValue={`${stats.delivered7.toLocaleString()} this week`}
           trend={weekTrend(stats.delivered7, stats.deliveredPrev7)}
           icon={MailCheckIcon}
         />
@@ -234,12 +235,14 @@ export default function DashboardHome() {
         <StatFrameCard
           label="Audience"
           value={stats.audience.toLocaleString()}
+          subValue={`${stats.audienceNew7.toLocaleString()} new this week`}
           trend={weekTrend(stats.audienceNew7, stats.audiencePrev7)}
           icon={UsersIcon}
         />
         <StatFrameCard
           label="Campaigns sent"
           value={stats.campaignsSent.toLocaleString()}
+          subValue={`${stats.campaignsSent7.toLocaleString()} this week`}
           trend={weekTrend(stats.campaignsSent7, stats.campaignsSentPrev7)}
           icon={SendIcon}
         />

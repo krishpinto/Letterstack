@@ -35,9 +35,10 @@ function StatFrameCard({
   className,
 }: StatFrameCardProps) {
   const isPositive = trend && trend.value >= 0;
-  // Caption on the panel's meta row: the trend's "vs last week", else the
-  // sub-value (e.g. "3 unique opens"), else nothing — height is fixed either way.
-  const caption = trend?.label ?? subValue ?? "";
+  // Caption on the panel's meta row: prefer the descriptive sub-value (e.g.
+  // "3 unique opens", "0 this week") so the row is never blank in an empty org;
+  // fall back to the trend caption. The trend badge sits on the right regardless.
+  const caption = subValue ?? trend?.label ?? "";
 
   return (
     <Card
