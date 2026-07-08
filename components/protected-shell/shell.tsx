@@ -69,8 +69,15 @@ export function ProtectedShell({
             )}
 
             {/* Page content. Settings draws its own full-bleed two-panel
-                layout; every other page expects the old layout's padding. */}
+                layout; every other page expects the old layout's padding.
+
+                Keyed by the active organization id: the organization is the
+                single source of truth for the whole dashboard, so switching it
+                remounts the current page and every page reloads its data scoped
+                to the new org. The server layout re-runs on switch (via
+                router.refresh) and feeds this component the new org id. */}
             <main
+              key={organization.id}
               className={
                 isSettings ? "flex-1 overflow-auto" : "flex-1 overflow-auto p-4 md:p-6"
               }
