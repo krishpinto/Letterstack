@@ -7,9 +7,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightIcon,
+  ArrowUpRightIcon,
   BarChart3Icon,
   CalendarIcon,
   GlobeIcon,
@@ -21,7 +21,6 @@ import {
   SendIcon,
   TrendingUpIcon,
   UsersIcon,
-  WorkflowIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -183,6 +182,8 @@ export default function DashboardHome() {
     month: "long",
     year: "numeric",
   });
+  const activeDomain =
+    services.domainsVerified[0] ?? services.defaultSendingDomain;
   const openRateBars = recentCampaigns
     .filter((c) => c.openRate !== null)
     .slice(0, 6)
@@ -248,62 +249,39 @@ export default function DashboardHome() {
         />
       </div>
 
-      {/* ── Services overview ── */}
+      {/* ── Sending domain ── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Your services</CardTitle>
-          <CardDescription>
-            Everything LetterStack runs for you — jump into any of them.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <ServiceTile
-              href="/dashboard/contacts"
-              icon={UsersIcon}
-              label="Audience"
-              status={`${stats.audience.toLocaleString()} contact${stats.audience === 1 ? "" : "s"}`}
-            />
-            <ServiceTile
-              href="/dashboard/campaigns"
-              icon={SendIcon}
-              label="Campaigns"
-              status={`${services.campaignsTotal} total · ${stats.campaignsSent} sent`}
-            />
-            <ServiceTile
-              href="/dashboard/templates"
-              icon={PenLineIcon}
-              label="Templates"
-              status={`${services.templatesTotal} saved`}
-            />
-            <ServiceTile
-              href="/dashboard/automations"
-              icon={WorkflowIcon}
-              label="Automations"
-              status={
-                services.automationsTotal === 0
-                  ? "None yet"
-                  : `${services.automationsEnabled}/${services.automationsTotal} live`
-              }
-            />
-            <ServiceTile
-              href="/dashboard/domains"
-              icon={GlobeIcon}
-              label="Domains"
-              status={
-                services.domainsVerified.length > 0
+        <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <GlobeIcon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Sending from</p>
+              <p className="truncate text-sm font-medium">{activeDomain}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {services.domainsVerified.length > 0
                   ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
-                  : `Using shared default (${services.defaultSendingDomain})`
-              }
-              cta={services.domainsVerified.length === 0 ? "Add domain" : undefined}
-            />
+                  : "Shared LetterStack newsletter domain"}
+              </p>
+            </div>
           </div>
+          <Button variant="outline" size="sm" className="shrink-0" asChild>
+            <Link href="/dashboard/domains">
+              <PlusIcon data-icon="inline-start" />
+              Add your own domain
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 
       {/* ── Charts ── */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Email activity" icon={TrendingUpIcon}>
+        <ChartCard
+          title="Email activity"
+          icon={TrendingUpIcon}
+          action={<ChartCardLink href="/dashboard/analytics" />}
+        >
           <div className="px-4 pt-4">
             <p className="text-sm text-muted-foreground">
               Delivered and opened per day, last 14 days.
@@ -335,7 +313,11 @@ export default function DashboardHome() {
           </div>
         </ChartCard>
 
-        <ChartCard title="Open rate by campaign" icon={BarChart3Icon}>
+        <ChartCard
+          title="Open rate by campaign"
+          icon={BarChart3Icon}
+          action={<ChartCardLink href="/dashboard/analytics" />}
+        >
           <div className="px-4 pt-4">
             <p className="text-sm text-muted-foreground">
               Unique opens over delivered, recent sends.
@@ -506,36 +488,19 @@ export default function DashboardHome() {
   );
 }
 
-function ServiceTile({
-  href,
-  icon: Icon,
-  label,
-  status,
-  cta,
-}: {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-  status: string;
-  cta?: string;
-}) {
+// Small "jump to the full analytics page" affordance in a chart card's corner.
+function ChartCardLink({ href }: { href: string }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-muted-foreground/40 hover:bg-muted/30"
+    <Button
+      variant="ghost"
+      size="sm"
+      asChild
+      className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">{status}</span>
-      </span>
-      {cta ? (
-        <span className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors group-hover:border-muted-foreground/40 group-hover:text-foreground">
-          {cta}
-        </span>
-      ) : null}
-    </Link>
+      <Link href={href}>
+        View
+        <ArrowUpRightIcon className="size-3" />
+      </Link>
+    </Button>
   );
 }
