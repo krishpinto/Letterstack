@@ -156,7 +156,6 @@ export default function DashboardHome() {
   const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [failed, setFailed] = useState(false);
-  const [showAllRecent, setShowAllRecent] = useState(false);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -394,10 +393,9 @@ export default function DashboardHome() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(showAllRecent
-                    ? recentCampaigns
-                    : recentCampaigns.slice(0, RECENT_CAMPAIGNS_COLLAPSED_COUNT)
-                  ).map((campaign) => (
+                  {recentCampaigns
+                    .slice(0, RECENT_CAMPAIGNS_COLLAPSED_COUNT)
+                    .map((campaign) => (
                     <TableRow key={campaign.id}>
                       <TableCell className="max-w-56 truncate pl-6 font-medium">
                         <span className="flex items-center gap-2">
@@ -426,15 +424,10 @@ export default function DashboardHome() {
                 </TableBody>
               </Table>
 
-              {!showAllRecent && recentCampaigns.length > RECENT_CAMPAIGNS_COLLAPSED_COUNT && (
+              {recentCampaigns.length > RECENT_CAMPAIGNS_COLLAPSED_COUNT && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-28 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-3 backdrop-blur-sm [mask-image:linear-gradient(to_top,black_60%,transparent)]">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="pointer-events-auto"
-                    onClick={() => setShowAllRecent(true)}
-                  >
-                    See more
+                  <Button variant="outline" size="sm" className="pointer-events-auto" asChild>
+                    <Link href="/dashboard/campaigns">See all campaigns</Link>
                   </Button>
                 </div>
               )}
