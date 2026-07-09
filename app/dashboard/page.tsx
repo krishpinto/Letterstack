@@ -337,32 +337,6 @@ export default function DashboardHome() {
       {/* ── Getting started (hides itself once every step is done) ── */}
       <GettingStarted userName={firstName} steps={onboardingSteps} />
 
-      {/* ── Sending domain ── */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <GlobeIcon className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Sending from</p>
-              <p className="truncate text-sm font-medium">{activeDomain}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {services.domainsVerified.length > 0
-                  ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
-                  : "Shared LetterStack newsletter domain"}
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" className="shrink-0" asChild>
-            <Link href="/dashboard/domains">
-              <PlusIcon data-icon="inline-start" />
-              Add your own domain
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
       {/* ── Charts ── */}
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
@@ -533,69 +507,101 @@ export default function DashboardHome() {
         </CardContent>
       </Card>
 
-      {/* ── Recent templates ── */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle>Recent templates</CardTitle>
-            <CardDescription>Pick up where you left off.</CardDescription>
-          </div>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/templates?tab=saved">
-              View all
-              <ArrowRightIcon data-icon="inline-end" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recentTemplates.length === 0 ? (
-            <Empty className="border-0 py-10">
-              <EmptyHeader>
-                <EmptyMedia>
-                  <IconStack aria-hidden="true" className="h-24 w-22">
-                    <MailIcon className="size-5" />
-                  </IconStack>
-                </EmptyMedia>
-                <EmptyTitle>No saved templates</EmptyTitle>
-                <EmptyDescription>
-                  Create a custom template in the editor, and click &quot;Save
-                  as template&quot; to see it here!
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button size="sm" asChild>
-                  <Link href="/editor">
-                    <PlusIcon data-icon="inline-start" />
-                    Create a template
-                  </Link>
-                </Button>
-              </EmptyContent>
-            </Empty>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {recentTemplates.map((template) => (
-                <Link
-                  key={template.id}
-                  href={`/editor/template/${template.id}`}
-                  className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-muted-foreground/40 hover:bg-muted/30"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <PenLineIcon className="size-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
-                      {template.name}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      Edited {shortDate(template.updatedAt)}
-                    </span>
-                  </span>
-                </Link>
-              ))}
+      {/* ── Recent templates (70%) + sending domain (30%) ── */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+        {/* Recent templates */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <CardTitle>Recent templates</CardTitle>
+              <CardDescription>Pick up where you left off.</CardDescription>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/templates?tab=saved">
+                View all
+                <ArrowRightIcon data-icon="inline-end" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {recentTemplates.length === 0 ? (
+              <Empty className="border-0 py-10">
+                <EmptyHeader>
+                  <EmptyMedia>
+                    <IconStack aria-hidden="true" className="h-24 w-22">
+                      <MailIcon className="size-5" />
+                    </IconStack>
+                  </EmptyMedia>
+                  <EmptyTitle>No saved templates</EmptyTitle>
+                  <EmptyDescription>
+                    Create a custom template in the editor, and click &quot;Save
+                    as template&quot; to see it here!
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button size="sm" asChild>
+                    <Link href="/editor">
+                      <PlusIcon data-icon="inline-start" />
+                      Create a template
+                    </Link>
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {recentTemplates.map((template) => (
+                  <Link
+                    key={template.id}
+                    href={`/editor/template/${template.id}`}
+                    className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-muted-foreground/40 hover:bg-muted/30"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <PenLineIcon className="size-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {template.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        Edited {shortDate(template.updatedAt)}
+                      </span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sending domain */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Sending domain</CardTitle>
+            <CardDescription>Where your emails come from.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-4">
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <GlobeIcon className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{activeDomain}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {services.domainsVerified.length > 0
+                    ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
+                    : "Shared newsletter domain"}
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" className="mt-auto w-full" asChild>
+              <Link href="/dashboard/domains">
+                <PlusIcon data-icon="inline-start" />
+                Add your own domain
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
