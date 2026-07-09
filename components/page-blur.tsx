@@ -12,6 +12,7 @@ export function PageBlur({
   blurAmount = "4px",
   backgroundColor = "white",
   threshold = 50,
+  hideBottomUntilSelector,
 }: {
   /** Height of each blur band */
   height?: string;
@@ -21,8 +22,22 @@ export function PageBlur({
   backgroundColor?: string;
   /** Scroll distance (px) before blur becomes fully visible */
   threshold?: number;
+  /**
+   * CSS selector for a leading section (e.g. the hero) over which the bottom
+   * blur should stay hidden. The bottom blur reappears once that section's
+   * bottom edge scrolls above the viewport bottom — i.e. once the next
+   * section reaches the blur band. Pages without a matching element are
+   * unaffected.
+   */
+  hideBottomUntilSelector?: string;
 }) {
-  const [scrollState, setScrollState] = useState({ atTop: true, atBottom: false });
+  const [scrollState, setScrollState] = useState(() => ({
+    atTop: true,
+    atBottom: false,
+    // Assume we start over the leading section so the bottom blur doesn't
+    // flash in for a frame on first paint before the effect measures.
+    overLeadingSection: Boolean(hideBottomUntilSelector),
+  }));
 
   useEffect(() => {
     function update() {
@@ -31,9 +46,16 @@ export function PageBlur({
       const clientHeight = window.innerHeight;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
+      let overLeadingSection = false;
+      if (hideBottomUntilSelector) {
+        const el = document.querySelector(hideBottomUntilSelector);
+        if (el) overLeadingSection = el.getBoundingClientRect().bottom > clientHeight;
+      }
+
       setScrollState({
         atTop: scrollTop <= threshold,
         atBottom: distanceFromBottom <= threshold,
+        overLeadingSection,
       });
     }
 
@@ -44,7 +66,9 @@ export function PageBlur({
       window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, [threshold]);
+  }, [threshold, hideBottomUntilSelector]);
+
+  const hideBottom = scrollState.atBottom || scrollState.overLeadingSection;
 
   return (
     <>
@@ -66,7 +90,7 @@ export function PageBlur({
         blurAmount={blurAmount}
         backgroundColor={backgroundColor}
         className={`fixed z-40 transition-opacity duration-300 ${
-          scrollState.atBottom ? "opacity-0" : "opacity-100"
+          hideBottom ? "opacity-0" : "opacity-100"
         }`}
       />
     </>

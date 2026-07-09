@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 type ChartCardProps = Omit<ComponentProps<typeof Card>, "title"> & {
   title: ReactNode;
   icon?: LucideIcon;
+  action?: ReactNode;
   header?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
@@ -19,6 +20,7 @@ type ChartCardProps = Omit<ComponentProps<typeof Card>, "title"> & {
 function ChartCard({
   title,
   icon: Icon,
+  action,
   header,
   children,
   footer,
@@ -37,9 +39,20 @@ function ChartCard({
       )}
       {...props}
     >
-      <div className={cn("flex items-center gap-1 px-3 py-1.5", labelClassName)}>
-        {Icon ? <Icon className="size-3 text-muted-foreground" aria-hidden="true" /> : null}
-        <span className="text-sm text-muted-foreground">{title}</span>
+      <div
+        className={cn(
+          "flex items-center gap-1 px-3 py-1.5",
+          action && "justify-between",
+          labelClassName,
+        )}
+      >
+        <span className="flex items-center gap-1">
+          {Icon ? (
+            <Icon className="size-3 text-muted-foreground" aria-hidden="true" />
+          ) : null}
+          <span className="text-sm text-muted-foreground">{title}</span>
+        </span>
+        {action}
       </div>
       <div
         className={cn(

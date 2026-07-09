@@ -1,11 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
 import { Layers2Icon, MenuIcon } from "lucide-react";
-import { motion } from "motion/react";
 
 import { RichButton } from "@/components/rich-button";
 import { Button } from "@/components/ui/button";
@@ -28,50 +26,14 @@ const NAV_ITEMS = [
   { href: "/contact", homeHref: "#contact", label: "Contact" },
 ] as const;
 
-const NAV_TRANSITION = {
-  type: "spring",
-  stiffness: 260,
-  damping: 32,
-  mass: 0.9,
-} as const;
-
 export function Navbar() {
   const pathname = usePathname();
   const { status } = useSession();
-  const [scrolled, setScrolled] = useState(false);
   const isSignedIn = status === "authenticated";
 
-  useEffect(() => {
-    function onScroll() {
-      setScrolled(window.scrollY > 20);
-    }
-
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   return (
-    <motion.header
-      className="fixed inset-x-0 top-0 z-[60]"
-      animate={{
-        paddingTop: scrolled ? 8 : 0,
-        paddingBottom: scrolled ? 8 : 0,
-        paddingLeft: scrolled ? 16 : 0,
-        paddingRight: scrolled ? 16 : 0,
-      }}
-      transition={NAV_TRANSITION}
-    >
-      <motion.nav
-        className={cn(
-          "mx-auto flex h-14 items-center justify-between border-border bg-background/95 px-4 text-foreground backdrop-blur transition-[max-width,box-shadow] duration-300 ease-out supports-[backdrop-filter]:bg-background/80 sm:px-6",
-          scrolled
-            ? "max-w-5xl rounded-full border shadow-sm"
-            : "max-w-none rounded-none border-b",
-        )}
-        animate={{ borderRadius: scrolled ? 999 : 0 }}
-        transition={NAV_TRANSITION}
-      >
+    <header className="fixed inset-x-0 top-0 z-[60] px-3 py-2 sm:px-4">
+      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between rounded-full border border-border bg-background/95 px-4 text-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6">
         <Brand />
 
         <div className="hidden items-center gap-6 md:flex">
@@ -106,8 +68,8 @@ export function Navbar() {
         </div>
 
         <MobileNav pathname={pathname} isSignedIn={isSignedIn} />
-      </motion.nav>
-    </motion.header>
+      </nav>
+    </header>
   );
 }
 

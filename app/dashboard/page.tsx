@@ -7,9 +7,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightIcon,
+  ArrowUpRightIcon,
   BarChart3Icon,
   CalendarIcon,
   GlobeIcon,
@@ -21,7 +21,6 @@ import {
   SendIcon,
   TrendingUpIcon,
   UsersIcon,
-  WorkflowIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -62,13 +61,13 @@ import {
   Tooltip as EvilAreaTooltip,
 } from "@/components/evilcharts/charts/area-chart";
 import {
-  EvilBarChart,
-  Bar as EvilBar,
-  XAxis as EvilBarXAxis,
-  YAxis as EvilBarYAxis,
-  Grid as EvilBarGrid,
-  Tooltip as EvilBarTooltip,
-} from "@/components/evilcharts/charts/bar-chart";
+  EvilRadarChart,
+  Radar as EvilRadar,
+  PolarGrid as EvilPolarGrid,
+  PolarAngleAxis as EvilPolarAngleAxis,
+  PolarRadiusAxis as EvilPolarRadiusAxis,
+  Tooltip as EvilRadarTooltip,
+} from "@/components/evilcharts/charts/radar-chart";
 import type { ChartConfig as EvilChartConfig } from "@/components/evilcharts/ui/chart";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -146,9 +145,20 @@ const emailActivityConfig = {
   opened: { label: "Opened", colors: { light: ["#059669"], dark: ["#34d399"] } },
 } satisfies EvilChartConfig;
 
-const openRateConfig = {
+const openRateRadarConfig = {
   openRate: { label: "Open rate", colors: { light: ["#7c3aed"], dark: ["#a78bfa"] } },
 } satisfies EvilChartConfig;
+
+// Radar looks best as a polygon, so cap the perimeter at a handful of campaigns.
+const MAX_RADAR_POINTS = 6;
+// A radar needs at least a triangle to read as one; below this we show an
+// empty radar web instead of a broken single spoke.
+const MIN_RADAR_POINTS = 3;
+// Six zero-value spokes so the empty state still draws a proper hexagon web.
+const EMPTY_RADAR_DATA = Array.from({ length: 6 }, (_, i) => ({
+  campaign: `_${i}`,
+  openRate: 0,
+}));
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -156,7 +166,6 @@ export default function DashboardHome() {
   const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [failed, setFailed] = useState(false);
-  const [showAllRecent, setShowAllRecent] = useState(false);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -184,13 +193,20 @@ export default function DashboardHome() {
     month: "long",
     year: "numeric",
   });
-  const openRateBars = recentCampaigns
+  const activeDomain =
+    services.domainsVerified[0] ?? services.defaultSendingDomain;
+  // Each campaign with a known open rate becomes one point on the radar's
+  // perimeter (labelled by name), and open rate is the single series polygon.
+  const openRateRadar = recentCampaigns
     .filter((c) => c.openRate !== null)
-    .slice(0, 6)
-    .map((c) => ({
-      name: c.name.length > 14 ? `${c.name.slice(0, 14)}…` : c.name,
-      openRate: c.openRate,
-    }));
+    .slice(0, MAX_RADAR_POINTS)
+    .map((c) => {
+      const name = c.name || "Untitled";
+      return {
+        campaign: name.length > 12 ? `${name.slice(0, 12)}…` : name,
+        openRate: c.openRate as number,
+      };
+    });
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -223,6 +239,7 @@ export default function DashboardHome() {
         <StatFrameCard
           label="Emails delivered"
           value={stats.delivered.toLocaleString()}
+          subValue={`${stats.delivered7.toLocaleString()} this week`}
           trend={weekTrend(stats.delivered7, stats.deliveredPrev7)}
           icon={MailCheckIcon}
         />
@@ -235,73 +252,52 @@ export default function DashboardHome() {
         <StatFrameCard
           label="Audience"
           value={stats.audience.toLocaleString()}
+          subValue={`${stats.audienceNew7.toLocaleString()} new this week`}
           trend={weekTrend(stats.audienceNew7, stats.audiencePrev7)}
           icon={UsersIcon}
         />
         <StatFrameCard
           label="Campaigns sent"
           value={stats.campaignsSent.toLocaleString()}
+          subValue={`${stats.campaignsSent7.toLocaleString()} this week`}
           trend={weekTrend(stats.campaignsSent7, stats.campaignsSentPrev7)}
           icon={SendIcon}
         />
       </div>
 
-      {/* ── Services overview ── */}
+      {/* ── Sending domain ── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Your services</CardTitle>
-          <CardDescription>
-            Everything LetterStack runs for you — jump into any of them.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <ServiceTile
-              href="/dashboard/contacts"
-              icon={UsersIcon}
-              label="Audience"
-              status={`${stats.audience.toLocaleString()} contact${stats.audience === 1 ? "" : "s"}`}
-            />
-            <ServiceTile
-              href="/dashboard/campaigns"
-              icon={SendIcon}
-              label="Campaigns"
-              status={`${services.campaignsTotal} total · ${stats.campaignsSent} sent`}
-            />
-            <ServiceTile
-              href="/dashboard/templates"
-              icon={PenLineIcon}
-              label="Templates"
-              status={`${services.templatesTotal} saved`}
-            />
-            <ServiceTile
-              href="/dashboard/automations"
-              icon={WorkflowIcon}
-              label="Automations"
-              status={
-                services.automationsTotal === 0
-                  ? "None yet"
-                  : `${services.automationsEnabled}/${services.automationsTotal} live`
-              }
-            />
-            <ServiceTile
-              href="/dashboard/domains"
-              icon={GlobeIcon}
-              label="Domains"
-              status={
-                services.domainsVerified.length > 0
+        <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <GlobeIcon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Sending from</p>
+              <p className="truncate text-sm font-medium">{activeDomain}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {services.domainsVerified.length > 0
                   ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
-                  : `Using shared default (${services.defaultSendingDomain})`
-              }
-              cta={services.domainsVerified.length === 0 ? "Add domain" : undefined}
-            />
+                  : "Shared LetterStack newsletter domain"}
+              </p>
+            </div>
           </div>
+          <Button variant="outline" size="sm" className="shrink-0" asChild>
+            <Link href="/dashboard/domains">
+              <PlusIcon data-icon="inline-start" />
+              Add your own domain
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 
       {/* ── Charts ── */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Email activity" icon={TrendingUpIcon}>
+        <ChartCard
+          title="Email activity"
+          icon={TrendingUpIcon}
+          action={<ChartCardLink href="/dashboard/analytics" />}
+        >
           <div className="px-4 pt-4">
             <p className="text-sm text-muted-foreground">
               Delivered and opened per day, last 14 days.
@@ -333,30 +329,58 @@ export default function DashboardHome() {
           </div>
         </ChartCard>
 
-        <ChartCard title="Open rate by campaign" icon={BarChart3Icon}>
+        <ChartCard
+          title="Open rate by campaign"
+          icon={BarChart3Icon}
+          action={<ChartCardLink href="/dashboard/analytics" />}
+        >
           <div className="px-4 pt-4">
             <p className="text-sm text-muted-foreground">
               Unique opens over delivered, recent sends.
             </p>
           </div>
           <div className="p-4 pt-2">
-            {openRateBars.length === 0 ? (
-              <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
-                Send a campaign to see engagement here.
+            {openRateRadar.length >= MIN_RADAR_POINTS ? (
+              <div className="flex justify-center">
+                <div className="aspect-square h-56">
+                  <EvilRadarChart
+                    config={openRateRadarConfig}
+                    data={openRateRadar}
+                    className="h-full w-full"
+                    chartProps={{ outerRadius: "68%" }}
+                  >
+                    <EvilPolarGrid />
+                    <EvilPolarAngleAxis dataKey="campaign" />
+                    {/* Fixed 0–100% scale so the polygon reflects real open
+                        rates rather than auto-scaling to the largest one. */}
+                    <EvilPolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                    <EvilRadar dataKey="openRate" variant="filled" />
+                    <EvilRadarTooltip />
+                  </EvilRadarChart>
+                </div>
               </div>
             ) : (
-              <EvilBarChart
-                config={openRateConfig}
-                data={openRateBars}
-                className="h-56 w-full"
-                chartProps={{ margin: { left: -12, right: 8 } }}
-              >
-                <EvilBarGrid />
-                <EvilBarXAxis dataKey="name" />
-                <EvilBarYAxis width={40} tickFormatter={(value: number) => `${value}%`} />
-                <EvilBarTooltip />
-                <EvilBar dataKey="openRate" variant="gradient" />
-              </EvilBarChart>
+              // Too few campaigns to form a radar — draw an empty web so the
+              // card still looks intentional, with a caption over it.
+              <div className="relative flex justify-center">
+                <div className="aspect-square h-56 opacity-50">
+                  <EvilRadarChart
+                    config={openRateRadarConfig}
+                    data={EMPTY_RADAR_DATA}
+                    className="h-full w-full"
+                    chartProps={{ outerRadius: "68%" }}
+                  >
+                    <EvilPolarGrid />
+                    <EvilPolarAngleAxis dataKey="campaign" tick={false} />
+                    <EvilPolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                  </EvilRadarChart>
+                </div>
+                <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                  {openRateRadar.length === 0
+                    ? "Send a campaign to see engagement here."
+                    : "Send a few campaigns to compare open rates here."}
+                </p>
+              </div>
             )}
           </div>
         </ChartCard>
@@ -394,10 +418,9 @@ export default function DashboardHome() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(showAllRecent
-                    ? recentCampaigns
-                    : recentCampaigns.slice(0, RECENT_CAMPAIGNS_COLLAPSED_COUNT)
-                  ).map((campaign) => (
+                  {recentCampaigns
+                    .slice(0, RECENT_CAMPAIGNS_COLLAPSED_COUNT)
+                    .map((campaign) => (
                     <TableRow key={campaign.id}>
                       <TableCell className="max-w-56 truncate pl-6 font-medium">
                         <span className="flex items-center gap-2">
@@ -426,15 +449,10 @@ export default function DashboardHome() {
                 </TableBody>
               </Table>
 
-              {!showAllRecent && recentCampaigns.length > RECENT_CAMPAIGNS_COLLAPSED_COUNT && (
+              {recentCampaigns.length > RECENT_CAMPAIGNS_COLLAPSED_COUNT && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-28 items-end justify-center bg-gradient-to-t from-card via-card/80 to-transparent pb-3 backdrop-blur-sm [mask-image:linear-gradient(to_top,black_60%,transparent)]">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="pointer-events-auto"
-                    onClick={() => setShowAllRecent(true)}
-                  >
-                    See more
+                  <Button variant="outline" size="sm" className="pointer-events-auto" asChild>
+                    <Link href="/dashboard/campaigns">See all campaigns</Link>
                   </Button>
                 </div>
               )}
@@ -510,36 +528,19 @@ export default function DashboardHome() {
   );
 }
 
-function ServiceTile({
-  href,
-  icon: Icon,
-  label,
-  status,
-  cta,
-}: {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-  status: string;
-  cta?: string;
-}) {
+// Small "jump to the full analytics page" affordance in a chart card's corner.
+function ChartCardLink({ href }: { href: string }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-muted-foreground/40 hover:bg-muted/30"
+    <Button
+      variant="ghost"
+      size="sm"
+      asChild
+      className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">{status}</span>
-      </span>
-      {cta ? (
-        <span className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors group-hover:border-muted-foreground/40 group-hover:text-foreground">
-          {cta}
-        </span>
-      ) : null}
-    </Link>
+      <Link href={href}>
+        View
+        <ArrowUpRightIcon className="size-3" />
+      </Link>
+    </Button>
   );
 }

@@ -163,7 +163,7 @@ function ProductMockup() {
 
 export function Hero() {
   return (
-    <section className="pb-0 pt-20 lg:pt-28">
+    <section data-hero-section className="pb-0 pt-20 lg:pt-28">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10 mb-2">
 
         {/* ── Heading row ─────────────────────────────────────────────── */}
