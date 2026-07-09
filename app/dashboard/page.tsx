@@ -151,6 +151,14 @@ const openRateRadarConfig = {
 
 // Radar looks best as a polygon, so cap the perimeter at a handful of campaigns.
 const MAX_RADAR_POINTS = 6;
+// A radar needs at least a triangle to read as one; below this we show an
+// empty radar web instead of a broken single spoke.
+const MIN_RADAR_POINTS = 3;
+// Six zero-value spokes so the empty state still draws a proper hexagon web.
+const EMPTY_RADAR_DATA = Array.from({ length: 6 }, (_, i) => ({
+  campaign: `_${i}`,
+  openRate: 0,
+}));
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -332,11 +340,7 @@ export default function DashboardHome() {
             </p>
           </div>
           <div className="p-4 pt-2">
-            {openRateRadar.length === 0 ? (
-              <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
-                Send a campaign to see engagement here.
-              </div>
-            ) : (
+            {openRateRadar.length >= MIN_RADAR_POINTS ? (
               <div className="flex justify-center">
                 <div className="aspect-square h-56">
                   <EvilRadarChart
@@ -354,6 +358,28 @@ export default function DashboardHome() {
                     <EvilRadarTooltip />
                   </EvilRadarChart>
                 </div>
+              </div>
+            ) : (
+              // Too few campaigns to form a radar — draw an empty web so the
+              // card still looks intentional, with a caption over it.
+              <div className="relative flex justify-center">
+                <div className="aspect-square h-56 opacity-50">
+                  <EvilRadarChart
+                    config={openRateRadarConfig}
+                    data={EMPTY_RADAR_DATA}
+                    className="h-full w-full"
+                    chartProps={{ outerRadius: "68%" }}
+                  >
+                    <EvilPolarGrid />
+                    <EvilPolarAngleAxis dataKey="campaign" tick={false} />
+                    <EvilPolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                  </EvilRadarChart>
+                </div>
+                <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                  {openRateRadar.length === 0
+                    ? "Send a campaign to see engagement here."
+                    : "Send a few campaigns to compare open rates here."}
+                </p>
               </div>
             )}
           </div>
