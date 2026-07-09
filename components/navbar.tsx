@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
 import { Layers2Icon, MenuIcon } from "lucide-react";
 
 import { RichButton } from "@/components/rich-button";
@@ -30,34 +29,13 @@ const NAV_ITEMS = [
 export function Navbar() {
   const pathname = usePathname();
   const { status } = useSession();
-  const [scrolled, setScrolled] = useState(false);
   const isSignedIn = status === "authenticated";
 
-  useEffect(() => {
-    function onScroll() {
-      setScrolled(window.scrollY > 20);
-    }
-
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   return (
-    <header
-      className={cn(
-        "fixed inset-x-0 top-0 z-[60] transition-[padding] duration-300",
-        scrolled ? "px-3 py-2 sm:px-4" : "px-0 py-0",
-      )}
-    >
-      <nav
-        className={cn(
-          "mx-auto flex h-14 items-center justify-between border-border bg-background/95 px-4 text-foreground shadow-none backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6",
-          scrolled
-            ? "max-w-5xl rounded-full border shadow-sm"
-            : "max-w-none rounded-none border-b",
-        )}
-      >
+    // Always the floating pill — no scroll-driven snap between a full-width
+    // bar and a pill, which read as a jarring jump on the landing page.
+    <header className="fixed inset-x-0 top-0 z-[60] px-3 py-2 sm:px-4">
+      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between rounded-full border border-border bg-background/95 px-4 text-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6">
         <Brand />
 
         <div className="hidden items-center gap-6 md:flex">
