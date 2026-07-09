@@ -19,6 +19,7 @@ import {
   PenLineIcon,
   PlusIcon,
   SendIcon,
+  SparklesIcon,
   TrendingUpIcon,
   UsersIcon,
 } from "lucide-react";
@@ -51,6 +52,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatFrameCard } from "@/components/ui/stat-frame-card";
+import {
+  GettingStarted,
+  type OnboardingStep,
+} from "@/components/dashboard/getting-started";
 import { PageLoader } from "@/components/bar-spinner";
 import {
   EvilAreaChart,
@@ -195,6 +200,70 @@ export default function DashboardHome() {
   });
   const activeDomain =
     services.domainsVerified[0] ?? services.defaultSendingDomain;
+
+  // Ordered path to a first send. Completion is derived from live data, so the
+  // whole section disappears once every step is satisfied.
+  const onboardingSteps: OnboardingStep[] = [
+    {
+      id: "account",
+      title: "Create your workspace",
+      done: true,
+      heading: "Welcome to LetterStack",
+      description:
+        "Your workspace is ready. Work through these steps to send your first newsletter.",
+      href: "/dashboard",
+      cta: "Take a look around",
+      icon: SparklesIcon,
+    },
+    {
+      id: "audience",
+      title: "Add your audience",
+      done: stats.audience > 0,
+      time: "2 minutes",
+      heading: "Import your contacts",
+      description:
+        "Upload a CSV or Excel list — we validate, dedupe, and clean it as it comes in.",
+      href: "/dashboard/contacts",
+      cta: "Add contacts",
+      icon: UsersIcon,
+    },
+    {
+      id: "template",
+      title: "Design your first email",
+      done: services.templatesTotal > 0,
+      time: "10 minutes",
+      heading: "Build an email in the editor",
+      description:
+        "Drag blocks onto the canvas to design a responsive, email-safe newsletter.",
+      href: "/editor",
+      cta: "Open the editor",
+      icon: PenLineIcon,
+    },
+    {
+      id: "domain",
+      title: "Set up your sending domain",
+      done: services.domainsVerified.length > 0,
+      time: "4 minutes",
+      heading: "Send from your own domain",
+      description:
+        "Authenticate a custom domain for the best deliverability, or start on our shared domain.",
+      href: "/dashboard/domains",
+      cta: "Add a domain",
+      icon: GlobeIcon,
+    },
+    {
+      id: "campaign",
+      title: "Send your first campaign",
+      done: stats.campaignsSent > 0,
+      time: "5 minutes",
+      heading: "Launch a campaign",
+      description:
+        "Pick your audience, choose a template, and send now or schedule it for later.",
+      href: "/dashboard/campaigns",
+      cta: "Create a campaign",
+      icon: SendIcon,
+    },
+  ];
   // Each campaign with a known open rate becomes one point on the radar's
   // perimeter (labelled by name), and open rate is the single series polygon.
   const openRateRadar = recentCampaigns
@@ -264,6 +333,9 @@ export default function DashboardHome() {
           icon={SendIcon}
         />
       </div>
+
+      {/* ── Getting started (hides itself once every step is done) ── */}
+      <GettingStarted userName={firstName} steps={onboardingSteps} />
 
       {/* ── Sending domain ── */}
       <Card>
