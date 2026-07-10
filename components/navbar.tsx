@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,8 +32,8 @@ export function Navbar() {
   const isSignedIn = status === "authenticated";
 
   return (
-    <header className="fixed inset-x-0 top-0 z-[60] px-3 py-2 sm:px-4">
-      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between rounded-full border border-border bg-background/95 px-4 text-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6">
+    <header className="fixed inset-x-0 top-3 z-[60] px-4">
+      <nav className="mx-auto flex max-w-5xl items-center justify-between rounded-xl border border-zinc-950/10 bg-background/80 p-1.5 text-foreground shadow-[0_2px_8px_rgba(9,9,11,0.01)] inset-shadow-2xs inset-shadow-white/60 backdrop-blur-md dark:border-zinc-800/80 dark:inset-shadow-zinc-950/20">
         <Brand />
 
         <div className="hidden items-center gap-6 md:flex">
@@ -75,12 +75,12 @@ export function Navbar() {
 
 function Brand() {
   return (
-    <Link href="/" className="flex min-w-0 items-center gap-2">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-        <Layers2Icon className="size-4" />
+    <Link href="/" className="flex min-w-0 items-center gap-2.5">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground shadow-xs shadow-zinc-950/10">
+        <Layers2Icon className="size-4.5" />
       </span>
-      <span className="truncate text-sm font-semibold tracking-normal">
-        LetterStack
+      <span className="truncate text-sm font-semibold tracking-normal text-[#0A0A0A]">
+        Letterstack
       </span>
     </Link>
   );

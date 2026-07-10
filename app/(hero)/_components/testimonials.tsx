@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { cn } from "@/lib/utils";
 import { Marquee } from "@/components/ui/marquee";
@@ -57,22 +57,20 @@ function ReviewCard({
   name,
   username,
   body,
-  metric,
 }: {
   img: string;
   name: string;
   username: string;
   body: string;
-  metric: string;
 }) {
   return (
     <figure
       className={cn(
-        "relative flex h-full w-[21rem] cursor-pointer flex-col overflow-hidden rounded-none border border-border bg-white p-5 transition-colors duration-200",
+        "relative flex h-full w-[20rem] cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-white p-4 transition-colors duration-200",
         "hover:border-[#6D5BD0]/50 hover:bg-[#F7F5FF]"
       )}
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[#6D5BD0] opacity-80" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-[#6D5BD0] opacity-80" />
 
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-row items-center gap-3">
@@ -92,16 +90,13 @@ function ReviewCard({
             </p>
           </div>
         </div>
-        <span className="shrink-0 border border-border bg-background px-2 py-1 text-[10px] font-mono uppercase tracking-normal text-[#717171]">
-          {metric}
-        </span>
       </div>
 
-      <blockquote className="mt-5 text-[15px] leading-6 text-[#3F3F46]">
+      <blockquote className="mt-4 text-sm leading-relaxed text-[#3F3F46]">
         &quot;{body}&quot;
       </blockquote>
 
-      <div className="mt-6 flex items-center gap-1.5 border-t border-border pt-4 text-[11px] font-mono uppercase tracking-normal text-[#6D5BD0]">
+      <div className="mt-4 flex items-center gap-1.5 border-t border-border pt-3.5 text-[11px] font-mono uppercase tracking-normal text-[#6D5BD0]">
         <span className="size-1.5 rounded-full bg-[#6D5BD0]" />
         LetterStack sender
       </div>

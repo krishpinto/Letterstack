@@ -15,11 +15,11 @@ const RECIPIENTS = [
 
 export function PipelineSection() {
   return (
-    <section className="py-20 sm:py-24 bg-[#FAFAFC] border-b border-[#E4E4E7] overflow-hidden">
+    <section className="py-20 sm:py-24 bg-[#FAFAFA] border-b border-[#E4E4E7] overflow-hidden">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
         
         {/* ── Title block ─────────────────────────────────────────────────── */}
-        <div className="text-center max-w-2xl mx-auto mb-14 sm:mb-16">
+        <div className="text-right max-w-2xl ml-auto mb-14 sm:mb-16">
           <h2 
             className="text-3xl font-bold leading-[1.08] tracking-tight text-[#0A0A0A] sm:text-4xl"
             style={{ fontFamily: "var(--font-bricolage, var(--font-inter))" }}

@@ -6,7 +6,7 @@ const STATS = [
 
 export function Stats() {
   return (
-    <section className="border-y border-[#E4E4E7] py-28 lg:py-36">
+    <section className=" py-28 lg:py-36">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
         {/* Eyebrow */}
         <p className="mb-14 text-center text-xs font-semibold uppercase tracking-[0.2em] text-[#717171]">
