@@ -196,11 +196,8 @@ export default function DashboardHome() {
 
   const { stats, series, recentCampaigns, recentTemplates, services } = data;
   const firstName = (session?.user?.name ?? "there").split(/\s+/)[0];
-  const today = new Date().toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const todayDate = new Date();
+  const today = `Today, ${todayDate.getDate()} ${todayDate.toLocaleDateString(undefined, { month: "short" })}`;
   const activeDomain =
     services.domainsVerified[0] ?? services.defaultSendingDomain;
 
@@ -325,22 +322,21 @@ export default function DashboardHome() {
       {/* ── Welcome header ── */}
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">
-            Welcome back, {firstName}!
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            Welcome back, {firstName}! 👋
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1.5 text-sm sm:text-base text-muted-foreground font-medium">
             Here&apos;s how your newsletters are doing.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm text-muted-foreground">
-            <CalendarIcon className="size-3.5" />
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-muted-foreground/80 py-1.5 px-2">
             {today}
           </span>
           <Button asChild>
             <Link href="/dashboard/campaigns">
               <PlusIcon data-icon="inline-start" />
-              New campaign
+              New Email
             </Link>
           </Button>
         </div>
@@ -476,20 +472,24 @@ export default function DashboardHome() {
       </div>
 
       {/* ── Recent campaigns ── */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle>Recent campaigns</CardTitle>
-            <CardDescription>Your latest sends and drafts.</CardDescription>
-          </div>
-          <Button variant="ghost" size="sm" asChild>
+      <div className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pt-0 gap-0 flex flex-col">
+        {/* Top Strip (bg-muted) */}
+        <div className="flex items-center justify-between gap-1 px-3 py-1.5">
+          <span className="flex items-center gap-1">
+            <SendIcon className="size-3 text-muted-foreground" aria-hidden="true" />
+            <span className="text-sm text-muted-foreground font-semibold">Campaign Activity</span>
+          </span>
+          <Button variant="ghost" size="sm" asChild className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
             <Link href="/dashboard/campaigns">
               View all
-              <ArrowRightIcon data-icon="inline-end" />
+              <ArrowRightIcon className="size-3" data-icon="inline-end" />
             </Link>
           </Button>
-        </CardHeader>
-        <CardContent className="px-0">
+        </div>
+
+        {/* Inner Card (bg-card) */}
+        <div className="overflow-hidden rounded-[1.125rem] border border-border bg-card">
+          <CardContent className="px-0 pt-2">
           {recentCampaigns.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No campaigns yet — create your first one to see activity here.
@@ -548,25 +548,30 @@ export default function DashboardHome() {
             </div>
           )}
         </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ── Recent templates (70%) + sending domain (30%) ── */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
         {/* Recent templates */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div>
-              <CardTitle>Recent templates</CardTitle>
-              <CardDescription>Pick up where you left off.</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
+        <div className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pt-0 gap-0 flex flex-col">
+          {/* Top Strip (bg-muted) */}
+          <div className="flex items-center justify-between gap-1 px-3 py-1.5">
+            <span className="flex items-center gap-1">
+              <PenLineIcon className="size-3 text-muted-foreground" aria-hidden="true" />
+              <span className="text-sm text-muted-foreground font-semibold">Design templates</span>
+            </span>
+            <Button variant="ghost" size="sm" asChild className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
               <Link href="/dashboard/templates?tab=saved">
                 View all
-                <ArrowRightIcon data-icon="inline-end" />
+                <ArrowRightIcon className="size-3" data-icon="inline-end" />
               </Link>
             </Button>
-          </CardHeader>
-          <CardContent>
+          </div>
+
+          {/* Inner Card (bg-card) */}
+          <div className="overflow-hidden rounded-[1.125rem] border border-border bg-card flex-1 flex flex-col">
+            <CardContent className="flex-1 flex flex-col justify-center p-4">
             {recentTemplates.length === 0 ? (
               <Empty className="border-0 py-10">
                 <EmptyHeader>
@@ -614,36 +619,66 @@ export default function DashboardHome() {
               </div>
             )}
           </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Sending domain */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle>Sending domain</CardTitle>
-            <CardDescription>Where your emails come from.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-4">
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <GlobeIcon className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{activeDomain}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {services.domainsVerified.length > 0
-                    ? `${services.domainsVerified.length} verified domain${services.domainsVerified.length === 1 ? "" : "s"}`
-                    : "Shared newsletter domain"}
-                </p>
-              </div>
-            </div>
-            <Button variant="outline" size="sm" className="mt-auto w-full" asChild>
-              <Link href="/dashboard/domains">
-                <PlusIcon data-icon="inline-start" />
-                Add your own domain
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pt-0 gap-0 flex flex-col">
+          {/* Top Strip (bg-muted) */}
+          <div className="flex items-center justify-between gap-1 px-3 py-1.5">
+            <span className="flex items-center gap-1">
+              <GlobeIcon className="size-3 text-muted-foreground" aria-hidden="true" />
+              <span className="text-sm text-muted-foreground font-semibold">Verified domains</span>
+            </span>
+          </div>
+
+          {/* Inner Card (bg-card) */}
+          <div className="overflow-hidden rounded-[1.125rem] border border-border bg-card flex-1 flex flex-col">
+            <CardContent className="flex flex-1 flex-col justify-center items-center text-center p-4">
+              {services.domainsVerified.length === 0 ? (
+                <Empty className="border-0 py-4 gap-2">
+                  <EmptyHeader>
+                    <EmptyMedia>
+                      <IconStack aria-hidden="true" className="h-24 w-22">
+                        <GlobeIcon className="size-5" />
+                      </IconStack>
+                    </EmptyMedia>
+                    <EmptyTitle>No verified domains</EmptyTitle>
+                    <EmptyDescription>
+                      Configure a custom domain to send emails from your own brand.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button size="sm" asChild>
+                      <Link href="/dashboard/domains">
+                        <PlusIcon data-icon="inline-start" />
+                        Add a domain
+                      </Link>
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center gap-3.5 py-2">
+                  <IconStack aria-hidden="true" className="h-24 w-22">
+                    <GlobeIcon className="size-5 text-primary" />
+                  </IconStack>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-sm text-foreground">{activeDomain}</p>
+                    <p className="text-xs text-emerald-500 font-medium flex items-center justify-center gap-1">
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Verified & Active
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="w-fit px-4 shadow-xs mt-1" asChild>
+                    <Link href="/dashboard/domains">
+                      Manage Domain
+                    </Link>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </div>
+        </div>
       </div>
     </div>
   );
