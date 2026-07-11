@@ -530,7 +530,6 @@ export function Features() {
     }
   }, [progress, handleNext]);
 
-
   return (
     <section className="py-24 sm:py-28 lg:py-32">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">

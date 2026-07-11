@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -178,6 +178,7 @@ export default function AudiencePage() {
   
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [filterReferenceTime] = useState(() => Date.now());
   
   // Importers / Single contact add dialogs
   const [addOpen, setAddOpen] = useState(false);
@@ -307,7 +308,9 @@ export default function AudiencePage() {
       addedFilter as "7d" | "30d" | "90d"
     ];
     const addedSince =
-      addedFilter === "any" ? null : Date.now() - addedDays * 24 * 60 * 60 * 1000;
+      addedFilter === "any"
+        ? null
+        : filterReferenceTime - addedDays * 24 * 60 * 60 * 1000;
 
     return contacts.filter((contact) => {
       if (statusFilter !== "all" && contact.status !== statusFilter) return false;
@@ -481,7 +484,7 @@ export default function AudiencePage() {
     }
   }
 
-  // ── Category Actions ────────────────────────────────────────────────────────
+  // â”€â”€ Category Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function handleCreateCategory() {
     if (!newFolderName.trim()) return;
@@ -622,7 +625,7 @@ export default function AudiencePage() {
       {/* The module sidebar + breadcrumb already title this page. */}
       {/* Main Table section */}
       <section className="flex flex-col gap-3">
-        {/* ── Mailchimp-style filter bar: everything visible, nothing hidden ── */}
+        {/* â”€â”€ Mailchimp-style filter bar: everything visible, nothing hidden â”€â”€ */}
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-1 flex-wrap items-center gap-2">
             <div className="relative w-full sm:w-64">
@@ -757,7 +760,7 @@ export default function AudiencePage() {
           </div>
         </div>
 
-        {/* ── Active filters row ── */}
+        {/* â”€â”€ Active filters row â”€â”€ */}
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">
@@ -889,7 +892,7 @@ export default function AudiencePage() {
                               </Badge>
                             ))
                           ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            <span className="text-xs text-muted-foreground">â€”</span>
                           )}
                         </div>
                       </TableCell>

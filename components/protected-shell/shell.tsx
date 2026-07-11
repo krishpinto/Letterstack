@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { usePathname } from "next/navigation";
 
+import { cn } from "@/lib/utils";
 import { ContentHeader } from "./content-header";
 import { IconRail } from "./icon-rail";
 import { NavSidebar } from "./nav-sidebar";
@@ -78,11 +79,12 @@ export function ProtectedShell({
                 router.refresh) and feeds this component the new org id. */}
             <main
               key={organization.id}
-              className={
+              className={cn(
+                "scrollbar-none",
                 isSettings
                   ? "flex-1 overflow-auto"
                   : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
-              }
+              )}
             >
               {children}
             </main>

@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ArrowRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import Image from "next/image";
 
 // ─── Mini product mockup (dark Letterstack dashboard) ────────────────────────
 
@@ -164,7 +163,7 @@ function ProductMockup() {
 
 export function Hero() {
   return (
-    <section data-hero-section className="pb-0 pt-20 lg:pt-28">
+    <section className="pb-0 pt-20 lg:pt-28">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10 mb-2">
 
         {/* ── Heading row ─────────────────────────────────────────────── */}
@@ -214,14 +213,7 @@ export function Hero() {
             }}
           >
             <div className="p-12">
-              {/* <ProductMockup /> */}
-              <Image
-                src="/image-hero.png"
-                alt="Product Mockup"
-                width={800}
-                height={450}
-                className="w-full h-auto rounded-lg shadow-2xl border border-muted/40"
-              />
+              <ProductMockup />
             </div>
           </div>
         </div>

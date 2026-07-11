@@ -106,7 +106,7 @@ function FloatingCard({ children, className, delayClass }: FloatingCardProps) {
 
 export function ReplaceSection() {
   return (
-    <section className="relative py-28 lg:py-40 bg-white border-t border-[#E4E4E7] overflow-hidden">
+    <section className="relative py-28 lg:py-40 bg-white border-y border-[#E4E4E7] overflow-hidden">
       
       {/* ── Background decoration / grids ─────────────────────────────────── */}
       <div className="absolute inset-0 bg-[#FAFAFA] opacity-60 pointer-events-none" />

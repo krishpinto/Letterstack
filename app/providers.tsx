@@ -8,10 +8,10 @@ import { usePathname } from "next/navigation";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Landing page is light; the whole app is dark. The theme is forced from
-  // the route, and next-themes bakes it into the server HTML so there is no
-  // light-mode flash on first paint.
-  const forcedTheme = pathname === "/" ? "light" : "dark";
+  // Landing pages are light; the whole app is dark. Force from the route so
+  // next-themes bakes the theme into server HTML — no flash on first paint.
+  const isLightRoute = pathname === "/" || pathname.startsWith("/landing");
+  const forcedTheme = isLightRoute ? "light" : "dark";
 
   return (
     <SessionProvider>

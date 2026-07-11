@@ -6,40 +6,46 @@ import { SectionHeading } from "./section-heading";
 
 const REVIEWS = [
   {
-    name: "Jack",
-    username: "@jack",
-    body: "I've never seen anything like this before. It's amazing. I love it.",
-    img: "https://avatar.vercel.sh/jack",
+    name: "Lucia Garza",
+    username: "Growth lead",
+    body: "The editor finally lets us build campaign emails as HTML instead of shipping one giant blurry image.",
+    img: "https://avatar.vercel.sh/lucia-garza",
+    metric: "Template setup",
   },
   {
-    name: "Jill",
-    username: "@jill",
-    body: "I don't know what to say. I'm speechless. This is amazing.",
-    img: "https://avatar.vercel.sh/jill",
+    name: "Judah Montes",
+    username: "Founder",
+    body: "We can write the message, preview it, and prepare the send from one place without rebuilding the same layout again.",
+    img: "https://avatar.vercel.sh/judah-montes",
+    metric: "Faster sends",
   },
   {
-    name: "John",
-    username: "@john",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/john",
+    name: "Roselyn McCoy",
+    username: "Marketing ops",
+    body: "Custom sender domains and bounce states make the whole campaign process feel much more controlled.",
+    img: "https://avatar.vercel.sh/roselyn-mccoy",
+    metric: "Own domain",
   },
   {
-    name: "Jane",
-    username: "@jane",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/jane",
+    name: "Jett Higgins",
+    username: "Agency partner",
+    body: "The template workflow is the part that clicked for us. We can reuse good layouts without locking clients into a bloated suite.",
+    img: "https://avatar.vercel.sh/jett-higgins",
+    metric: "Reusable layouts",
   },
   {
-    name: "Jenny",
-    username: "@jenny",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/jenny",
+    name: "Leighton Castillo",
+    username: "Newsletter operator",
+    body: "The website signup flow feeding straight into contact lists is exactly what a newsletter system should have built in.",
+    img: "https://avatar.vercel.sh/leighton-castillo",
+    metric: "Subscriber capture",
   },
   {
-    name: "James",
-    username: "@james",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/james",
+    name: "Kai Villanueva",
+    username: "Product marketer",
+    body: "Scheduling, analytics, and delivery status together make LetterStack feel focused on real campaign work.",
+    img: "https://avatar.vercel.sh/kai-villanueva",
+    metric: "Send visibility",
   },
 ];
 
@@ -60,57 +66,71 @@ function ReviewCard({
   return (
     <figure
       className={cn(
-        "relative w-72 cursor-pointer overflow-hidden rounded-2xl border border-border/40 p-5 transition-colors duration-200",
-        "bg-muted/40 hover:bg-muted/60"
+        "relative flex h-full w-[20rem] cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-white p-4 transition-colors duration-200",
+        "hover:border-[#6D5BD0]/50 hover:bg-[#F7F5FF]"
       )}
     >
-      <div className="flex flex-row items-center gap-3">
-        <img className="rounded-full bg-muted shrink-0" width="36" height="36" alt={name} src={img} />
-        <div className="flex flex-col min-w-0">
-          <figcaption className="text-sm font-bold text-[#0A0A0A] leading-none">
-            {name}
-          </figcaption>
-          <p className="text-xs text-[#717171] mt-1 leading-none">{username}</p>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-[#6D5BD0] opacity-80" />
+
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-row items-center gap-3">
+          <img
+            className="size-9 shrink-0 rounded-full border border-border bg-muted"
+            width="36"
+            height="36"
+            alt={name}
+            src={img}
+          />
+          <div className="flex min-w-0 flex-col">
+            <figcaption className="truncate text-sm font-semibold leading-none text-[#0A0A0A]">
+              {name}
+            </figcaption>
+            <p className="mt-1 truncate text-xs font-medium leading-none text-[#717171]">
+              {username}
+            </p>
+          </div>
         </div>
       </div>
-      <blockquote className="mt-3 text-sm leading-relaxed text-[#4B5563]">{body}</blockquote>
+
+      <blockquote className="mt-4 text-sm leading-relaxed text-[#3F3F46]">
+        &quot;{body}&quot;
+      </blockquote>
+
+      <div className="mt-4 flex items-center gap-1.5 border-t border-border pt-3.5 text-[11px] font-mono uppercase tracking-normal text-[#6D5BD0]">
+        <span className="size-1.5 rounded-full bg-[#6D5BD0]" />
+        LetterStack sender
+      </div>
     </figure>
   );
 }
 
 export function Testimonials() {
   return (
-    <section className="py-24 sm:py-28 bg-white overflow-hidden">
+    <section className="overflow-hidden bg-white py-24 sm:py-28">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
-        
-        {/* Title */}
-        <SectionHeading 
-          className="mb-16"
-          description="Loved by developers, growth marketers, and engineering leaders worldwide."
+        <SectionHeading
+          className="mb-14"
+          description="Campaign teams use LetterStack to move from design to audience to delivery without turning every email into a manual production job."
         >
-          What senders are saying.
+          Built for people who send real campaigns.
         </SectionHeading>
 
-        {/* Marquee Wrapper with side fade shadows (transparent background, no borders) */}
-        <div className="relative flex w-full flex-col items-center justify-center overflow-hidden py-4">
-          
-          <Marquee pauseOnHover className="[--duration:25s]">
+        <div className="relative flex w-full flex-col items-center justify-center overflow-hidden py-3">
+          <Marquee pauseOnHover className="[--duration:28s] [--gap:0.75rem]">
             {firstRow.map((review) => (
-              <ReviewCard key={review.username} {...review} />
+              <ReviewCard key={review.name} {...review} />
             ))}
           </Marquee>
-          
-          <Marquee reverse pauseOnHover className="[--duration:25s] mt-2">
+
+          <Marquee reverse pauseOnHover className="mt-2 [--duration:28s] [--gap:0.75rem]">
             {secondRow.map((review) => (
-              <ReviewCard key={review.username} {...review} />
+              <ReviewCard key={review.name} {...review} />
             ))}
           </Marquee>
 
-          {/* Left/Right side gradient overlay masks fading to white */}
-          <div className="pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-white via-white/80 to-transparent z-10" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-white via-white/80 to-transparent z-10" />
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-1/4 bg-gradient-to-r from-white via-white/85 to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-1/4 bg-gradient-to-l from-white via-white/85 to-transparent" />
         </div>
-
       </div>
     </section>
   );
