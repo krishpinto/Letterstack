@@ -16,12 +16,14 @@ import {
   MailCheckIcon,
   MailIcon,
   MailOpenIcon,
+  MailPlusIcon,
   PenLineIcon,
   PlusIcon,
   SendIcon,
   SparklesIcon,
   TrendingUpIcon,
   UsersIcon,
+  WorkflowIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -111,6 +113,7 @@ type Services = {
   templatesTotal: number;
   automationsTotal: number;
   automationsEnabled: number;
+  formsTotal: number;
   domainsVerified: string[];
   domainsTotal: number;
   defaultSendingDomain: string;
@@ -201,8 +204,10 @@ export default function DashboardHome() {
   const activeDomain =
     services.domainsVerified[0] ?? services.defaultSendingDomain;
 
-  // Ordered path to a first send. Completion is derived from live data, so the
-  // whole section disappears once every step is satisfied.
+  // The onboarding guide. The required core path (audience → design → send) drives
+  // the progress bar and is achievable on the shared domain; the optional group
+  // walks new users through the rest of the app. All completion is derived from
+  // live data. Required steps come first so the detail pane opens on the next one.
   const onboardingSteps: OnboardingStep[] = [
     {
       id: "account",
@@ -219,49 +224,87 @@ export default function DashboardHome() {
       id: "audience",
       title: "Add your audience",
       done: stats.audience > 0,
-      time: "2 minutes",
+      time: "2 min",
       heading: "Import your contacts",
       description:
-        "Upload a CSV or Excel list — we validate, dedupe, and clean it as it comes in.",
+        "Upload a CSV or Excel list — we validate, dedupe, and clean it as it comes in. This is who your campaigns go to.",
       href: "/dashboard/contacts",
       cta: "Add contacts",
       icon: UsersIcon,
     },
     {
       id: "template",
+      // Satisfied by saving a template OR building any campaign — either counts
+      // as "you've designed an email," so shared-domain users can finish it.
       title: "Design your first email",
-      done: services.templatesTotal > 0,
-      time: "10 minutes",
+      done: services.templatesTotal > 0 || services.campaignsTotal > 0,
+      time: "10 min",
       heading: "Build an email in the editor",
       description:
-        "Drag blocks onto the canvas to design a responsive, email-safe newsletter.",
-      href: "/editor",
+        "Drag blocks onto the canvas to design a responsive, email-safe newsletter — or start from a ready-made template.",
+      href: "/dashboard/templates",
       cta: "Open the editor",
       icon: PenLineIcon,
-    },
-    {
-      id: "domain",
-      title: "Set up your sending domain",
-      done: services.domainsVerified.length > 0,
-      time: "4 minutes",
-      heading: "Send from your own domain",
-      description:
-        "Authenticate a custom domain for the best deliverability, or start on our shared domain.",
-      href: "/dashboard/domains",
-      cta: "Add a domain",
-      icon: GlobeIcon,
     },
     {
       id: "campaign",
       title: "Send your first campaign",
       done: stats.campaignsSent > 0,
-      time: "5 minutes",
+      time: "5 min",
       heading: "Launch a campaign",
       description:
-        "Pick your audience, choose a template, and send now or schedule it for later.",
+        "Pick your audience, choose a design, and send now or schedule it for later. You can start on our shared domain right away.",
       href: "/dashboard/campaigns",
       cta: "Create a campaign",
       icon: SendIcon,
+    },
+    {
+      id: "domain",
+      title: "Send from your own domain",
+      done: services.domainsVerified.length > 0,
+      optional: true,
+      heading: "Use your own sending domain",
+      description:
+        "Authenticate a custom domain for the strongest deliverability and branding. Optional — the shared domain works out of the box.",
+      href: "/dashboard/domains",
+      cta: "Add a domain",
+      icon: GlobeIcon,
+    },
+    {
+      id: "forms",
+      title: "Grow your list with a form",
+      done: services.formsTotal > 0,
+      optional: true,
+      heading: "Add a signup form to your site",
+      description:
+        "Create an embeddable form so visitors can subscribe from anywhere — new signups flow straight into your audience.",
+      href: "/dashboard/forms",
+      cta: "Create a form",
+      icon: MailPlusIcon,
+    },
+    {
+      id: "automations",
+      title: "Automate a welcome email",
+      done: services.automationsTotal > 0,
+      optional: true,
+      heading: "Set up an automation",
+      description:
+        "Trigger emails automatically — like a welcome message the moment someone subscribes.",
+      href: "/dashboard/automations",
+      cta: "Build an automation",
+      icon: WorkflowIcon,
+    },
+    {
+      id: "analytics",
+      title: "Track your results",
+      done: stats.campaignsSent > 0,
+      optional: true,
+      heading: "See how your campaigns perform",
+      description:
+        "Delivery, opens, clicks, bounces and complaints per campaign — everything you need to keep your sending healthy.",
+      href: "/dashboard/analytics",
+      cta: "Open analytics",
+      icon: BarChart3Icon,
     },
   ];
   // Each campaign with a known open rate becomes one point on the radar's
@@ -303,6 +346,9 @@ export default function DashboardHome() {
         </div>
       </div>
 
+      {/* ── Getting started (hides once set up, or when dismissed) ── */}
+      <GettingStarted userName={firstName} steps={onboardingSteps} />
+
       {/* ── Stat cards ── */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatFrameCard
@@ -333,9 +379,6 @@ export default function DashboardHome() {
           icon={SendIcon}
         />
       </div>
-
-      {/* ── Getting started (hides itself once every step is done) ── */}
-      <GettingStarted userName={firstName} steps={onboardingSteps} />
 
       {/* ── Charts ── */}
       <div className="grid gap-4 lg:grid-cols-2">

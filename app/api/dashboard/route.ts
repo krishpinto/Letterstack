@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { count, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emailTemplates } from "@/db/schema";
+import { emailTemplates, signupForms } from "@/db/schema";
 import { listCampaignsForOrganization } from "@/db/campaigns";
 import { dashboardSeries, dashboardStats } from "@/db/dashboard";
 import { engagementByOrganization } from "@/db/events";
@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   try {
-    const [stats, series, campaigns, engagement, templates, templatesTotal, automations, domains] =
+    const [stats, series, campaigns, engagement, templates, templatesTotal, automations, domains, formsTotal] =
       await Promise.all([
         dashboardStats(organizationId),
         dashboardSeries(organizationId, 14),
@@ -45,6 +45,11 @@ export async function GET() {
           .then((rows) => rows[0]?.count ?? 0),
         listAutomationsForOrganization(organizationId),
         listSendingDomains(organizationId),
+        db
+          .select({ count: count() })
+          .from(signupForms)
+          .where(eq(signupForms.organizationId, organizationId))
+          .then((rows) => rows[0]?.count ?? 0),
       ]);
 
     const recentCampaigns = campaigns.slice(0, 6).map((c) => {
@@ -77,6 +82,7 @@ export async function GET() {
         templatesTotal,
         automationsTotal: automations.length,
         automationsEnabled: automations.filter((a) => a.status === "enabled").length,
+        formsTotal,
         domainsVerified: verifiedDomains,
         domainsTotal: domains.length,
         defaultSendingDomain: baseSendingDomain(),
