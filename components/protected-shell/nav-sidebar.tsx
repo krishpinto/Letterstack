@@ -17,6 +17,7 @@ import {
   LayoutTemplateIcon,
   MailCheckIcon,
   MailIcon,
+  MailPlusIcon,
   MailWarningIcon,
   MoreHorizontalIcon,
   PenLineIcon,
@@ -99,7 +100,13 @@ function SectionHeader({
 
 // Module detection: each icon-rail module gets its own contextual sidebar.
 // The overview (/dashboard) keeps the generic workspace nav.
-type Module = "campaigns" | "audience" | "templates" | "automations" | "domains";
+type Module =
+  | "campaigns"
+  | "audience"
+  | "templates"
+  | "automations"
+  | "forms"
+  | "domains";
 
 function moduleForPath(pathname: string): Module | null {
   if (
@@ -116,6 +123,7 @@ function moduleForPath(pathname: string): Module | null {
   }
   if (pathname.startsWith("/dashboard/templates")) return "templates";
   if (pathname.startsWith("/dashboard/automations")) return "automations";
+  if (pathname.startsWith("/dashboard/forms")) return "forms";
   if (pathname.startsWith("/dashboard/domains")) return "domains";
   return null;
 }
@@ -125,6 +133,7 @@ const MODULE_SIDEBARS: Record<Module, () => React.JSX.Element> = {
   audience: AudienceSidebar,
   templates: TemplatesSidebar,
   automations: AutomationsSidebar,
+  forms: FormsSidebar,
   domains: DomainsSidebar,
 };
 
@@ -539,6 +548,47 @@ function AutomationsSidebar() {
   );
 }
 
+// ─── Forms module ─────────────────────────────────────────────────────────────
+
+function FormsSidebar() {
+  const pathname = usePathname();
+
+  return (
+    <ModuleShell
+      title="Forms"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/forms?create=1" aria-label="New form">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      }
+      quickAdd={
+        <Button variant="outline" size="sm" className={QUICK_ADD_CLASS} asChild>
+          <Link href="/dashboard/forms?create=1">
+            <PlusIcon className="size-3.5 shrink-0" />
+            New form
+          </Link>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/forms"
+          icon={MailPlusIcon}
+          label="All forms"
+          active={pathname.startsWith("/dashboard/forms")}
+        />
+      </nav>
+    </ModuleShell>
+  );
+}
+
 // ─── Domains module ───────────────────────────────────────────────────────────
 
 function DomainsSidebar() {
@@ -650,6 +700,12 @@ function DefaultSidebar() {
           icon={WorkflowIcon}
           label="Automations"
           active={pathname.startsWith("/dashboard/automations")}
+        />
+        <NavItem
+          href="/dashboard/forms"
+          icon={MailPlusIcon}
+          label="Forms"
+          active={pathname.startsWith("/dashboard/forms")}
         />
         <NavItem
           href="/dashboard/domains"
