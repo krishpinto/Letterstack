@@ -62,6 +62,25 @@ export async function addRecipientsBulk(
   return inserted;
 }
 
+/** True if this email is already in the org's audience (any status). */
+export async function recipientExists(
+  organizationId: string,
+  email: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: recipients.id })
+    .from(recipients)
+    .where(
+      and(
+        eq(recipients.organizationId, organizationId),
+        eq(recipients.email, email),
+      ),
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
 export async function listRecipientsForOrganization(organizationId: string) {
   return db
     .select()

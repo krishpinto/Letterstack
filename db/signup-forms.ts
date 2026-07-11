@@ -58,6 +58,20 @@ export async function getSignupForm(organizationId: string, id: string) {
   return row ?? null;
 }
 
+/**
+ * Look up a form by id alone, unscoped by org — for the confirm path, where the
+ * only input is a signed token carrying the form id (the signature is the
+ * authorization, so no org context exists yet).
+ */
+export async function getSignupFormById(id: string) {
+  const [row] = await db
+    .select()
+    .from(signupForms)
+    .where(eq(signupForms.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
 /** Look up a form by its public key — the entry point for the public routes. */
 export async function getSignupFormByPublicKey(publicKey: string) {
   const [row] = await db
