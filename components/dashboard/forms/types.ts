@@ -1,3 +1,9 @@
+import type {
+  FormCornerStyle,
+  FormLayout,
+  FormTheme,
+} from "@/db/signup-forms";
+
 // Shape of a signup form as the dashboard sees it (JSON from /api/forms — dates
 // arrive as strings). Kept in one place so the page, card, and settings dialog
 // agree without importing server-only db types.
@@ -11,6 +17,9 @@ export type SignupFormRow = {
   successMessage: string;
   accentColor: string;
   collectName: boolean;
+  layout: FormLayout;
+  theme: FormTheme;
+  cornerStyle: FormCornerStyle;
   subscriberCount: number;
   createdAt: string;
 };
@@ -24,6 +33,9 @@ export type SignupFormSettingsInput = {
   successMessage: string;
   accentColor: string;
   collectName: boolean;
+  layout: FormLayout;
+  theme: FormTheme;
+  cornerStyle: FormCornerStyle;
 };
 
 export const DEFAULT_FORM_SETTINGS: SignupFormSettingsInput = {
@@ -35,4 +47,7 @@ export const DEFAULT_FORM_SETTINGS: SignupFormSettingsInput = {
     "Almost there — check your inbox to confirm your subscription.",
   accentColor: "#4f46e5",
   collectName: false,
+  layout: "card",
+  theme: "light",
+  cornerStyle: "rounded",
 };

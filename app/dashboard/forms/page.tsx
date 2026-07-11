@@ -15,7 +15,11 @@ import {
 } from "@/components/ui/empty";
 import { FormCard } from "@/components/dashboard/forms/form-card";
 import { FormSettingsDialog } from "@/components/dashboard/forms/form-settings-dialog";
-import type { SignupFormRow } from "@/components/dashboard/forms/types";
+import { FormTemplatePicker } from "@/components/dashboard/forms/form-template-picker";
+import type {
+  SignupFormRow,
+  SignupFormSettingsInput,
+} from "@/components/dashboard/forms/types";
 
 function FormsPage() {
   const router = useRouter();
@@ -26,8 +30,10 @@ function FormsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SignupFormRow | null>(null);
+  const [preset, setPreset] = useState<SignupFormSettingsInput | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,17 +57,23 @@ function FormsPage() {
   }, [load]);
 
   // Honor ?create=1 from the sidebar's "New form", then strip it so a refresh
-  // doesn't reopen the dialog.
+  // doesn't reopen the picker.
   useEffect(() => {
     if (searchParams.get("create") === "1") {
-      setEditing(null);
-      setDialogOpen(true);
+      setPickerOpen(true);
       router.replace("/dashboard/forms");
     }
   }, [searchParams, router]);
 
+  // Creating a form is two steps: pick a template, then customize it.
   function openCreate() {
+    setPickerOpen(true);
+  }
+
+  function handlePickTemplate(settings: SignupFormSettingsInput) {
+    setPreset(settings);
     setEditing(null);
+    setPickerOpen(false);
     setDialogOpen(true);
   }
 
@@ -142,10 +154,17 @@ function FormsPage() {
         </div>
       )}
 
+      <FormTemplatePicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={handlePickTemplate}
+      />
+
       <FormSettingsDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         initial={editing}
+        preset={preset}
         onSaved={handleSaved}
       />
     </div>
