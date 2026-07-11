@@ -10,6 +10,7 @@ import {
   CalendarIcon,
   CheckIcon,
   Edit3Icon,
+  FolderIcon,
   PlusIcon,
   ReplaceIcon,
   RotateCcwIcon,
@@ -30,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
@@ -207,6 +209,13 @@ export function CampaignDetail({
   const [audienceSaving, setAudienceSaving] = useState(false);
   const [audienceImporting, setAudienceImporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+
+  // Folder-first audience picking: the org's folders + who's in them, so the
+  // "To" step leads with "add everyone in this folder" instead of one-at-a-time.
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
+  const [orgAudienceCount, setOrgAudienceCount] = useState(0);
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
 
   // Send progress (non-draft only)
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -504,7 +513,60 @@ export function CampaignDetail({
     }
   }
 
-  async function addOrganizationAudience() {
+  // Load the org's folders (with member counts) and total audience size, so the
+  // "To" step can offer "add everyone in this folder".
+  const loadFolders = useCallback(async () => {
+    try {
+      const [catResult, audResult] = await Promise.all([
+        fetch("/api/audience/categories").then((r) => r.json()),
+        fetch("/api/audience").then((r) => r.json()),
+      ]);
+      if (catResult.ok) {
+        setFolders(
+          (catResult.categories as { id: string; name: string }[]).map((c) => ({
+            id: c.id,
+            name: c.name,
+          })),
+        );
+        const counts: Record<string, number> = {};
+        (catResult.mappings as { categoryId: string }[]).forEach((m) => {
+          counts[m.categoryId] = (counts[m.categoryId] ?? 0) + 1;
+        });
+        setFolderCounts(counts);
+      }
+      if (audResult.ok) {
+        setOrgAudienceCount((audResult.recipients as unknown[]).length);
+      }
+    } catch {
+      // best-effort — the individual add path still works without folders
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isEditable) void loadFolders();
+  }, [isEditable, loadFolders]);
+
+  // Shared handling for a from-audience response (folders or "everyone").
+  async function applyAudienceResult(
+    data: { ok: boolean; error?: string; summary?: { selected: number; imported: number } },
+    clearFolders = false,
+  ) {
+    if (!data.ok) {
+      setAudienceError(data.error || "Could not add contacts");
+      return;
+    }
+    if (data.summary && data.summary.imported === 0) {
+      setAudienceError(
+        data.summary.selected === 0
+          ? "No matching contacts to add."
+          : "Everyone here is already on this campaign.",
+      );
+    }
+    if (clearFolders) setSelectedFolders(new Set());
+    await loadAudience();
+  }
+
+  async function addEveryone() {
     setAudienceImporting(true);
     setAudienceError(null);
     try {
@@ -512,26 +574,42 @@ export function CampaignDetail({
         `/api/campaigns/${campaign.id}/recipients/from-audience`,
         { method: "POST" },
       );
-      const data = await r.json();
-      if (!data.ok) {
-        setAudienceError(
-          data.error || "Could not add organization audience",
-        );
-        return;
-      }
-      if (data.summary.imported === 0) {
-        setAudienceError(
-          data.summary.selected === 0
-            ? "This organization has no audience contacts yet."
-            : "Every eligible organization contact is already on this campaign.",
-        );
-      }
-      await loadAudience();
+      await applyAudienceResult(await r.json());
     } catch {
       setAudienceError("Could not reach the server.");
     } finally {
       setAudienceImporting(false);
     }
+  }
+
+  async function addSelectedFolders() {
+    if (selectedFolders.size === 0) return;
+    setAudienceImporting(true);
+    setAudienceError(null);
+    try {
+      const r = await fetch(
+        `/api/campaigns/${campaign.id}/recipients/from-audience`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryIds: Array.from(selectedFolders) }),
+        },
+      );
+      await applyAudienceResult(await r.json(), true);
+    } catch {
+      setAudienceError("Could not reach the server.");
+    } finally {
+      setAudienceImporting(false);
+    }
+  }
+
+  function toggleSelectedFolder(id: string) {
+    setSelectedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function removeAudienceRecipient(id: string) {
@@ -843,8 +921,114 @@ export function CampaignDetail({
                           content that appears after opening (e.g. the schedule picker) */}
                       <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-4">
+                          {/* Primary: pull people in from a folder (or everyone) */}
                           <Field>
-                            <FieldLabel>Add recipient</FieldLabel>
+                            <FieldLabel>Add people from your audience</FieldLabel>
+                            <FieldDescription>
+                              Pick a folder to add everyone in it, or add your
+                              whole audience. Suppressed contacts are always
+                              skipped.
+                            </FieldDescription>
+                            <div className="flex flex-col gap-2">
+                              {/* Everyone */}
+                              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+                                <span className="flex min-w-0 items-center gap-2 text-sm">
+                                  <UsersRoundIcon className="size-4 shrink-0 text-muted-foreground" />
+                                  <span className="font-medium">Everyone</span>
+                                  <span className="text-muted-foreground">
+                                    {orgAudienceCount} contact
+                                    {orgAudienceCount === 1 ? "" : "s"}
+                                  </span>
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={addEveryone}
+                                  disabled={
+                                    audienceImporting || orgAudienceCount === 0
+                                  }
+                                >
+                                  Add all
+                                </Button>
+                              </div>
+
+                              {/* Folders */}
+                              {folders.length > 0 ? (
+                                <>
+                                  <div className="overflow-hidden rounded-lg border border-border">
+                                    <div className="max-h-56 divide-y divide-border overflow-y-auto">
+                                      {folders.map((folder) => (
+                                        <label
+                                          key={folder.id}
+                                          className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/20"
+                                        >
+                                          <Checkbox
+                                            checked={selectedFolders.has(
+                                              folder.id,
+                                            )}
+                                            onCheckedChange={() =>
+                                              toggleSelectedFolder(folder.id)
+                                            }
+                                            aria-label={`Select ${folder.name}`}
+                                          />
+                                          <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                            {folder.name}
+                                          </span>
+                                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                            {folderCounts[folder.id] ?? 0}
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="self-start"
+                                    onClick={addSelectedFolders}
+                                    disabled={
+                                      audienceImporting ||
+                                      selectedFolders.size === 0
+                                    }
+                                  >
+                                    {audienceImporting ? (
+                                      <Spinner data-icon="inline-start" />
+                                    ) : (
+                                      <PlusIcon data-icon="inline-start" />
+                                    )}
+                                    {selectedFolders.size > 0
+                                      ? `Add ${selectedFolders.size} folder${selectedFolders.size === 1 ? "" : "s"}`
+                                      : "Add selected folders"}
+                                  </Button>
+                                </>
+                              ) : (
+                                <div className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+                                  No folders yet. Group your contacts into
+                                  folders on the{" "}
+                                  <Link
+                                    href="/dashboard/contacts"
+                                    className="underline underline-offset-2"
+                                  >
+                                    Audience page
+                                  </Link>{" "}
+                                  to send to a specific list.
+                                </div>
+                              )}
+                            </div>
+                            {audienceError && (
+                              <FieldError>{audienceError}</FieldError>
+                            )}
+                          </Field>
+
+                          {/* Secondary: one-off extras */}
+                          <Field>
+                            <FieldLabel>Add a few extra people</FieldLabel>
+                            <FieldDescription>
+                              One-off recipients for this campaign only — they
+                              aren&apos;t saved to your audience.
+                            </FieldDescription>
                             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_auto]">
                               <Input
                                 value={audienceEmail}
@@ -853,10 +1037,7 @@ export function CampaignDetail({
                                 }
                                 placeholder="email@example.com"
                                 onKeyDown={(e) => {
-                                  if (
-                                    e.key === "Enter" &&
-                                    audienceEmail.trim()
-                                  )
+                                  if (e.key === "Enter" && audienceEmail.trim())
                                     addAudienceRecipient();
                                 }}
                               />
@@ -867,15 +1048,13 @@ export function CampaignDetail({
                                 }
                                 placeholder="Name"
                                 onKeyDown={(e) => {
-                                  if (
-                                    e.key === "Enter" &&
-                                    audienceEmail.trim()
-                                  )
+                                  if (e.key === "Enter" && audienceEmail.trim())
                                     addAudienceRecipient();
                                 }}
                               />
                               <Button
                                 type="button"
+                                variant="outline"
                                 onClick={addAudienceRecipient}
                                 disabled={
                                   audienceSaving || !audienceEmail.trim()
@@ -889,41 +1068,26 @@ export function CampaignDetail({
                                 Add
                               </Button>
                             </div>
-                            {audienceError && (
-                              <FieldError>{audienceError}</FieldError>
-                            )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="self-start"
+                              onClick={() => setImportOpen(true)}
+                            >
+                              <UploadIcon data-icon="inline-start" />
+                              Import from a file
+                            </Button>
                           </Field>
+
+                          {/* Who's currently on the campaign */}
                           <Field>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <FieldLabel>Campaign audience</FieldLabel>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={addOrganizationAudience}
-                                  disabled={audienceImporting}
-                                >
-                                  {audienceImporting ? (
-                                    <Spinner data-icon="inline-start" />
-                                  ) : (
-                                    <UsersRoundIcon data-icon="inline-start" />
-                                  )}
-                                  {audienceImporting
-                                    ? "Adding…"
-                                    : "Add org audience"}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => setImportOpen(true)}
-                                >
-                                  <UploadIcon data-icon="inline-start" />
-                                  Import file
-                                </Button>
-                              </div>
-                            </div>
+                            <FieldLabel>
+                              On this campaign
+                              {recipientCount !== null && recipientCount > 0
+                                ? ` · ${recipientCount}`
+                                : ""}
+                            </FieldLabel>
                             <div className="overflow-hidden rounded-lg border border-border">
                               {recipients.length > 0 ? (
                                 <div className="max-h-64 divide-y divide-border overflow-y-auto">
@@ -964,11 +1128,14 @@ export function CampaignDetail({
                                 </div>
                               ) : (
                                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                                  No recipients on this campaign yet.
+                                  No recipients yet. Add a folder above to get
+                                  started.
                                 </div>
                               )}
                             </div>
                           </Field>
+
+                          {/* Do not send to */}
                           <Field>
                             <FieldLabel>Do not send to</FieldLabel>
                             <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
