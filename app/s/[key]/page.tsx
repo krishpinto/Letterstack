@@ -30,11 +30,20 @@ export default async function HostedSubscribePage({
   const form = await getSignupFormByPublicKey(key);
   if (!form) notFound();
 
+  const config = widgetConfig(form);
+
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-zinc-50 px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <SubscribeWidget config={widgetConfig(form)} />
-        <p className="mt-6 text-center text-xs text-zinc-400">
+    // Backdrop follows the form's theme so a dark form lands on a dark page.
+    <div
+      className="flex min-h-dvh flex-col items-center justify-center px-4 py-10"
+      style={{ backgroundColor: config.colors.pageBg }}
+    >
+      <div className="w-full max-w-md">
+        <SubscribeWidget config={config} />
+        <p
+          className="mt-6 text-center text-xs"
+          style={{ color: config.colors.muted }}
+        >
           Powered by LetterStack
         </p>
       </div>

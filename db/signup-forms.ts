@@ -6,6 +6,10 @@ import { signupForms } from "./schema";
 export type SignupForm = typeof signupForms.$inferSelect;
 
 /** Editable widget fields — everything except identity/ownership/counters. */
+export type FormLayout = "card" | "minimal" | "inline";
+export type FormTheme = "light" | "dark";
+export type FormCornerStyle = "sharp" | "rounded" | "pill";
+
 export type SignupFormSettings = {
   name: string;
   headline: string;
@@ -14,6 +18,9 @@ export type SignupFormSettings = {
   successMessage: string;
   accentColor: string;
   collectName: boolean;
+  layout: FormLayout;
+  theme: FormTheme;
+  cornerStyle: FormCornerStyle;
 };
 
 /** Unguessable, URL-safe public id used in /s/<key> and /embed/<key>. */
@@ -130,5 +137,8 @@ function cleanSettings(input: Partial<SignupFormSettings>) {
     out.successMessage = input.successMessage;
   if (input.accentColor !== undefined) out.accentColor = input.accentColor;
   if (input.collectName !== undefined) out.collectName = input.collectName;
+  if (input.layout !== undefined) out.layout = input.layout;
+  if (input.theme !== undefined) out.theme = input.theme;
+  if (input.cornerStyle !== undefined) out.cornerStyle = input.cornerStyle;
   return out;
 }

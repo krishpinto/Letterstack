@@ -250,6 +250,11 @@ export const signupForms = pgTable("signup_forms", {
   accentColor: text("accent_color").notNull().default("#4f46e5"),
   // Whether the widget asks for a name alongside the email.
   collectName: boolean("collect_name").notNull().default(false),
+  // Widget presentation. layout: card | minimal | inline. theme: light | dark.
+  // cornerStyle: sharp | rounded | pill. Resolved to concrete styles at render.
+  layout: text("layout").notNull().default("card"),
+  theme: text("theme").notNull().default("light"),
+  cornerStyle: text("corner_style").notNull().default("rounded"),
   // Running count of confirmed subscribers who came through this form.
   subscriberCount: integer("subscriber_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),

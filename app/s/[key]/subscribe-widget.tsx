@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { WidgetConfig } from "@/lib/forms/widget";
 
 // React rendering of the subscribe widget for the hosted /s/<key> page. Mirrors
 // the vanilla-JS embed (lib/forms/widget + app/embed) — same fields, honeypot,
-// and double opt-in POST — just as a component instead of an injected script.
+// double opt-in POST, and the same layout/theme/corner styling. All the visual
+// tokens are per-form data (chosen colors/theme), so they can only be applied as
+// inline styles — there are no static classes for a runtime-chosen palette.
 export function SubscribeWidget({ config }: { config: WidgetConfig }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -14,6 +16,9 @@ export function SubscribeWidget({ config }: { config: WidgetConfig }) {
     "idle",
   );
   const [error, setError] = useState("");
+
+  const { colors, radius, layout } = config;
+  const inline = layout === "inline";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -43,28 +48,75 @@ export function SubscribeWidget({ config }: { config: WidgetConfig }) {
     }
   }
 
+  const inputStyle: CSSProperties = {
+    height: 44,
+    padding: "0 12px",
+    fontSize: 14,
+    width: "100%",
+    boxSizing: "border-box",
+    borderRadius: radius,
+    border: `1px solid ${colors.inputBorder}`,
+    background: colors.inputBg,
+    color: colors.text,
+    outline: "none",
+  };
+
+  const buttonStyle: CSSProperties = {
+    height: 44,
+    padding: inline ? "0 18px" : undefined,
+    borderRadius: radius,
+    border: 0,
+    background: config.accentColor,
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    opacity: state === "working" ? 0.6 : 1,
+  };
+
+  // The outer box: a bordered, padded card — or bare for minimal/inline.
+  const rootStyle: CSSProperties =
+    layout === "card"
+      ? {
+          maxWidth: 440,
+          padding: 24,
+          borderRadius: 16,
+          border: `1px solid ${colors.border}`,
+          background: colors.bg,
+          color: colors.text,
+        }
+      : { maxWidth: 460, color: colors.text };
+
   if (state === "done") {
     return (
-      <div className="text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-2xl text-emerald-600">
-          ✓
+      <div style={rootStyle}>
+        <div className="text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-2xl text-emerald-500">
+            ✓
+          </div>
+          <p className="text-lg font-semibold">Check your inbox</p>
+          <p className="mt-2 text-sm" style={{ color: colors.muted }}>
+            {config.successMessage}
+          </p>
         </div>
-        <h1 className="text-lg font-semibold text-zinc-900">Check your inbox</h1>
-        <p className="mt-2 text-sm text-zinc-500">{config.successMessage}</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold text-zinc-900">{config.headline}</h1>
+    <div style={rootStyle}>
+      <h1 className="text-xl font-semibold">{config.headline}</h1>
       {config.description && (
-        <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+        <p className="mt-1 text-sm leading-relaxed" style={{ color: colors.muted }}>
           {config.description}
         </p>
       )}
 
-      <form onSubmit={submit} className="mt-5 flex flex-col gap-2.5">
+      <form
+        onSubmit={submit}
+        className="mt-5 flex flex-col gap-2.5"
+      >
         {/* Honeypot — off-screen, only bots fill it. */}
         <input
           type="text"
@@ -83,33 +135,26 @@ export function SubscribeWidget({ config }: { config: WidgetConfig }) {
             placeholder="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-11 rounded-lg border border-zinc-300 px-3 text-sm text-zinc-900 outline-none focus:border-zinc-500"
+            style={inputStyle}
           />
         )}
 
-        <input
-          type="email"
-          required
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="h-11 rounded-lg border border-zinc-300 px-3 text-sm text-zinc-900 outline-none focus:border-zinc-500"
-        />
+        {/* Inline layout puts the email + button on one row; otherwise stacked. */}
+        <div className={inline ? "flex gap-2" : "flex flex-col gap-2.5"}>
+          <input
+            type="email"
+            required
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={inline ? { ...inputStyle, flex: 1 } : inputStyle}
+          />
+          <button type="submit" disabled={state === "working"} style={buttonStyle}>
+            {state === "working" ? "Submitting…" : config.buttonLabel}
+          </button>
+        </div>
 
-        {state === "error" && (
-          <p className="text-sm text-red-600">{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={state === "working"}
-          // Accent is per-form user data (a stored hex), not a design token, so
-          // it can only be applied inline — there's no static class for it.
-          style={{ backgroundColor: config.accentColor }}
-          className="h-11 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {state === "working" ? "Submitting…" : config.buttonLabel}
-        </button>
+        {state === "error" && <p className="text-sm text-red-500">{error}</p>}
       </form>
     </div>
   );

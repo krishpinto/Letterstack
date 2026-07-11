@@ -42,6 +42,9 @@ export async function GET(
 function buildEmbedScript(configJson: string): string {
   return `(function () {
   var CFG = ${configJson};
+  var C = CFG.colors;
+  var R = CFG.radius;
+  var INLINE = CFG.layout === "inline";
   var self = document.currentScript;
 
   function el(tag, styles, text) {
@@ -53,13 +56,15 @@ function buildEmbedScript(configJson: string): string {
 
   var FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-  var root = el("div",
-    "max-width:420px;font-family:" + FONT + ";color:#111;box-sizing:border-box;" +
-    "border:1px solid #e5e7eb;border-radius:14px;padding:20px;background:#fff;");
+  var rootStyle = CFG.layout === "card"
+    ? "max-width:440px;font-family:" + FONT + ";color:" + C.text + ";box-sizing:border-box;" +
+      "border:1px solid " + C.border + ";border-radius:16px;padding:20px;background:" + C.bg + ";"
+    : "max-width:460px;font-family:" + FONT + ";color:" + C.text + ";box-sizing:border-box;";
+  var root = el("div", rootStyle);
 
   root.appendChild(el("div", "font-size:17px;font-weight:700;margin:0 0 4px;", CFG.headline));
   if (CFG.description) {
-    root.appendChild(el("div", "font-size:14px;color:#6b7280;margin:0 0 14px;line-height:1.5;", CFG.description));
+    root.appendChild(el("div", "font-size:14px;color:" + C.muted + ";margin:0 0 14px;line-height:1.5;", CFG.description));
   }
 
   var form = el("form", "display:flex;flex-direction:column;gap:10px;margin:0;");
@@ -74,8 +79,9 @@ function buildEmbedScript(configJson: string): string {
   hp.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;opacity:0;";
   form.appendChild(hp);
 
-  var inputStyle = "width:100%;box-sizing:border-box;height:42px;padding:0 12px;font-size:14px;" +
-    "border:1px solid #d1d5db;border-radius:9px;outline:none;font-family:" + FONT + ";";
+  var inputStyle = "width:100%;box-sizing:border-box;height:44px;padding:0 12px;font-size:14px;" +
+    "border:1px solid " + C.inputBorder + ";border-radius:" + R + "px;background:" + C.inputBg + ";" +
+    "color:" + C.text + ";outline:none;font-family:" + FONT + ";";
 
   var nameInput = null;
   if (CFG.collectName) {
@@ -86,19 +92,28 @@ function buildEmbedScript(configJson: string): string {
     form.appendChild(nameInput);
   }
 
-  var emailInput = el("input", inputStyle);
+  var emailInput = el("input", INLINE ? inputStyle + "flex:1;" : inputStyle);
   emailInput.type = "email";
   emailInput.name = "email";
   emailInput.required = true;
   emailInput.placeholder = "you@example.com";
-  form.appendChild(emailInput);
 
   var button = el("button",
-    "height:42px;border:0;border-radius:9px;background:" + CFG.accentColor + ";color:#fff;" +
-    "font-size:14px;font-weight:600;cursor:pointer;font-family:" + FONT + ";",
+    "height:44px;padding:0 18px;border:0;border-radius:" + R + "px;background:" + CFG.accentColor + ";color:#fff;" +
+    "font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:" + FONT + ";",
     CFG.buttonLabel);
   button.type = "submit";
-  form.appendChild(button);
+
+  // Inline layout puts the email + button on one row; otherwise stacked.
+  if (INLINE) {
+    var row = el("div", "display:flex;gap:8px;");
+    row.appendChild(emailInput);
+    row.appendChild(button);
+    form.appendChild(row);
+  } else {
+    form.appendChild(emailInput);
+    form.appendChild(button);
+  }
 
   var message = el("div", "font-size:13px;margin-top:2px;line-height:1.5;");
   form.appendChild(message);
@@ -124,7 +139,7 @@ function buildEmbedScript(configJson: string): string {
       .then(function (data) {
         if (data && data.ok) {
           form.style.display = "none";
-          var done = el("div", "font-size:14px;color:#111;line-height:1.5;", CFG.successMessage);
+          var done = el("div", "font-size:14px;color:" + C.text + ";line-height:1.5;", CFG.successMessage);
           root.appendChild(done);
         } else {
           message.style.color = "#dc2626";
