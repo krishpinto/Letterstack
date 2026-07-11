@@ -142,6 +142,9 @@ const FOLDER_COLORS = [
 
 const PAGE_SIZE = 8;
 
+// Per-browser dismissal for the "how your audience works" explainer.
+const GUIDE_KEY = "letterstack:audience-guide-dismissed";
+
 function getInitials(name: string | null, email: string) {
   if (name) {
     const parts = name.trim().split(/\s+/);
@@ -188,6 +191,10 @@ export default function AudiencePage() {
   const [adding, setAdding] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
+  // Dismissible explainer of the audience model. Starts shown; an effect flips
+  // it off if the user has hidden it before (avoids an SSR hydration mismatch).
+  const [showGuide, setShowGuide] = useState(true);
+
   // The module sidebar drives these via the URL: ?status=suppressed filters
   // the list, ?import=1 opens the import wizard.
   useEffect(() => {
@@ -195,6 +202,23 @@ export default function AudiencePage() {
     setStatusFilter(status && STATUS_KEYS.includes(status) ? status : "all");
     if (searchParams.get("import") === "1") setImportOpen(true);
   }, [searchParams]);
+
+  useEffect(() => {
+    try {
+      setShowGuide(window.localStorage.getItem(GUIDE_KEY) !== "1");
+    } catch {
+      // storage unavailable — leave it shown
+    }
+  }, []);
+
+  function dismissGuide() {
+    try {
+      window.localStorage.setItem(GUIDE_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setShowGuide(false);
+  }
 
   // Folder quick create dialog
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -623,6 +647,46 @@ export default function AudiencePage() {
   return (
     <div className="flex flex-col gap-6">
       {/* The module sidebar + breadcrumb already title this page. */}
+
+      {/* How your audience works — the 3-layer model, in one line + a legend. */}
+      {showGuide && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <div className="flex min-w-0 flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              Everyone you can email lives here. Sort them into{" "}
+              <span className="font-medium text-foreground">folders</span> — the
+              lists you pick from when sending a campaign. Anyone who
+              unsubscribes or bounces moves to{" "}
+              <span className="font-medium text-foreground">Suppressed</span> and
+              is skipped automatically, even if they&apos;re still in a folder.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <FolderIcon className="size-3.5" />
+                Folders — the lists you send to
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                Subscribed — will receive email
+              </span>
+              <span className="flex items-center gap-1.5">
+                <BanIcon className="size-3.5" />
+                Suppressed — never emailed
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={dismissGuide}
+            aria-label="Hide explainer"
+          >
+            <XIcon className="size-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Main Table section */}
       <section className="flex flex-col gap-3">
         {/* â”€â”€ Mailchimp-style filter bar: everything visible, nothing hidden â”€â”€ */}
