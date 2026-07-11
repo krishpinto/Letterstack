@@ -43,8 +43,7 @@ export const DEFAULT_FORM_SETTINGS: SignupFormSettingsInput = {
   headline: "Subscribe to our newsletter",
   description: "Get our latest updates straight to your inbox.",
   buttonLabel: "Subscribe",
-  successMessage:
-    "Almost there — check your inbox to confirm your subscription.",
+  successMessage: "You're subscribed — thanks for joining!",
   accentColor: "#4f46e5",
   collectName: false,
   layout: "card",

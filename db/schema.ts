@@ -222,10 +222,9 @@ export const emailTemplates = pgTable("email_templates", {
 // script at /embed/<publicKey>). publicKey is the unguessable, revocable id that
 // appears in those URLs — regenerating it kills every old embed at once.
 //
-// Signups are double opt-in: a submission mints a signed confirm token (no row
-// here), and only a confirmed click lands the address in `recipients`. So a
-// pending signup never touches the send path. subscriberCount is a running tally
-// of confirmations, for the dashboard — attribution beyond that isn't tracked.
+// Signups are single opt-in: a valid submission is added to `recipients`
+// immediately (no confirmation email). subscriberCount is a running tally of new
+// subscribers, for the dashboard — attribution beyond that isn't tracked.
 export const signupForms = pgTable("signup_forms", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id")
@@ -245,7 +244,7 @@ export const signupForms = pgTable("signup_forms", {
   buttonLabel: text("button_label").notNull().default("Subscribe"),
   successMessage: text("success_message")
     .notNull()
-    .default("Almost there — check your inbox to confirm your subscription."),
+    .default("You're subscribed — thanks for joining!"),
   // Hex accent for the button/link on the rendered widget.
   accentColor: text("accent_color").notNull().default("#4f46e5"),
   // Whether the widget asks for a name alongside the email.

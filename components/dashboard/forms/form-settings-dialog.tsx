@@ -219,7 +219,7 @@ export function FormSettingsDialog({
                 onChange={(e) => set("successMessage", e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Shown after someone submits, while they go confirm their email.
+                Shown right after someone subscribes.
               </p>
             </div>
 

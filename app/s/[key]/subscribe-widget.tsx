@@ -95,7 +95,7 @@ export function SubscribeWidget({ config }: { config: WidgetConfig }) {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-2xl text-emerald-500">
             ✓
           </div>
-          <p className="text-lg font-semibold">Check your inbox</p>
+          <p className="text-lg font-semibold">You&apos;re subscribed!</p>
           <p className="mt-2 text-sm" style={{ color: colors.muted }}>
             {config.successMessage}
           </p>

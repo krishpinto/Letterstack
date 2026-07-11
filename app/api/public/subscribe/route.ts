@@ -1,20 +1,19 @@
 // Public, unauthenticated, cross-origin subscribe endpoint — the target of every
-// embedded/hosted signup form. It never adds anyone to a list directly: a valid
-// submission mints a signed confirm token and emails a confirm link (double
-// opt-in). Only the confirm click (see ./confirm) lands the address in
-// `recipients`, so bots stuffing this endpoint can't pollute the send list.
+// embedded/hosted signup form. Single opt-in: a valid submission is added to the
+// org's audience immediately (no confirmation email). The honeypot + rate limit
+// are the only bot guards, so a bad address that gets past them lands directly
+// in the send list — re-introduce a confirm step if bounces ever climb.
 //
 // CORS is wide open (Access-Control-Allow-Origin: *) on purpose — the form runs
-// on the customer's own domain, and the only action possible here is "send a
-// confirmation email to an address," which is self-limiting and safe.
+// on the customer's own domain.
 
 import { NextResponse } from "next/server";
-import { getSignupFormByPublicKey } from "@/db/signup-forms";
+import {
+  getSignupFormByPublicKey,
+  incrementSubscriberCount,
+} from "@/db/signup-forms";
 import { isSuppressedForOrganization } from "@/db/suppression";
-import { recipientExists } from "@/db/recipients";
-import { signSubscribeToken } from "@/lib/forms/token";
-import { sendSubscribeConfirmationEmail } from "@/lib/forms/confirm-email";
-import { appBaseUrl } from "@/lib/send/qstash";
+import { addRecipient } from "@/db/recipients";
 
 export const runtime = "nodejs";
 
@@ -27,8 +26,7 @@ const CORS_HEADERS = {
 } as const;
 
 // Best-effort in-memory flood guard. Serverless instances are ephemeral and not
-// shared, so this only blunts a burst hitting one warm instance — real defense
-// is the honeypot + double opt-in. Keyed by IP+form.
+// shared, so this only blunts a burst hitting one warm instance. Keyed by IP+form.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
 const hits = new Map<string, number[]>();
@@ -78,25 +76,19 @@ export async function POST(request: Request) {
   const form = await getSignupFormByPublicKey(key);
   if (!form) return json({ ok: false, error: "Form not found" }, 404);
 
-  // Already unsubscribed/bounced, or already on the list: answer success
-  // without sending anything (no re-add, no way to probe list membership).
+  // Never resurrect an unsubscribed/bounced address; answer success without
+  // adding so membership can't be probed.
   if (await isSuppressedForOrganization(form.organizationId, email)) {
     return json({ ok: true });
   }
-  if (await recipientExists(form.organizationId, email)) {
-    return json({ ok: true });
-  }
 
-  try {
-    const token = signSubscribeToken({ formId: form.id, email, name });
-    const confirmUrl = `${appBaseUrl()}/subscribe/confirm?t=${encodeURIComponent(token)}`;
-    await sendSubscribeConfirmationEmail(form, email, confirmUrl);
-    return json({ ok: true });
-  } catch (err) {
-    console.error("POST /api/public/subscribe failed", err);
-    return json(
-      { ok: false, error: "Could not send the confirmation email. Try again." },
-      502,
-    );
-  }
+  // Add straight to the audience. onConflictDoNothing returns null when the
+  // address is already present, so we only bump the tally on a new subscriber.
+  const inserted = await addRecipient(form.organizationId, form.userId, {
+    email,
+    name,
+  });
+  if (inserted) await incrementSubscriberCount(form.id);
+
+  return json({ ok: true });
 }
