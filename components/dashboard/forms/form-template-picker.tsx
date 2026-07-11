@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import { FormPreview } from "./form-preview";
 import { FORM_TEMPLATES } from "./templates";
 import type { SignupFormSettingsInput } from "./types";
@@ -25,31 +24,29 @@ export function FormTemplatePicker({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle>Choose a starting point</DialogTitle>
           <DialogDescription>
             Pick a template to start from — you can customize everything after.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid max-h-[calc(88vh-6rem)] gap-4 overflow-y-auto p-6 sm:grid-cols-2 lg:grid-cols-3">
           {FORM_TEMPLATES.map((template) => (
             <button
               key={template.id}
               type="button"
               onClick={() => onSelect(template.settings)}
-              className={cn(
-                "group flex flex-col overflow-hidden rounded-xl border border-border text-left transition-colors hover:border-primary",
-              )}
+              className="group flex flex-col overflow-hidden rounded-xl border border-border bg-muted/30 text-left shadow-sm transition-all hover:border-primary hover:bg-muted/50 hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <FormPreview
                 settings={template.settings}
-                className="h-40 w-full overflow-hidden border-b border-border"
+                className="h-[210px] w-full border-b border-border"
               />
-              <div className="p-3">
+              <div className="p-3.5">
                 <p className="text-sm font-semibold">{template.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {template.description}
                 </p>
               </div>

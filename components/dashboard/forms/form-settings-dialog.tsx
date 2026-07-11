@@ -241,10 +241,15 @@ export function FormSettingsDialog({
           </div>
 
           {/* Live preview column */}
-          <div className="hidden min-h-full border-l border-border bg-muted/30 md:block">
-            <div className="sticky top-0 flex h-full items-center justify-center p-4">
+          <div className="hidden min-h-full flex-col border-l border-border bg-muted/30 md:flex">
+            <div className="border-b border-border px-4 py-2.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Live preview
+              </p>
+            </div>
+            <div className="flex flex-1 items-center justify-center p-5">
               <div className="w-full overflow-hidden rounded-xl border border-border shadow-sm">
-                <FormPreview settings={values} className="min-h-[260px] w-full" />
+                <FormPreview settings={values} className="min-h-[280px] w-full" />
               </div>
             </div>
           </div>

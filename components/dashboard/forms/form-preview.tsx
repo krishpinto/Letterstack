@@ -11,7 +11,8 @@ import type { SignupFormSettingsInput } from "./types";
 // A static, non-interactive rendering of the subscribe widget, driven by the
 // same style resolution (lib/forms/style) as the real widget — so what the user
 // sees in the gallery/settings preview is what actually ships. Inert: no submit,
-// no fetch, pointer-events disabled.
+// no fetch, pointer-events disabled. Kept compact so it never clips inside a
+// preview frame.
 export function FormPreview({
   settings,
   className,
@@ -25,13 +26,13 @@ export function FormPreview({
   const inline = settings.layout === "inline";
 
   const field: CSSProperties = {
-    height: 34,
+    height: 30,
     borderRadius: Math.min(radius, 999),
     border: `1px solid ${colors.inputBorder}`,
     background: colors.inputBg,
     color: colors.muted,
-    fontSize: 12,
-    padding: "0 10px",
+    fontSize: 11,
+    padding: "0 9px",
     display: "flex",
     alignItems: "center",
     width: "100%",
@@ -39,31 +40,42 @@ export function FormPreview({
   };
 
   const button: CSSProperties = {
-    height: 34,
+    height: 30,
     borderRadius: Math.min(radius, 999),
     background: accent,
     color: "#fff",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
-    padding: "0 14px",
+    padding: "0 12px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     whiteSpace: "nowrap",
   };
 
+  const clamp2: CSSProperties = {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 3,
+    lineHeight: 1.35,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  };
+
   const root: CSSProperties =
     settings.layout === "card"
       ? {
-          borderRadius: 14,
+          borderRadius: 12,
           border: `1px solid ${colors.border}`,
           background: colors.bg,
           color: colors.text,
-          padding: 16,
+          padding: 14,
           width: "100%",
-          maxWidth: 300,
+          maxWidth: 260,
         }
-      : { color: colors.text, width: "100%", maxWidth: 320 };
+      : { color: colors.text, width: "100%", maxWidth: 280 };
 
   return (
     <div
@@ -73,26 +85,30 @@ export function FormPreview({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 20,
+        padding: 16,
         pointerEvents: "none",
         userSelect: "none",
       }}
       aria-hidden="true"
     >
       <div style={root}>
-        <div style={{ fontSize: 14, fontWeight: 700 }}>{settings.headline}</div>
-        {settings.description && (
-          <div style={{ fontSize: 12, color: colors.muted, marginTop: 3 }}>
-            {settings.description}
-          </div>
-        )}
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            lineHeight: 1.25,
+          }}
+        >
+          {settings.headline}
+        </div>
+        {settings.description && <div style={clamp2}>{settings.description}</div>}
 
         <div
           style={{
-            marginTop: 12,
+            marginTop: 10,
             display: "flex",
             flexDirection: "column",
-            gap: 8,
+            gap: 7,
           }}
         >
           {settings.collectName && <div style={field}>Your name</div>}
