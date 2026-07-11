@@ -1,4 +1,13 @@
-import { jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import type { EmailDocument } from "@/lib/email/document";
 
 export const users = pgTable("users", {
@@ -204,6 +213,45 @@ export const emailTemplates = pgTable("email_templates", {
   // Unguessable token backing the public share link (/templates/shared/<token>).
   // Null = not shared.
   shareToken: text("share_token").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Embeddable newsletter signup forms. Each form is a public subscribe widget an
+// org drops onto their own site (hosted page at /s/<publicKey>, or the injected
+// script at /embed/<publicKey>). publicKey is the unguessable, revocable id that
+// appears in those URLs — regenerating it kills every old embed at once.
+//
+// Signups are double opt-in: a submission mints a signed confirm token (no row
+// here), and only a confirmed click lands the address in `recipients`. So a
+// pending signup never touches the send path. subscriberCount is a running tally
+// of confirmations, for the dashboard — attribution beyond that isn't tracked.
+export const signupForms = pgTable("signup_forms", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Unguessable id in the embed/hosted URLs. Unique globally.
+  publicKey: text("public_key").notNull().unique(),
+  // Internal label shown only in the dashboard ("Website footer form").
+  name: text("name").notNull(),
+  headline: text("headline").notNull().default("Subscribe to our newsletter"),
+  description: text("description")
+    .notNull()
+    .default("Get our latest updates straight to your inbox."),
+  buttonLabel: text("button_label").notNull().default("Subscribe"),
+  successMessage: text("success_message")
+    .notNull()
+    .default("Almost there — check your inbox to confirm your subscription."),
+  // Hex accent for the button/link on the rendered widget.
+  accentColor: text("accent_color").notNull().default("#4f46e5"),
+  // Whether the widget asks for a name alongside the email.
+  collectName: boolean("collect_name").notNull().default(false),
+  // Running count of confirmed subscribers who came through this form.
+  subscriberCount: integer("subscriber_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
