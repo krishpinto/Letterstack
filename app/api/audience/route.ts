@@ -3,6 +3,7 @@ import {
   addRecipient,
   deleteRecipient,
   listRecipientsForOrganization,
+  updateRecipient,
 } from "@/db/recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { enqueueAutomationsForEvent } from "@/lib/automations/run";
@@ -88,6 +89,62 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, recipient });
   } catch (error) {
     return NextResponse.json({ ok: false, error: realError(error) }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const userId = await currentUserId();
+  if (!userId) return unauthorized();
+
+  const organizationId = await currentOrganizationId();
+  if (!organizationId) {
+    return NextResponse.json({ ok: false, error: "Organization required" }, { status: 428 });
+  }
+
+  try {
+    const body = await request.json().catch(() => null);
+    const id = String(body?.id ?? "");
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+    }
+
+    const patch: { email?: string; name?: string | null } = {};
+
+    if (body?.email !== undefined) {
+      const email = String(body.email).trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) {
+        return NextResponse.json({ ok: false, error: "Valid email required" }, { status: 400 });
+      }
+      if (await isSuppressedForOrganization(organizationId, email)) {
+        return NextResponse.json(
+          { ok: false, error: "That email is suppressed for this organization" },
+          { status: 400 },
+        );
+      }
+      patch.email = email;
+    }
+
+    if (body?.name !== undefined) {
+      patch.name = String(body.name).trim() || null;
+    }
+
+    const recipient = await updateRecipient(organizationId, id, patch);
+    if (!recipient) {
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, recipient });
+  } catch (error) {
+    const message = realError(error);
+    // The (organization, email) unique constraint: the new address already
+    // belongs to another contact.
+    if (message.includes("duplicate key")) {
+      return NextResponse.json(
+        { ok: false, error: "Another contact already uses that email" },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
 

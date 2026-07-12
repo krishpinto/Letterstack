@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { ImportWizard } from "./import-wizard";
+import { InlineEditCell, suggestEmailFix } from "./inline-edit-cell";
 import { dispatchAudienceChanged, onOrganizationChanged } from "@/lib/dashboard-events";
 import { confirmDialog } from "@/components/app-dialogs";
 import { SelectionPill } from "@/components/selection-pill";
@@ -80,6 +81,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -132,7 +140,8 @@ const FOLDER_COLORS = [
   { text: "text-cyan-500", bg: "bg-cyan-500/10" },
 ];
 
-const PAGE_SIZE = 8;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 function getInitials(name: string | null, email: string) {
   if (name) {
@@ -167,6 +176,7 @@ export default function AudiencePage() {
   const [folderFilter, setFolderFilter] = useState<Set<string>>(new Set());
   const [addedFilter, setAddedFilter] = useState<"any" | "7d" | "30d" | "90d">("any");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
@@ -315,7 +325,7 @@ export default function AudiencePage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, folderFilter, addedFilter]);
+  }, [query, statusFilter, folderFilter, addedFilter, pageSize]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -357,13 +367,13 @@ export default function AudiencePage() {
       }
       return true;
     });
-  }, [contacts, query, statusFilter, folderFilter, addedFilter, mappings]);
+  }, [contacts, query, statusFilter, folderFilter, addedFilter, mappings, filterReferenceTime]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageStart = (page - 1) * pageSize;
+  const pageItems = filtered.slice(pageStart, pageStart + pageSize);
   const firstShown = filtered.length > 0 ? pageStart + 1 : 0;
-  const lastShown = Math.min(pageStart + PAGE_SIZE, filtered.length);
+  const lastShown = Math.min(pageStart + pageSize, filtered.length);
 
   const counts = useMemo(() => {
     const count = { all: contacts.length, subscribed: 0, bounced: 0, suppressed: 0 };
@@ -417,6 +427,44 @@ export default function AudiencePage() {
 
   function clearSelection() {
     setSelected(new Set());
+  }
+
+  // Inline cell edits land here; the return value is the editor's error line.
+  async function updateContactField(
+    id: string,
+    patch: { email?: string; name?: string },
+  ): Promise<string | null> {
+    try {
+      const response = await fetch("/api/audience", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      });
+      const data = await response.json();
+      if (!data.ok) return data.error ?? "Could not update the contact.";
+
+      setContacts((prev) =>
+        prev.map((contact) =>
+          contact.id === id
+            ? {
+                ...contact,
+                email: data.recipient.email,
+                name: data.recipient.name,
+                // PATCH refuses suppressed addresses, so a changed email
+                // is always a clean subscriber again.
+                ...(patch.email !== undefined
+                  ? { status: "subscribed" as const }
+                  : {}),
+              }
+            : contact,
+        ),
+      );
+      dispatchAudienceChanged();
+      showToast("Contact updated");
+      return null;
+    } catch {
+      return "Could not reach the server.";
+    }
   }
 
   async function removeContact(id: string) {
@@ -695,12 +743,11 @@ export default function AudiencePage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* The module sidebar + breadcrumb already title this page. */}
-      {/* Main Table section */}
-      <section className="flex flex-col gap-3">
-        {/* â”€â”€ Mailchimp-style filter bar: everything visible, nothing hidden â”€â”€ */}
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+    // Full-bleed: the shell skips its padding for this route, so the page
+    // itself becomes the table — toolbar band, scrolling rows, footer band.
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+        {/* Mailchimp-style filter bar: everything visible, nothing hidden */}
+        <div className="flex shrink-0 flex-col gap-2 border-b border-border px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-1 flex-wrap items-center gap-2">
             <div className="relative w-full sm:w-64">
               <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -793,9 +840,9 @@ export default function AudiencePage() {
           </div>
         </div>
 
-        {/* â”€â”€ Active filters row â”€â”€ */}
+        {/* Active filters row */}
         {hasActiveFilters && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-4 py-2">
             <span className="text-xs font-medium text-muted-foreground">
               Filtering:
             </span>
@@ -853,14 +900,9 @@ export default function AudiencePage() {
           </div>
         )}
 
-        <p className="text-sm text-muted-foreground">
-          {filtered.length} of {contacts.length} contact
-          {contacts.length === 1 ? "" : "s"} shown
-        </p>
-
-        {/* Table wrapper with scroll to prevent page scroll */}
-        <div className="overflow-auto max-h-[450px] rounded-lg border border-border bg-card">
-          <Table>
+        {/* The table fills the remaining height and scrolls on its own. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <Table className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10">
@@ -907,12 +949,34 @@ export default function AudiencePage() {
                             {getInitials(contact.name, contact.email)}
                           </span>
                           <span className="min-w-0">
-                            <span className="block truncate font-medium text-foreground">
-                              {contact.name || contact.email.split("@")[0]}
-                            </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {contact.email}
-                            </span>
+                            <InlineEditCell
+                              value={contact.name ?? ""}
+                              ariaLabel={`Edit name for ${contact.email}`}
+                              placeholder="Add a name…"
+                              onCommit={(next) =>
+                                updateContactField(contact.id, { name: next })
+                              }
+                              display={
+                                <span className="block truncate font-medium text-foreground">
+                                  {contact.name || contact.email.split("@")[0]}
+                                </span>
+                              }
+                            />
+                            <InlineEditCell
+                              value={contact.email}
+                              ariaLabel={`Edit email ${contact.email}`}
+                              validate={(next) => EMAIL_RE.test(next)}
+                              invalidMessage="Enter a valid email address."
+                              suggest={suggestEmailFix}
+                              onCommit={(next) =>
+                                updateContactField(contact.id, { email: next })
+                              }
+                              display={
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {contact.email}
+                                </span>
+                              }
+                            />
                           </span>
                         </div>
                       </TableCell>
@@ -925,7 +989,7 @@ export default function AudiencePage() {
                               </Badge>
                             ))
                           ) : (
-                            <span className="text-xs text-muted-foreground">â€”</span>
+                            <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </div>
                       </TableCell>
@@ -966,10 +1030,26 @@ export default function AudiencePage() {
         </div>
 
         {/* Pagination bar styled exactly like campaigns list */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex shrink-0 flex-col gap-3 border-t border-border px-4 py-2 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {firstShown}-{lastShown} of {filtered.length}
           </p>
+          <div className="flex items-center gap-3">
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => setPageSize(Number(value))}
+          >
+            <SelectTrigger className="h-8 w-fit gap-1 text-xs" aria-label="Rows per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  {option} / page
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {pageCount > 1 && (
             <Pagination className="mx-0 w-auto">
               <PaginationContent>
@@ -1014,6 +1094,7 @@ export default function AudiencePage() {
               </PaginationContent>
             </Pagination>
           )}
+          </div>
         </div>
 
         <SelectionPill count={selected.size} onClear={clearSelection}>
@@ -1056,7 +1137,6 @@ export default function AudiencePage() {
             Delete
           </Button>
         </SelectionPill>
-      </section>
 
       {/* dialog for single contact add */}
       <AddContactDialog

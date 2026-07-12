@@ -96,6 +96,30 @@ export async function resetSentFlags(organizationId: string) {
     .where(eq(recipients.organizationId, organizationId));
 }
 
+export async function updateRecipient(
+  organizationId: string,
+  id: string,
+  patch: { email?: string; name?: string | null },
+) {
+  const values: Partial<typeof recipients.$inferInsert> = {};
+  if (patch.email !== undefined) values.email = patch.email;
+  if (patch.name !== undefined) values.name = patch.name;
+  if (Object.keys(values).length === 0) return null;
+
+  const [row] = await db
+    .update(recipients)
+    .set(values)
+    .where(
+      and(
+        eq(recipients.id, id),
+        eq(recipients.organizationId, organizationId),
+      ),
+    )
+    .returning();
+
+  return row ?? null;
+}
+
 export async function deleteRecipient(organizationId: string, id: string) {
   const rows = await db
     .delete(recipients)
