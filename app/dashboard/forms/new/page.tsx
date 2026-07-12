@@ -174,7 +174,9 @@ function ScaledPreview({
   settings: SignupFormSettingsInput;
   scale: number;
 }) {
-  const inverse = 100 / scale;
+  // scale is a percentage (70 → 0.7): the box must be oversized by its
+  // reciprocal, also in percent — 70% scale means a 10000/70 ≈ 143% box.
+  const inverse = 10000 / scale;
   return (
     <div className="h-full w-full overflow-hidden">
       <div
