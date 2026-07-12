@@ -51,17 +51,17 @@ export function Footer() {
         </div>
 
         {/* ── Middle Row: Column Links ───────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-8 mb-12">
+        <div className="grid grid-cols-2 gap-8 mb-12">
           {/* Column 1: Product */}
           <div className="flex flex-col gap-3">
             <h3 className="text-[13px] font-bold text-[#0A0A0A] tracking-tight">
               Product
             </h3>
             <div className="flex flex-col gap-2.5 text-xs font-medium text-[#717171]">
-              <Link href="#features" className="hover:text-[#0A0A0A] transition-colors">Features</Link>
+              <Link href="/features" className="hover:text-[#0A0A0A] transition-colors">Features</Link>
               <Link href="/design" className="hover:text-[#0A0A0A] transition-colors">Design</Link>
               <Link href="/templates" className="hover:text-[#0A0A0A] transition-colors">Templates</Link>
-              <Link href="#pricing" className="hover:text-[#0A0A0A] transition-colors">Pricing</Link>
+              <Link href="/pricing" className="hover:text-[#0A0A0A] transition-colors">Pricing</Link>
             </div>
           </div>
 
@@ -71,19 +71,8 @@ export function Footer() {
               Company
             </h3>
             <div className="flex flex-col gap-2.5 text-xs font-medium text-[#717171]">
-              <Link href="#about" className="hover:text-[#0A0A0A] transition-colors">About</Link>
-              <Link href="#contact" className="hover:text-[#0A0A0A] transition-colors">Contact</Link>
-            </div>
-          </div>
-
-          {/* Column 3: Legal */}
-          <div className="flex flex-col gap-3">
-            <h3 className="text-[13px] font-bold text-[#0A0A0A] tracking-tight">
-              Legal
-            </h3>
-            <div className="flex flex-col gap-2.5 text-xs font-medium text-[#717171]">
-              <Link href="/license" className="hover:text-[#0A0A0A] transition-colors">Licence</Link>
-              <Link href="/privacy" className="hover:text-[#0A0A0A] transition-colors">Privacy</Link>
+              <Link href="/about" className="hover:text-[#0A0A0A] transition-colors">About</Link>
+              <Link href="/contact" className="hover:text-[#0A0A0A] transition-colors">Contact</Link>
             </div>
           </div>
         </div>
