@@ -198,9 +198,6 @@ export function Hero() {
               <ArrowRightIcon data-icon="inline-end" />
             </Link>
           </Button>
-          <Button variant="ghost" size="default" asChild>
-            <Link href="/features">Explore features</Link>
-          </Button>
         </div>
 
         {/* ── Product mockup in muted container ─────────────────────────── */}
