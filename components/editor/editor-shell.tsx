@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import {
@@ -77,7 +77,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
-import { MoreHorizontalIcon, Redo2Icon, Undo2Icon } from "lucide-react"
+import {
+  MoreHorizontalIcon,
+  Redo2Icon,
+  Undo2Icon,
+  ChevronLeftIcon,
+  PencilIcon,
+  CodeIcon,
+  EyeIcon,
+  CheckIcon,
+  MonitorIcon,
+  SmartphoneIcon,
+  SearchIcon
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -524,36 +536,40 @@ export function EditorShell({
 
   return (
     <EditorToolbarProvider>
-      <DndContext
-        id="editor-dnd"
-        sensors={sensors}
-        collisionDetection={collisionDetection}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <SidebarProvider
-          style={
-            {
-              "--sidebar-width": "19rem",
-            } as React.CSSProperties
-          }
-        >
-          <EditorLeftSidebar
-            onAddBlock={addBlock}
-            onOpenTheme={() => {
-              setSelectedBlockId("")
-              setRightPanel("theme")
-            }}
-            onOpenSettings={() => {
-              setSelectedBlockId("")
-              setRightPanel("settings")
-            }}
-          />
-          <SidebarInset className="h-[calc(100svh-1rem)] overflow-hidden">
-            {/* <EditorHeader /> */}
-            <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
+        <EditorHeader documentName={document.name} />
+        
+        <div className="flex-1 min-h-0 flex relative">
+          <DndContext
+            id="editor-dnd"
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SidebarProvider
+              style={
+                {
+                  "--sidebar-width": "19rem",
+                } as React.CSSProperties
+              }
+              className="min-h-0 h-full w-full !bg-background border-none"
+            >
+              <EditorLeftSidebar
+                onAddBlock={addBlock}
+                onOpenTheme={() => {
+                  setSelectedBlockId("")
+                  setRightPanel("theme")
+                }}
+                onOpenSettings={() => {
+                  setSelectedBlockId("")
+                  setRightPanel("settings")
+                }}
+              />
+              <SidebarInset className="min-h-0 overflow-hidden flex flex-col bg-background">
+                <div className="relative flex min-h-0 flex-1 overflow-hidden">
               <CanvasProvider value={canvasValue}>
                 <EmailCanvas
                   document={document}
@@ -566,7 +582,7 @@ export function EditorShell({
               </CanvasProvider>
 
               {inspectorOpen && (
-                <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-3xl border bg-card shadow-2xl">
+                <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl">
                   {rightPanel === "theme" ? (
                     <StylesPanel
                       document={document}
@@ -717,34 +733,141 @@ export function EditorShell({
           ) : null}
         </DragOverlay>
       </DndContext>
+        </div>
+      </div>
     </EditorToolbarProvider>
   )
 }
 
-// function EditorHeader() {
-//   return (
-//     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/95">
-//       <div className="flex items-center gap-2 px-4">
-//         <SidebarTrigger className="-ml-1" />
-//         <Separator
-//           orientation="vertical"
-//           className="mr-2 data-vertical:h-4 data-vertical:self-auto"
-//         />
-//         <Breadcrumb>
-//           <BreadcrumbList>
-//             <BreadcrumbItem className="hidden md:block">
-//               <BreadcrumbLink href="#">LetterStack</BreadcrumbLink>
-//             </BreadcrumbItem>
-//             <BreadcrumbSeparator className="hidden md:block" />
-//             <BreadcrumbItem>
-//               <BreadcrumbPage>Editor New</BreadcrumbPage>
-//             </BreadcrumbItem>
-//           </BreadcrumbList>
-//         </Breadcrumb>
-//       </div>
-//     </header>
-//   )
-// }
+function EditorHeader({
+  documentName,
+  onExit,
+  onSave,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: {
+  documentName: string
+  onExit?: () => void
+  onSave?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
+}) {
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
+      {/* Left: Back chevron + Title */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onExit}
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          type="button"
+        >
+          <ChevronLeftIcon className="size-4" />
+        </button>
+        <span className="text-sm font-semibold text-foreground tracking-tight select-none">
+          {documentName || "Untitled Email"}
+        </span>
+      </div>
+
+      {/* Center: Switcher (Editor / HTML / Preview) */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
+        <button
+          className="flex items-center gap-1.5 rounded-md bg-card px-3.5 py-1 text-xs font-semibold text-foreground shadow-xs border border-border/5"
+          type="button"
+        >
+          <PencilIcon className="size-3 text-primary" />
+          Editor
+        </button>
+        <button
+          className="flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          type="button"
+        >
+          <CodeIcon className="size-3" />
+          HTML
+        </button>
+        <button
+          className="flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          type="button"
+        >
+          <EyeIcon className="size-3" />
+          Preview
+        </button>
+      </div>
+
+      {/* Right: Actions, Status & Viewport */}
+      <div className="flex items-center gap-3">
+        {/* Status Indicator */}
+        <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 select-none mr-1.5">
+          <CheckIcon className="size-3.5" />
+          Saved
+        </span>
+
+        {/* Undo/Redo Buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+            type="button"
+          >
+            <Undo2Icon className="size-3.5" />
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+            type="button"
+          >
+            <Redo2Icon className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Vertical Divider */}
+        <div className="h-4 w-px bg-border" />
+
+        {/* Device Viewport Toggle (Desktop/Mobile) */}
+        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
+          <button
+            className="flex size-7 items-center justify-center rounded-md bg-card text-foreground shadow-xs border border-border/5"
+            type="button"
+          >
+            <MonitorIcon className="size-3.5" />
+          </button>
+          <button
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors"
+            type="button"
+          >
+            <SmartphoneIcon className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Vertical Divider */}
+        <div className="h-4 w-px bg-border" />
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1">
+          <Button
+            onClick={onSave}
+            variant="default"
+            size="sm"
+            className="h-8 px-4 font-semibold shadow-xs"
+          >
+            Save
+          </Button>
+          <button
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            type="button"
+          >
+            <MoreHorizontalIcon className="size-4" />
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}
 
 function EditorBottomDock({
   inspectorOpen,
@@ -864,20 +987,7 @@ function EditorLeftSidebar({
   onOpenSettings: () => void
 }) {
   return (
-    <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="border-b p-2">
-        <div className="flex items-center gap-2 px-2 py-1">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
-          </div>
-          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-            <span className="truncate font-medium">LetterStack</span>
-            <span className="truncate text-xs text-sidebar-foreground/60">
-              Campaign editor
-            </span>
-          </div>
-        </div>
-      </SidebarHeader>
+    <Sidebar variant="inset" collapsible="icon" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
         <SidebarGroup className="min-h-0 flex-1 p-0">
           <ScrollArea className="min-h-0 flex-1">
@@ -922,6 +1032,8 @@ function BlockLibrary({
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
 }) {
+  const [searchQuery, setSearchQuery] = React.useState("")
+
   const editorNewBlocks = React.useMemo(
     () => [
       ...CONTENT_BLOCKS,
@@ -930,24 +1042,48 @@ function BlockLibrary({
     [],
   )
 
+  const filteredBlocks = React.useMemo(() => {
+    return editorNewBlocks.filter((block) =>
+      block.label.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [editorNewBlocks, searchQuery])
+
   return (
-    <div className="flex flex-col gap-2 p-2">
+    <div className="flex flex-col gap-4 p-3.5">
+      {/* Header */}
       <div>
-        <p className="text-sm font-medium">Content blocks</p>
-        <p className="text-xs text-sidebar-foreground/60">
+        <p className="text-sm font-bold text-foreground">Content blocks</p>
+        <p className="text-[11px] text-muted-foreground/75 mt-0.5">
           Click to add a section to the email.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {editorNewBlocks.map(({ type, label, icon }) => (
+
+      {/* Search Input */}
+      <div className="relative">
+        <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search blocks..."
+          className="h-8.5 pl-8 pr-3 text-xs bg-muted/20 border-border/40 focus-visible:bg-background/80"
+        />
+      </div>
+
+      {/* Grid of Blocks */}
+      <div className="grid grid-cols-2 gap-x-2 gap-y-3 px-0.5">
+        {filteredBlocks.map(({ type, label, icon }) => (
           <DraggableBlockTile
             key={`${type}-${label}`}
             dragId={`editor-palette:${type}:${label}`}
             blockType={type}
             onAddBlock={onAddBlock}
           >
-            <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4" />
-            <span className="w-full truncate leading-tight">{label}</span>
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/20 text-muted-foreground group-hover:bg-muted/40 group-hover:text-foreground transition-all duration-200">
+              <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4.5" />
+            </div>
+            <span className="font-semibold text-xs text-muted-foreground/90 group-hover:text-foreground transition-colors truncate">
+              {label === "rawHtml" ? "Code" : label === "articleCard" ? "Article" : label === "paragraph" ? "Text" : label}
+            </span>
           </DraggableBlockTile>
         ))}
       </div>
@@ -979,7 +1115,7 @@ function DraggableBlockTile({
       {...listeners}
       onClick={() => onAddBlock(blockType)}
       className={cn(
-        "flex aspect-square touch-none flex-col items-center justify-center gap-1 rounded-lg border bg-background px-1.5 text-center text-[10px] text-foreground/75 transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98]",
+        "flex touch-none items-center gap-2.5 rounded-xl text-left transition-colors duration-200 hover:bg-muted/45 p-1 active:scale-[0.98] group w-full min-w-0",
         isDragging && "opacity-40"
       )}
     >
