@@ -34,6 +34,13 @@ export function ProtectedShell({
   // no filter panel — just the stats page.
   const isDashboardHome = pathname === "/dashboard";
   const contentOnly = isSettings || isDashboardHome;
+  // Full-bleed worklist pages: they draw their own toolbar/table/footer
+  // bands edge-to-edge and manage their own scroll. (/dashboard/contacts is
+  // the audience page's legacy route — same component.)
+  const isFullBleedList =
+    pathname === "/dashboard/campaigns" ||
+    pathname === "/dashboard/audience" ||
+    pathname === "/dashboard/contacts";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -83,7 +90,9 @@ export function ProtectedShell({
                 "scrollbar-none",
                 isSettings
                   ? "flex-1 overflow-auto"
-                  : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
+                  : isFullBleedList
+                    ? "flex flex-1 flex-col overflow-hidden"
+                    : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
               )}
             >
               {children}

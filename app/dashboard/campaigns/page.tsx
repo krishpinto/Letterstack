@@ -1,9 +1,14 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ChevronRightIcon,
+  CircleCheckIcon,
+  CircleDashedIcon,
+  ClockIcon,
+  Loader2Icon,
   MailIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -16,7 +21,6 @@ import { onOrganizationChanged } from "@/lib/dashboard-events";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { confirmDialog } from "@/components/app-dialogs";
 import { SelectionPill } from "@/components/selection-pill";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -70,6 +74,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { PageLoader } from "@/components/bar-spinner";
 import {
@@ -105,21 +110,50 @@ const STATUS_LABELS: Record<StatusKey, string> = {
   sent: "Sent",
 };
 
-const STATUS_BADGE_VARIANTS = {
-  draft: "secondary",
-  scheduled: "outline",
-  sending: "outline",
-  sent: "default",
-} as const;
+type SectionKey = Exclude<StatusKey, "all">;
 
-const STATUS_DESCRIPTIONS: Record<Exclude<StatusKey, "all">, string> = {
-  draft: "Not sent yet",
-  scheduled: "Waiting for send time",
-  sending: "Queued / in progress",
-  sent: "Completed",
+// The pipeline strip reads left-to-right in lifecycle order; the table groups
+// campaigns attention-first (live sends on top, finished work at the bottom).
+const PIPELINE_ORDER: SectionKey[] = ["draft", "scheduled", "sending", "sent"];
+const SECTION_ORDER: SectionKey[] = ["sending", "scheduled", "draft", "sent"];
+
+const SECTION_META: Record<
+  SectionKey,
+  {
+    icon: typeof MailIcon;
+    iconClass: string;
+    barClass: string;
+  }
+> = {
+  sending: {
+    icon: Loader2Icon,
+    iconClass: "animate-spin text-sky-500",
+    barClass: "[&_[data-slot=progress-indicator]]:bg-sky-500",
+  },
+  scheduled: {
+    icon: ClockIcon,
+    iconClass: "text-amber-500",
+    barClass: "[&_[data-slot=progress-indicator]]:bg-amber-500",
+  },
+  draft: {
+    icon: CircleDashedIcon,
+    iconClass: "text-muted-foreground",
+    barClass: "",
+  },
+  sent: {
+    icon: CircleCheckIcon,
+    iconClass: "text-emerald-500",
+    barClass: "[&_[data-slot=progress-indicator]]:bg-emerald-500",
+  },
 };
 
-const PAGE_SIZE = 8;
+function normalizeStatus(status: string): SectionKey {
+  return status === "scheduled" || status === "sending" || status === "sent"
+    ? status
+    : "draft";
+}
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -140,6 +174,7 @@ export default function CampaignsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
 
   // The status filter lives in the URL (?status=draft) so the module sidebar
   // views (Drafts / Scheduled / Sent) can drive it and deep links work.
@@ -194,36 +229,54 @@ export default function CampaignsPage() {
       setPage(1);
       void loadCampaigns();
     });
-  }, [loadCampaigns]);
+  }, [loadCampaigns, setStatusFilter]);
 
-  const filtered = useMemo(() => {
+  // Query narrows first; the pipeline chips show per-stage counts of the
+  // searched set so search and stage filters compose visibly.
+  const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((campaign) =>
+      `${campaign.name} ${campaign.subject}`.toLowerCase().includes(q),
+    );
+  }, [list, query]);
 
-    return list.filter((campaign) => {
-      if (statusFilter !== "all" && campaign.status !== statusFilter) {
-        return false;
-      }
+  const stageCounts = useMemo(() => {
+    const counts: Record<SectionKey, number> = {
+      draft: 0,
+      scheduled: 0,
+      sending: 0,
+      sent: 0,
+    };
+    for (const campaign of searched) {
+      counts[normalizeStatus(campaign.status)] += 1;
+    }
+    return counts;
+  }, [searched]);
 
-      if (
-        q &&
-        !`${campaign.name} ${campaign.subject}`.toLowerCase().includes(q)
-      ) {
-        return false;
-      }
+  // Rows come out bucketed by status in attention-first order so the table
+  // can render one section header per group.
+  const filtered = useMemo(() => {
+    const buckets = new Map<SectionKey, Campaign[]>(
+      SECTION_ORDER.map((key) => [key, []]),
+    );
+    for (const campaign of searched) {
+      const status = normalizeStatus(campaign.status);
+      if (statusFilter !== "all" && status !== statusFilter) continue;
+      buckets.get(status)?.push(campaign);
+    }
+    return SECTION_ORDER.flatMap((key) => buckets.get(key) ?? []);
+  }, [searched, statusFilter]);
 
-      return true;
-    });
-  }, [list, query, statusFilter]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageStart = (page - 1) * pageSize;
+  const pageItems = filtered.slice(pageStart, pageStart + pageSize);
   const firstShown = filtered.length === 0 ? 0 : pageStart + 1;
   const lastShown = Math.min(pageStart + pageItems.length, filtered.length);
 
   useEffect(() => {
     setPage(1);
-  }, [query, statusFilter]);
+  }, [query, statusFilter, pageSize]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -306,15 +359,33 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* The module sidebar + breadcrumb already title this page — the
-          toolbar goes straight to work instead of repeating "Campaigns". */}
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {filtered.length} of {list.length} campaign
-            {list.length === 1 ? "" : "s"} shown
-          </p>
+    // Full-bleed: the shell skips its padding for this route, so the page
+    // itself becomes the table — toolbar band, scrolling rows, footer band.
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-border px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Lifecycle strip: each stage is a filter chip, like a pipeline
+              breadcrumb. Clicking the active stage clears the filter. */}
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap">
+            <PipelineChip
+              label="All"
+              count={searched.length}
+              active={statusFilter === "all"}
+              onClick={() => setStatusFilter("all")}
+            />
+            {PIPELINE_ORDER.map((stage) => (
+              <Fragment key={stage}>
+                <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
+                <PipelineChip
+                  label={STATUS_LABELS[stage]}
+                  count={stageCounts[stage]}
+                  active={statusFilter === stage}
+                  onClick={() =>
+                    setStatusFilter(statusFilter === stage ? "all" : stage)
+                  }
+                />
+              </Fragment>
+            ))}
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative min-w-0 sm:w-72">
               <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -325,21 +396,6 @@ export default function CampaignsPage() {
                 className="pl-8"
               />
             </div>
-            {/* Status filtering lives in the module sidebar — the toolbar
-                only shows the active view when it isn't "all". */}
-            {statusFilter !== "all" && (
-              <Badge variant="secondary" className="h-9 gap-1.5 px-3">
-                {STATUS_LABELS[statusFilter]}
-                <button
-                  type="button"
-                  aria-label="Clear status filter"
-                  className="cursor-pointer text-muted-foreground hover:text-foreground"
-                  onClick={() => setStatusFilter("all")}
-                >
-                  ×
-                </button>
-              </Badge>
-            )}
             <Button onClick={() => setCreateOpen(true)}>
               <PlusIcon data-icon="inline-start" />
               Create
@@ -347,8 +403,8 @@ export default function CampaignsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <Table>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <Table className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10">
@@ -365,16 +421,17 @@ export default function CampaignsPage() {
                   />
                 </TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead className="hidden lg:table-cell">Recipients</TableHead>
+                <TableHead>Delivery</TableHead>
                 <TableHead className="hidden xl:table-cell">Created</TableHead>
+                <TableHead className="w-10" />
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32">
+                  <TableCell colSpan={7} className="h-32">
                     <PageLoader className="min-h-0" label="Loading campaigns..." />
                   </TableCell>
                 </TableRow>
@@ -382,27 +439,43 @@ export default function CampaignsPage() {
 
               {!loading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <CampaignEmptyState hasCampaigns={list.length > 0} />
                   </TableCell>
                 </TableRow>
               )}
 
               {!loading &&
-                pageItems.map((campaign) => {
-                  const status =
-                    campaign.status === "scheduled" ||
-                    campaign.status === "sending" ||
-                    campaign.status === "sent"
-                      ? campaign.status
-                      : "draft";
-                  const isDraft =
-                    campaign.status === "draft" ||
-                    campaign.status === "scheduled";
+                pageItems.map((campaign, index) => {
+                  const status = normalizeStatus(campaign.status);
+                  const meta = SECTION_META[status];
+                  const StatusIcon = meta.icon;
+                  // A section header opens each status group — also at the
+                  // top of every page, since a group can span pages.
+                  const previousStatus =
+                    index > 0
+                      ? normalizeStatus(pageItems[index - 1].status)
+                      : null;
+                  const showSectionHeader = status !== previousStatus;
 
                   return (
+                    <Fragment key={campaign.id}>
+                    {showSectionHeader && (
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableCell colSpan={7} className="py-2">
+                          <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-2 text-xs font-medium">
+                              <StatusIcon className={`size-3.5 ${meta.iconClass}`} />
+                              {STATUS_LABELS[status]}
+                            </span>
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {stageCounts[status]}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                     <TableRow
-                      key={campaign.id}
                       data-state={selected.has(campaign.id) ? "selected" : undefined}
                       className="cursor-pointer"
                       onClick={() => router.push(`/dashboard/campaigns/${campaign.id}`)}
@@ -437,35 +510,48 @@ export default function CampaignsPage() {
                         </div>
                       </TableCell>
 
-                      <TableCell>
-                        <div className="flex flex-col items-start gap-1">
-                          <Badge variant={STATUS_BADGE_VARIANTS[status]}>
-                            <span className="size-1.5 rounded-full bg-current" />
-                            {STATUS_LABELS[status]}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {status === "scheduled" && campaign.scheduledAt
-                              ? `Sends ${new Date(campaign.scheduledAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
-                              : STATUS_DESCRIPTIONS[status]}
-                          </span>
-                        </div>
-                      </TableCell>
                       <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">
-                        {campaign.audienceCount === 0 ? (
-                          <span>—</span>
-                        ) : isDraft ? (
-                          <span>
-                            {campaign.audienceCount} recipient
-                            {campaign.audienceCount === 1 ? "" : "s"}
+                        {campaign.audienceCount === 0
+                          ? "—"
+                          : campaign.audienceCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {status === "draft" ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : status === "scheduled" ? (
+                          <span className="text-xs text-muted-foreground">
+                            {campaign.scheduledAt
+                              ? `Sends ${new Date(campaign.scheduledAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`
+                              : "Waiting for send time"}
                           </span>
                         ) : (
-                          <span>
-                            {campaign.sentCount}/{campaign.audienceCount}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={
+                                campaign.audienceCount > 0
+                                  ? Math.round(
+                                      (campaign.sentCount /
+                                        campaign.audienceCount) *
+                                        100,
+                                    )
+                                  : 0
+                              }
+                              className={`h-1.5 w-20 ${meta.barClass}`}
+                            />
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {campaign.sentCount}/{campaign.audienceCount}
+                            </span>
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="hidden text-muted-foreground xl:table-cell">
                         {formatDate(campaign.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusIcon
+                          className={`size-4 ${meta.iconClass}`}
+                          aria-label={STATUS_LABELS[status]}
+                        />
                       </TableCell>
                       <TableCell
                         className="text-right"
@@ -506,16 +592,33 @@ export default function CampaignsPage() {
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
+                    </Fragment>
                   );
                 })}
             </TableBody>
           </Table>
         </div>
 
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex shrink-0 flex-col gap-3 border-t border-border px-4 py-2 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {firstShown}-{lastShown} of {filtered.length}
           </p>
+          <div className="flex items-center gap-3">
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => setPageSize(Number(value))}
+          >
+            <SelectTrigger className="h-8 w-fit gap-1 text-xs" aria-label="Rows per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  {option} / page
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {pageCount > 1 && (
             <Pagination className="mx-0 w-auto">
               <PaginationContent>
@@ -560,6 +663,7 @@ export default function CampaignsPage() {
               </PaginationContent>
             </Pagination>
           )}
+          </div>
         </div>
 
         <SelectionPill
@@ -576,13 +680,40 @@ export default function CampaignsPage() {
             Delete
           </Button>
         </SelectionPill>
-      </section>
 
       <CreateCampaignDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
       />
     </div>
+  );
+}
+
+function PipelineChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors ${
+        active
+          ? "bg-secondary font-medium text-secondary-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      {label}
+      <span className="text-xs tabular-nums opacity-70">{count}</span>
+    </button>
   );
 }
 
