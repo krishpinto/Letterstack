@@ -192,12 +192,14 @@ export function Hero() {
 
         {/* ── CTAs ──────────────────────────────────────────────────────── */}
         <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          <Button size="lg">
-            Get started free
-            <ArrowRightIcon data-icon="inline-end" />
+          <Button size="lg" asChild>
+            <Link href="/signup">
+              Get started free
+              <ArrowRightIcon data-icon="inline-end" />
+            </Link>
           </Button>
-          <Button variant="ghost" size="default">
-            Read the docs
+          <Button variant="ghost" size="default" asChild>
+            <Link href="/features">Explore features</Link>
           </Button>
         </div>
 
