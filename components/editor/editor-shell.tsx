@@ -114,8 +114,30 @@ import {
   type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document"
+import { compileEmailDocument } from "@/lib/email/compiler"
 import { getEmailContainerShadow } from "@/lib/email/shadow"
 import { cn } from "@/lib/utils"
+
+type EditorView = "editor" | "html" | "preview"
+
+type PreviewViewport = "desktop" | "mobile"
+
+// Clipboard write with an execCommand fallback for non-secure contexts.
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = globalThis.document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  globalThis.document.body.appendChild(textarea)
+  textarea.select()
+  globalThis.document.execCommand("copy")
+  textarea.remove()
+}
 
 type ActiveDrag =
   | { kind: "palette"; blockType: EmailBlock["type"] }
@@ -149,6 +171,9 @@ export function EditorShell({
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
   const [dockStatus, setDockStatus] = React.useState<"idle" | "saved" | "copied">("idle")
+  const [view, setView] = React.useState<EditorView>("editor")
+  const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
+  const [sidebarOpen, setSidebarOpen] = React.useState(true)
   const saveStatusTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = React.useState(false)
@@ -292,24 +317,21 @@ export function EditorShell({
   }, [document, onSave, showDockStatus])
 
   const copyTemplateJson = React.useCallback(async () => {
-    const json = JSON.stringify(document, null, 2)
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(json)
-    } else {
-      const textarea = globalThis.document.createElement("textarea")
-      textarea.value = json
-      textarea.setAttribute("readonly", "")
-      textarea.style.position = "fixed"
-      textarea.style.opacity = "0"
-      globalThis.document.body.appendChild(textarea)
-      textarea.select()
-      globalThis.document.execCommand("copy")
-      textarea.remove()
-    }
-
+    await copyToClipboard(JSON.stringify(document, null, 2))
     showDockStatus("copied")
   }, [document, showDockStatus])
+
+  // What the HTML and Preview views show — the exact compiler output that a
+  // send would use, recompiled whenever the document changes.
+  const compiled = React.useMemo(
+    () => (view === "editor" ? null : compileEmailDocument(document)),
+    [view, document]
+  )
+
+  const copyCompiledHtml = React.useCallback(async () => {
+    await copyToClipboard(compileEmailDocument(documentRef.current).html)
+    showDockStatus("copied")
+  }, [showDockStatus])
 
   const handlePasteJson = React.useCallback(() => {
     try {
@@ -552,6 +574,15 @@ export function EditorShell({
           onUndo={undo}
           onRedo={redo}
           saved={dockStatus === "saved"}
+          view={view}
+          onViewChange={setView}
+          viewport={previewViewport}
+          onViewportChange={(viewport) => {
+            setPreviewViewport(viewport)
+            // The device toggle only means anything in the rendered preview,
+            // so picking one from another view jumps there.
+            setView("preview")
+          }}
         />
         
         <div className="flex-1 min-h-0 flex relative">
@@ -571,6 +602,11 @@ export function EditorShell({
                 } as React.CSSProperties
               }
               className="min-h-0 h-full w-full !bg-background border-none"
+              // Fold the block library away in HTML/preview — those views are
+              // about the output, not editing. The inset keeps a small left
+              // margin so its rounded edge never touches the screen.
+              open={view === "editor" && sidebarOpen}
+              onOpenChange={setSidebarOpen}
             >
               <EditorLeftSidebar
                 onAddBlock={addBlock}
@@ -585,6 +621,17 @@ export function EditorShell({
               />
               <SidebarInset className="min-h-0 overflow-hidden flex flex-col bg-background">
                 <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {view === "preview" && compiled ? (
+                <EmailPreviewPane
+                  html={compiled.html}
+                  viewport={previewViewport}
+                />
+              ) : view === "html" && compiled ? (
+                <EmailHtmlPane
+                  html={compiled.html}
+                  onCopy={() => void copyCompiledHtml()}
+                />
+              ) : (
               <CanvasProvider value={canvasValue}>
                 <EmailCanvas
                   document={document}
@@ -595,8 +642,9 @@ export function EditorShell({
                   }}
                 />
               </CanvasProvider>
+              )}
 
-              {inspectorOpen && (
+              {view === "editor" && inspectorOpen && (
                 <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl">
                   {rightPanel === "theme" ? (
                     <StylesPanel
@@ -764,6 +812,10 @@ function EditorHeader({
   onUndo,
   onRedo,
   saved,
+  view,
+  onViewChange,
+  viewport,
+  onViewportChange,
 }: {
   documentName: string
   onRename: (name: string) => void
@@ -774,7 +826,16 @@ function EditorHeader({
   onUndo?: () => void
   onRedo?: () => void
   saved?: boolean
+  view: EditorView
+  onViewChange: (view: EditorView) => void
+  viewport: PreviewViewport
+  onViewportChange: (viewport: PreviewViewport) => void
 }) {
+  const views = [
+    { id: "editor", label: "Editor", icon: PencilIcon },
+    { id: "html", label: "HTML", icon: CodeIcon },
+    { id: "preview", label: "Preview", icon: EyeIcon },
+  ] as const
   return (
     <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
       {/* Left: Back chevron + Title */}
@@ -791,27 +852,22 @@ function EditorHeader({
 
       {/* Center: Switcher (Editor / HTML / Preview) */}
       <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
-        <button
-          className="flex items-center gap-1.5 rounded-md bg-card px-3.5 py-1 text-xs font-semibold text-foreground shadow-xs border border-border/5"
-          type="button"
-        >
-          <PencilIcon className="size-3 text-primary" />
-          Editor
-        </button>
-        <button
-          className="flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          type="button"
-        >
-          <CodeIcon className="size-3" />
-          HTML
-        </button>
-        <button
-          className="flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          type="button"
-        >
-          <EyeIcon className="size-3" />
-          Preview
-        </button>
+        {views.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onViewChange(id)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs transition-colors",
+              view === id
+                ? "bg-card font-semibold text-foreground shadow-xs border border-border/5"
+                : "font-medium text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Icon className={cn("size-3", view === id && "text-primary")} />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Right: Actions, Status & Viewport */}
@@ -847,17 +903,33 @@ function EditorHeader({
         {/* Vertical Divider */}
         <div className="h-4 w-px bg-border" />
 
-        {/* Device Viewport Toggle (Desktop/Mobile) */}
+        {/* Device Viewport Toggle (Desktop/Mobile) — drives the preview frame */}
         <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
           <button
-            className="flex size-7 items-center justify-center rounded-md bg-card text-foreground shadow-xs border border-border/5"
             type="button"
+            title="Desktop preview"
+            aria-label="Desktop preview"
+            onClick={() => onViewportChange("desktop")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-md transition-colors",
+              viewport === "desktop"
+                ? "bg-card text-foreground shadow-xs border border-border/5"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
             <MonitorIcon className="size-3.5" />
           </button>
           <button
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors"
             type="button"
+            title="Mobile preview"
+            aria-label="Mobile preview"
+            onClick={() => onViewportChange("mobile")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-md transition-colors",
+              viewport === "mobile"
+                ? "bg-card text-foreground shadow-xs border border-border/5"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
             <SmartphoneIcon className="size-3.5" />
           </button>
@@ -931,6 +1003,61 @@ function HeaderTitle({
       }}
       className="h-7 w-56 px-2 text-sm font-semibold"
     />
+  )
+}
+
+// Renders the compiled email exactly as a client would, inside a sandboxed
+// iframe so nothing in the output (links, raw-HTML blocks) can act on the app.
+function EmailPreviewPane({
+  html,
+  viewport,
+}: {
+  html: string
+  viewport: PreviewViewport
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 justify-center overflow-hidden bg-muted/30 p-4">
+      <iframe
+        title="Email preview"
+        srcDoc={html}
+        sandbox=""
+        className={cn(
+          "h-full rounded-lg border bg-white shadow-sm transition-[width] duration-200",
+          viewport === "mobile" ? "w-[375px]" : "w-full"
+        )}
+      />
+    </div>
+  )
+}
+
+function EmailHtmlPane({
+  html,
+  onCopy,
+}: {
+  html: string
+  onCopy: () => void
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Compiled email HTML — exactly what gets sent
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          onClick={onCopy}
+        >
+          <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} data-icon="inline-start" />
+          Copy HTML
+        </Button>
+      </div>
+      <pre className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+        {html}
+      </pre>
+    </div>
   )
 }
 
@@ -1052,7 +1179,7 @@ function EditorLeftSidebar({
   onOpenSettings: () => void
 }) {
   return (
-    <Sidebar variant="inset" collapsible="icon" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
+    <Sidebar variant="inset" collapsible="offcanvas" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
         <SidebarGroup className="min-h-0 flex-1 p-0">
           <ScrollArea className="min-h-0 flex-1">
