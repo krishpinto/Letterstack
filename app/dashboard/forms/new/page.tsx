@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormPreview } from "@/components/dashboard/forms/form-preview";
 import { FORM_TEMPLATES } from "@/components/dashboard/forms/templates";
@@ -160,6 +161,94 @@ function AnimatedIllustration({ animate }: { animate: boolean }) {
   );
 }
 
+// ─── Template showcase cards (Mailchimp-style: mobile + desktop preview) ─────
+
+/**
+ * The form art uses fixed pixel sizes, so narrow frames render it oversized
+ * and scale down — the thumbnail trick — to keep both frames faithful.
+ */
+function ScaledPreview({
+  settings,
+  scale,
+}: {
+  settings: SignupFormSettingsInput;
+  scale: number;
+}) {
+  const inverse = 100 / scale;
+  return (
+    <div className="h-full w-full overflow-hidden">
+      <div
+        // Size/transform are derived from the scale prop — inline by necessity.
+        style={{
+          width: `${inverse}%`,
+          height: `${inverse}%`,
+          transform: `scale(${scale / 100})`,
+          transformOrigin: "top left",
+        }}
+      >
+        <FormPreview settings={settings} className="h-full w-full" />
+      </div>
+    </div>
+  );
+}
+
+function TemplateShowcaseCard({
+  title,
+  settings,
+  formType,
+  disabled,
+  onSelect,
+}: {
+  title: string;
+  settings: SignupFormSettingsInput;
+  formType: FormType;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  // Popup and animated forms are dismissable on the host site, so their
+  // previews wear the little close dot; a static section has none.
+  const showClose = formType !== "static";
+
+  const closeDot = (
+    <span className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full border border-border bg-background/90 text-[9px] leading-none text-muted-foreground shadow-sm">
+      ✕
+    </span>
+  );
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onSelect}
+      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:opacity-60"
+    >
+      {/* Preview band: the same form in a mobile and a desktop frame. */}
+      <div className="flex h-[230px] w-full items-stretch gap-3 border-b border-border bg-muted/50 p-4">
+        <div className="relative w-[38%] overflow-hidden rounded-lg border border-border shadow-sm">
+          <ScaledPreview settings={settings} scale={70} />
+          {showClose && closeDot}
+        </div>
+        <div className="relative flex-1 overflow-hidden rounded-lg border border-border shadow-sm">
+          <ScaledPreview settings={settings} scale={90} />
+          {showClose && closeDot}
+        </div>
+      </div>
+
+      <div className="flex w-full items-center justify-between gap-3 p-3.5">
+        <p className="truncate text-sm font-semibold">{title}</p>
+        <div className="flex shrink-0 gap-1.5">
+          <Badge variant="secondary" className="capitalize">
+            {settings.layout}
+          </Badge>
+          <Badge variant="secondary" className="capitalize">
+            {settings.theme}
+          </Badge>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 // ─── The flow ────────────────────────────────────────────────────────────────
 
 type Step = "type" | "template";
@@ -301,26 +390,16 @@ export default function NewFormPage() {
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2">
             {FORM_TEMPLATES.map((template) => (
-              <button
+              <TemplateShowcaseCard
                 key={template.id}
-                type="button"
+                title={template.title}
+                settings={template.settings}
+                formType={formType ?? "static"}
                 disabled={creating}
-                onClick={() => void pickTemplate(template.settings)}
-                className="group flex flex-col overflow-hidden rounded-xl border border-border bg-muted/30 text-left shadow-sm transition-all hover:border-primary hover:bg-muted/50 hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:opacity-60"
-              >
-                <FormPreview
-                  settings={template.settings}
-                  className="h-[210px] w-full border-b border-border"
-                />
-                <div className="p-3.5">
-                  <p className="text-sm font-semibold">{template.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {template.description}
-                  </p>
-                </div>
-              </button>
+                onSelect={() => void pickTemplate(template.settings)}
+              />
             ))}
           </div>
         </div>
