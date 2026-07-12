@@ -95,7 +95,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarHeader,
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
@@ -537,7 +536,16 @@ export function EditorShell({
   return (
     <EditorToolbarProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
-        <EditorHeader documentName={document.name} />
+        <EditorHeader
+          documentName={document.name}
+          onExit={onExit ?? (() => router.push("/"))}
+          onSave={() => void saveDocument()}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          saved={dockStatus === "saved"}
+        />
         
         <div className="flex-1 min-h-0 flex relative">
           <DndContext
@@ -747,6 +755,7 @@ function EditorHeader({
   canRedo,
   onUndo,
   onRedo,
+  saved,
 }: {
   documentName: string
   onExit?: () => void
@@ -755,6 +764,7 @@ function EditorHeader({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
+  saved?: boolean
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
@@ -799,11 +809,13 @@ function EditorHeader({
 
       {/* Right: Actions, Status & Viewport */}
       <div className="flex items-center gap-3">
-        {/* Status Indicator */}
-        <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 select-none mr-1.5">
-          <CheckIcon className="size-3.5" />
-          Saved
-        </span>
+        {/* Status Indicator — only after a save actually lands */}
+        {saved && (
+          <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 select-none mr-1.5">
+            <CheckIcon className="size-3.5" />
+            Saved
+          </span>
+        )}
 
         {/* Undo/Redo Buttons */}
         <div className="flex items-center gap-1">
