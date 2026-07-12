@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { CornerDownLeftIcon } from "lucide-react";
+import { CornerDownLeftIcon, Edit2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -209,9 +209,10 @@ export function InlineEditCell({
         <button
           type="button"
           aria-label={ariaLabel}
-          className="-mx-1 block min-w-0 max-w-full cursor-text rounded-sm px-1 text-left transition-colors hover:bg-muted"
+          className="group/edit -mx-1 flex min-w-0 max-w-full cursor-text items-center gap-1.5 rounded-sm px-1 text-left transition-colors hover:bg-muted"
         >
-          {display}
+          <span className="min-w-0">{display}</span>
+          <Edit2Icon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/edit:opacity-100" />
         </button>
       </PopoverTrigger>
       <PopoverContent
