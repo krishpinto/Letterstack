@@ -24,7 +24,6 @@ import {
   Cancel01Icon,
   Copy01Icon,
   DoorOpenIcon,
-  FloppyDiskIcon,
   LayoutTwoColumnIcon,
   PaintBrush01Icon,
   Settings02Icon,
@@ -74,6 +73,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
@@ -573,7 +573,15 @@ export function EditorShell({
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
-          saved={dockStatus === "saved"}
+          status={dockStatus}
+          mode={mode}
+          onSaveAndExit={() => void saveAndExit()}
+          onSaveAsTemplate={() => {
+            setTemplateName(document.name || "")
+            setSaveTemplateDialogOpen(true)
+          }}
+          onCopyJson={() => void copyTemplateJson()}
+          onPasteJson={() => setPasteOpen(true)}
           view={view}
           onViewChange={setView}
           viewport={previewViewport}
@@ -684,23 +692,6 @@ export function EditorShell({
                 </aside>
               )}
 
-          <EditorBottomDock
-            inspectorOpen={inspectorOpen}
-            dockStatus={dockStatus}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            onUndo={undo}
-            onRedo={redo}
-            onCopyJson={copyTemplateJson}
-            onPasteJson={() => setPasteOpen(true)}
-            onSave={saveDocument}
-            onSaveAndExit={saveAndExit}
-            onSaveAsTemplate={() => {
-              setTemplateName(document.name || "")
-              setSaveTemplateDialogOpen(true)
-            }}
-            mode={mode}
-          />
             </div>
 
       {/* Save as Template Dialog */}
@@ -811,7 +802,12 @@ function EditorHeader({
   canRedo,
   onUndo,
   onRedo,
-  saved,
+  status,
+  mode,
+  onSaveAndExit,
+  onSaveAsTemplate,
+  onCopyJson,
+  onPasteJson,
   view,
   onViewChange,
   viewport,
@@ -825,7 +821,12 @@ function EditorHeader({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
-  saved?: boolean
+  status: "idle" | "saved" | "copied"
+  mode: "campaign" | "template-creator" | "template-editor"
+  onSaveAndExit: () => void
+  onSaveAsTemplate: () => void
+  onCopyJson: () => void
+  onPasteJson: () => void
   view: EditorView
   onViewChange: (view: EditorView) => void
   viewport: PreviewViewport
@@ -872,11 +873,16 @@ function EditorHeader({
 
       {/* Right: Actions, Status & Viewport */}
       <div className="flex items-center gap-3">
-        {/* Status Indicator — only after a save actually lands */}
-        {saved && (
-          <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 select-none mr-1.5">
+        {/* Status Indicator — flashes briefly after a save or copy lands */}
+        {status !== "idle" && (
+          <span
+            className={cn(
+              "flex items-center gap-1 text-xs font-medium select-none mr-1.5",
+              status === "saved" ? "text-emerald-500" : "text-muted-foreground"
+            )}
+          >
             <CheckIcon className="size-3.5" />
-            Saved
+            {status === "saved" ? "Saved" : "Copied"}
           </span>
         )}
 
@@ -938,22 +944,59 @@ function EditorHeader({
         {/* Vertical Divider */}
         <div className="h-4 w-px bg-border" />
 
-        {/* Action Buttons */}
+        {/* Action Buttons. In template-creator mode the only real persist
+            path is "save as template", so that takes the primary slot. */}
         <div className="flex items-center gap-1">
-          <Button
-            onClick={onSave}
-            variant="default"
-            size="sm"
-            className="h-8 px-4 font-semibold shadow-xs"
-          >
-            Save
-          </Button>
-          <button
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            type="button"
-          >
-            <MoreHorizontalIcon className="size-4" />
-          </button>
+          {mode === "template-creator" ? (
+            <Button
+              onClick={onSaveAsTemplate}
+              variant="default"
+              size="sm"
+              className="h-8 px-4 font-semibold shadow-xs"
+            >
+              Save as template
+            </Button>
+          ) : (
+            <Button
+              onClick={onSave}
+              variant="default"
+              size="sm"
+              className="h-8 px-4 font-semibold shadow-xs"
+            >
+              Save
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                type="button"
+                title="More actions"
+                aria-label="More actions"
+              >
+                <MoreHorizontalIcon className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={onCopyJson}>
+                <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
+                Copy JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onPasteJson}>
+                <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
+                Paste JSON
+              </DropdownMenuItem>
+              {mode !== "template-creator" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onSaveAndExit}>
+                    <HugeiconsIcon icon={DoorOpenIcon} strokeWidth={2} className="size-4 mr-2" />
+                    Save and exit
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
@@ -1057,114 +1100,6 @@ function EmailHtmlPane({
       <pre className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
         {html}
       </pre>
-    </div>
-  )
-}
-
-function EditorBottomDock({
-  inspectorOpen,
-  dockStatus,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
-  onCopyJson,
-  onPasteJson,
-  onSave,
-  onSaveAndExit,
-  onSaveAsTemplate,
-  mode,
-}: {
-  inspectorOpen: boolean
-  dockStatus: "idle" | "saved" | "copied"
-  canUndo: boolean
-  canRedo: boolean
-  onUndo: () => void
-  onRedo: () => void
-  onCopyJson: () => Promise<void>
-  onPasteJson: () => void
-  onSave: () => void
-  onSaveAndExit: () => void
-  onSaveAsTemplate: () => void
-  mode: "campaign" | "template-creator" | "template-editor"
-}) {
-  return (
-    <div
-      className={cn(
-        "absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-xl border bg-card/95 p-1 shadow-2xl backdrop-blur transition-[left] duration-200",
-        inspectorOpen && "xl:left-[calc(50%-188px)]",
-      )}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-      >
-        <Undo2Icon className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-      >
-        <Redo2Icon className="size-4" />
-      </Button>
-
-      <Separator orientation="vertical" className="h-4 mx-0.5" />
-
-      {/* 3 dots menu */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-            <MoreHorizontalIcon className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem onClick={() => void onCopyJson()}>
-            <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
-            Copy JSON
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onPasteJson}>
-            <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
-            Paste JSON
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <Separator orientation="vertical" className="h-4 mx-0.5" />
-
-      {mode === "template-creator" ? (
-        <Button type="button" size="sm" className="h-8 px-3 text-xs" onClick={onSaveAsTemplate}>
-          <HugeiconsIcon icon={FloppyDiskIcon} strokeWidth={2} data-icon="inline-start" />
-          Save as template
-        </Button>
-      ) : (
-        <>
-          <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onSave}>
-            <HugeiconsIcon icon={FloppyDiskIcon} strokeWidth={2} data-icon="inline-start" />
-            Save
-          </Button>
-          <Button type="button" size="sm" className="h-8 px-2.5 text-xs" onClick={onSaveAndExit}>
-            <HugeiconsIcon icon={DoorOpenIcon} strokeWidth={2} data-icon="inline-start" />
-            Save and exit
-          </Button>
-        </>
-      )}
-
-      {dockStatus !== "idle" && (
-        <span className="px-1.5 text-[11px] font-medium text-muted-foreground">
-          {dockStatus === "saved" ? "Saved" : "Copied JSON"}
-        </span>
-      )}
     </div>
   )
 }
