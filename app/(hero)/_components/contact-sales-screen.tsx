@@ -134,7 +134,9 @@ export function ContactSalesScreen() {
         showCloseButton={false}
         className="border border-border bg-background"
       >
-        <div className="flex min-h-full flex-col px-6 py-6 sm:px-10">
+        {/* text-left: the trigger lives in a text-center CTA band, and the
+            fixed takeover would inherit that alignment. */}
+        <div className="flex min-h-full flex-col px-6 py-6 text-left sm:px-10">
           {/* ── Top row: brand + close ── */}
           <div className="flex shrink-0 items-center justify-between">
             <span className="flex items-center gap-2">

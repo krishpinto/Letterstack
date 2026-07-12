@@ -29,7 +29,10 @@ export function Navbar() {
   const isSignedIn = status === "authenticated";
 
   return (
-    <header className="fixed inset-x-0 top-3 z-[60] px-4">
+    // Above the page blur (z-40) but below z-50 takeovers, so the contact
+    // screen and dialogs cover the navbar instead of it floating over them
+    // and swallowing their clicks.
+    <header className="fixed inset-x-0 top-3 z-[45] px-4">
       <nav className="mx-auto flex max-w-5xl items-center justify-between rounded-xl border border-zinc-950/10 bg-background/80 p-1.5 text-foreground shadow-[0_2px_8px_rgba(9,9,11,0.01)] inset-shadow-2xs inset-shadow-white/60 backdrop-blur-md dark:border-zinc-800/80 dark:inset-shadow-zinc-950/20">
         <Brand />
 
