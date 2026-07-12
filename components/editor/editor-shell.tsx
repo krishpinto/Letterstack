@@ -349,6 +349,12 @@ export function EditorShell({
     }
   }, [templateName, document, onSaveAsTemplate])
 
+  const renameDocument = React.useCallback(
+    (name: string) =>
+      updateDocument((current) => touchDocument({ ...current, name })),
+    [updateDocument]
+  )
+
   const saveAndExit = React.useCallback(async () => {
     await saveDocument()
     if (onExit) {
@@ -538,6 +544,7 @@ export function EditorShell({
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
         <EditorHeader
           documentName={document.name}
+          onRename={renameDocument}
           onExit={onExit ?? (() => router.push("/"))}
           onSave={() => void saveDocument()}
           canUndo={canUndo}
@@ -749,6 +756,7 @@ export function EditorShell({
 
 function EditorHeader({
   documentName,
+  onRename,
   onExit,
   onSave,
   canUndo,
@@ -758,6 +766,7 @@ function EditorHeader({
   saved,
 }: {
   documentName: string
+  onRename: (name: string) => void
   onExit?: () => void
   onSave?: () => void
   canUndo?: boolean
@@ -777,9 +786,7 @@ function EditorHeader({
         >
           <ChevronLeftIcon className="size-4" />
         </button>
-        <span className="text-sm font-semibold text-foreground tracking-tight select-none">
-          {documentName || "Untitled Email"}
-        </span>
+        <HeaderTitle name={documentName} onRename={onRename} />
       </div>
 
       {/* Center: Switcher (Editor / HTML / Preview) */}
@@ -878,6 +885,52 @@ function EditorHeader({
         </div>
       </div>
     </header>
+  )
+}
+
+// The document name in the header, editable in place: click to swap the label
+// for an input, commit on Enter/blur, Escape to cancel. Renames flow through
+// updateDocument so they land in undo history like any other edit.
+function HeaderTitle({
+  name,
+  onRename,
+}: {
+  name: string
+  onRename: (name: string) => void
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null)
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        onClick={() => setDraft(name)}
+        title="Rename"
+        className="rounded-md px-1.5 py-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors hover:bg-muted"
+      >
+        {name || "Untitled Email"}
+      </button>
+    )
+  }
+
+  const commit = () => {
+    const next = draft.trim()
+    if (next && next !== name) onRename(next)
+    setDraft(null)
+  }
+
+  return (
+    <Input
+      autoFocus
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit()
+        if (event.key === "Escape") setDraft(null)
+      }}
+      className="h-7 w-56 px-2 text-sm font-semibold"
+    />
   )
 }
 
