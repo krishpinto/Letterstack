@@ -79,6 +79,7 @@ const IMG = {
 };
 
 const GREEN = "#0F3D2E";
+const ROSE = "#D6336C";
 
 const LOGO = "https://placehold.co/120x40/1a1a1a/ffffff?text=LOGO";
 
@@ -224,6 +225,92 @@ export const PREBUILT_TEMPLATES: PrebuiltTemplate[] = [
               { id: "s2", platform: "facebook", url: CTA },
               { id: "s3", platform: "linkedin", url: CTA },
               { id: "s4", platform: "youtube", url: CTA },
+            ],
+          }),
+          footer(),
+        ],
+      }),
+  },
+  {
+    id: "flower-shop",
+    title: "Flower shop",
+    description: "A florist showcase — hero bloom, a product grid with prices and an offer.",
+    category: "product",
+    accent: ROSE,
+    build: () =>
+      buildDoc({
+        name: "Flower shop",
+        subject: "Beautiful flowers, artfully arranged",
+        previewText: "Fresh-cut stems and hand-tied bouquets, delivered.",
+        accent: ROSE,
+        blocks: [
+          blk("logo", { src: LOGO, alt: "Logo", width: 120, align: "center" }),
+          blk("image", {
+            src: `${ASSET}/flowers/hero.jpg`,
+            alt: "A fresh pink tulip",
+            width: 100,
+          }),
+          blk("heading", {
+            text: "<p>Beautiful flowers, artfully arranged</p>",
+            level: 1,
+            align: "center",
+          }),
+          blk("paragraph", {
+            body: "<p>Fresh-cut stems and hand-tied bouquets, delivered to your door. Brighten someone's day — or your own.</p>",
+            align: "center",
+          }),
+          blk("button", { label: "Shop bouquets", href: CTA, align: "center" }),
+          blk("divider"),
+          blk("heading", { text: "<p>This week's favourites</p>", level: 2, align: "center" }),
+          grid([
+            col({
+              imageSrc: `${ASSET}/flowers/bouquet.jpg`,
+              imageAlt: "Pastel bouquet",
+              heading: "<p>Pastel bouquet</p>",
+              body: "<p>Starting at $45.95</p>",
+              linkLabel: "Buy now",
+              linkUrl: CTA,
+            }),
+            col({
+              imageSrc: `${ASSET}/flowers/lily.jpg`,
+              imageAlt: "Crimson water lily",
+              heading: "<p>Crimson lily</p>",
+              body: "<p>Starting at $38.00</p>",
+              linkLabel: "Buy now",
+              linkUrl: CTA,
+            }),
+          ]),
+          grid([
+            col({
+              imageSrc: `${ASSET}/flowers/rose.jpg`,
+              imageAlt: "Two-tone garden rose",
+              heading: "<p>Two-tone rose</p>",
+              body: "<p>Starting at $52.00</p>",
+              linkLabel: "Buy now",
+              linkUrl: CTA,
+            }),
+            col({
+              imageSrc: `${ASSET}/flowers/forget-me-not.jpg`,
+              imageAlt: "Blue forget-me-not",
+              heading: "<p>Forget-me-not</p>",
+              body: "<p>Starting at $29.95</p>",
+              linkLabel: "Buy now",
+              linkUrl: CTA,
+            }),
+          ]),
+          blk("text", {
+            eyebrow: "Limited time",
+            heading: "<p>30% off orders over $100</p>",
+            body: "<p>No code needed — the discount is applied at checkout.</p>",
+            align: "center",
+          }),
+          blk("button", { label: "Start your order", href: CTA, align: "center" }),
+          blk("divider"),
+          blk("social", {
+            align: "center",
+            links: [
+              { id: "s1", platform: "instagram", url: CTA },
+              { id: "s2", platform: "facebook", url: CTA },
             ],
           }),
           footer(),
