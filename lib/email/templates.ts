@@ -78,7 +78,14 @@ const IMG = {
   tableSetting: img("photo-1511795409834-ef04bbd61622"),
 };
 
+const GREEN = "#0F3D2E";
+
 const LOGO = "https://placehold.co/120x40/1a1a1a/ffffff?text=LOGO";
+
+// Rebuilt-from-inspiration templates reuse their original artwork, served from
+// the app's own public/ folder. Emails need absolute URLs, so these point at the
+// deployed origin — the images render once this build is deployed.
+const ASSET = "https://letterstack.site/templates";
 
 /**
  * Fill `{{organization}}` placeholders in template-provided copy (subject,
@@ -147,6 +154,82 @@ function grid(columns: ColumnContent[], gap = 16): EmailBlock {
 const CTA = "https://example.com";
 
 export const PREBUILT_TEMPLATES: PrebuiltTemplate[] = [
+  {
+    id: "student-onboarding",
+    title: "Student onboarding",
+    description: "A warm first-week welcome — hero, numbered steps and a campus photo.",
+    category: "welcome",
+    accent: GREEN,
+    build: () =>
+      buildDoc({
+        name: "Student onboarding",
+        subject: "Welcome to {{organization}} — your onboarding starts here",
+        previewText: "Everything you need for a smooth first week.",
+        accent: GREEN,
+        blocks: [
+          blk("logo", { src: LOGO, alt: "Logo", width: 120, align: "center" }),
+          blk("image", {
+            src: `${ASSET}/onboarding/hero.jpg`,
+            alt: "New students on their first day",
+            width: 100,
+          }),
+          blk("text", {
+            eyebrow: "New student onboarding",
+            heading: "<p>Get ready to shine</p>",
+            body: "<p>Your onboarding starts here. Everything you need for a smooth first week — your checklist, the key dates, and the people who'll help you settle in.</p>",
+            align: "center",
+          }),
+          blk("button", { label: "Start onboarding", href: CTA, align: "center" }),
+          blk("divider"),
+          blk("heading", { text: "<p>Three things to do first</p>", level: 2, align: "center" }),
+          grid([
+            col({
+              showImage: false,
+              showCta: false,
+              eyebrow: "Step 01",
+              heading: "<p>Meet your advisor</p>",
+              body: "<p>Book a 20-minute chat to map out your first semester.</p>",
+            }),
+            col({
+              showImage: false,
+              showCta: false,
+              eyebrow: "Step 02",
+              heading: "<p>Set up your account</p>",
+              body: "<p>Activate your campus login, email and student portal.</p>",
+            }),
+            col({
+              showImage: false,
+              showCta: false,
+              eyebrow: "Step 03",
+              heading: "<p>Find your people</p>",
+              body: "<p>Join a club or two — it's the fastest way to feel at home.</p>",
+            }),
+          ]),
+          blk("image", {
+            src: `${ASSET}/onboarding/students.jpg`,
+            alt: "Students together on campus",
+            width: 100,
+          }),
+          blk("text", {
+            heading: "<p>We're here for you</p>",
+            body: "<p>Questions about housing, timetables or anything else? Our student success team is one message away, all year round.</p>",
+            align: "center",
+          }),
+          blk("button", { label: "See the full guide", href: CTA, align: "center" }),
+          blk("divider"),
+          blk("social", {
+            align: "center",
+            links: [
+              { id: "s1", platform: "instagram", url: CTA },
+              { id: "s2", platform: "facebook", url: CTA },
+              { id: "s3", platform: "linkedin", url: CTA },
+              { id: "s4", platform: "youtube", url: CTA },
+            ],
+          }),
+          footer(),
+        ],
+      }),
+  },
   {
     id: "monthly-newsletter",
     title: "Monthly newsletter",
