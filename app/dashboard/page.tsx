@@ -11,7 +11,6 @@ import {
   ArrowRightIcon,
   ArrowUpRightIcon,
   BarChart3Icon,
-  CalendarIcon,
   GlobeIcon,
   MailCheckIcon,
   MailIcon,
@@ -28,13 +27,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { CampaignStatusIcon } from "@/components/campaign-status-icon";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
 import { ChartCard } from "@/components/ui/chart-card";
 import {
   Empty,
