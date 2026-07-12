@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { ArrowRightIcon, XIcon } from "lucide-react";
@@ -21,20 +21,40 @@ export type OnboardingStep = {
   icon: LucideIcon;
 };
 
-const DISMISS_KEY = "letterstack:getting-started-dismissed";
+// Dismissal is scoped per workspace: the key carries the organization id so a
+// new workspace always shows the guide, and dismissing one workspace never
+// hides it in another.
+const DISMISS_PREFIX = "letterstack:getting-started-dismissed";
+const dismissKeyFor = (organizationId: string) =>
+  `${DISMISS_PREFIX}:${organizationId}`;
+
+function readDismissed(organizationId: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(dismissKeyFor(organizationId)) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function GettingStarted({
   userName,
   steps,
+  organizationId,
 }: {
   userName: string;
   steps: OnboardingStep[];
+  organizationId: string;
 }) {
-  const [dismissed, setDismissed] = useState<boolean>(
-    () =>
-      typeof window !== "undefined" &&
-      window.localStorage.getItem(DISMISS_KEY) === "1",
+  const [dismissed, setDismissed] = useState<boolean>(() =>
+    readDismissed(organizationId),
   );
+
+  // Re-evaluate when the active workspace changes (the component can stay
+  // mounted across a workspace switch).
+  useEffect(() => {
+    setDismissed(readDismissed(organizationId));
+  }, [organizationId]);
 
   const [expanded, setExpanded] = useState<boolean>(true);
 
@@ -51,12 +71,12 @@ export function GettingStarted({
   const allRequiredDone = requiredDone === required.length;
 
   if (dismissed) return null;
-  // Everything done — hide to save space
+  // Everything done â€” hide to save space
   if (steps.every((s) => s.done)) return null;
 
   function dismiss() {
     try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
+      window.localStorage.setItem(dismissKeyFor(organizationId), "1");
     } catch {
       // Storage unavailable
     }
@@ -66,10 +86,10 @@ export function GettingStarted({
   const active = steps[selected];
 
   return (
-    /* ── Outer Chrome Container (bg-muted p-1) matching StatFrameCard ── */
+    /* â”€â”€ Outer Chrome Container (bg-muted p-1) matching StatFrameCard â”€â”€ */
     <div className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pb-0 gap-0 select-none flex flex-col">
       
-      {/* ── Inner Main Card (bg-card) ── */}
+      {/* â”€â”€ Inner Main Card (bg-card) â”€â”€ */}
       <div className="rounded-[1.125rem] border border-border bg-card p-4 flex flex-col gap-5">
         
         {/* Header Row (Progress + Dismiss) */}
@@ -181,7 +201,7 @@ export function GettingStarted({
         )}
       </div>
 
-      {/* ── Bottom Strip (Status Message in the bg-muted frame) ── */}
+      {/* â”€â”€ Bottom Strip (Status Message in the bg-muted frame) â”€â”€ */}
       <div className="flex items-center justify-center py-2.5 text-xs font-semibold text-muted-foreground/80">
         {allRequiredDone 
           ? "Nice work! All core steps completed." 

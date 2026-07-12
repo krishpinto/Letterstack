@@ -11,6 +11,7 @@ import {
   CalendarClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  FolderIcon,
   GlobeIcon,
   HistoryIcon,
   HomeIcon,
@@ -18,7 +19,6 @@ import {
   MailCheckIcon,
   MailIcon,
   MailPlusIcon,
-  MailWarningIcon,
   MoreHorizontalIcon,
   PenLineIcon,
   PlusIcon,
@@ -31,7 +31,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { CampaignStatusIcon } from "@/components/campaign-status-icon";
-import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { onAudienceChanged, onOrganizationChanged } from "@/lib/dashboard-events";
 import { cn } from "@/lib/utils";
 
 type RecentCampaign = { id: string; name: string; status: string };
@@ -357,13 +357,55 @@ function CampaignsSidebar() {
 
 // ─── Audience module ──────────────────────────────────────────────────────────
 
+type AudienceFolder = { id: string; name: string; count: number };
+
+// The org's folders (with member counts) for the sidebar. Refreshes on org
+// switch and whenever the audience page reports a folder change.
+function useAudienceFolders() {
+  const [folders, setFolders] = useState<AudienceFolder[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/audience/categories")
+        .then((r) => r.json())
+        .then((data) => {
+          if (!alive || !data.ok) return;
+          const counts: Record<string, number> = {};
+          (data.mappings as { categoryId: string }[]).forEach((m) => {
+            counts[m.categoryId] = (counts[m.categoryId] ?? 0) + 1;
+          });
+          setFolders(
+            (data.categories as { id: string; name: string }[]).map((c) => ({
+              id: c.id,
+              name: c.name,
+              count: counts[c.id] ?? 0,
+            })),
+          );
+        })
+        .catch(() => {});
+    load();
+    const offOrg = onOrganizationChanged(load);
+    const offAudience = onAudienceChanged(load);
+    return () => {
+      alive = false;
+      offOrg();
+      offAudience();
+    };
+  }, []);
+
+  return folders;
+}
+
 function AudienceSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
+  const folder = searchParams.get("folder");
   const importing = searchParams.get("import") === "1";
   const onList =
     pathname === "/dashboard/audience" || pathname === "/dashboard/contacts";
+  const folders = useAudienceFolders();
 
   return (
     <ModuleShell
@@ -394,20 +436,58 @@ function AudienceSidebar() {
           href="/dashboard/audience"
           icon={UsersIcon}
           label="All contacts"
-          active={onList && !status && !importing}
+          active={onList && !status && !folder && !importing}
         />
-        <NavItem
-          href="/dashboard/audience?status=subscribed"
-          icon={MailCheckIcon}
-          label="Subscribed"
-          active={onList && status === "subscribed"}
-        />
-        <NavItem
-          href="/dashboard/audience?status=bounced"
-          icon={MailWarningIcon}
-          label="Bounced"
-          active={onList && status === "bounced"}
-        />
+      </nav>
+
+      {/* ── Folders: the lists you send to ── */}
+      <div className="mt-1 flex flex-1 flex-col overflow-hidden px-2">
+        <div className="flex items-center justify-between px-2 py-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            Folders
+          </span>
+          <Link
+            href="/dashboard/audience?newFolder=1"
+            aria-label="New folder"
+            className="text-muted-foreground/70 transition-colors hover:text-foreground"
+          >
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </div>
+        <div className="mt-0.5 flex flex-col gap-0.5 overflow-y-auto pb-1">
+          {folders.length === 0 ? (
+            <Link
+              href="/dashboard/audience?newFolder=1"
+              className="px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+            >
+              No folders yet — create one
+            </Link>
+          ) : (
+            folders.map((f) => (
+              <NavItem
+                key={f.id}
+                href={`/dashboard/audience?folder=${f.id}`}
+                icon={FolderIcon}
+                label={f.name}
+                active={onList && folder === f.id}
+                count={f.count}
+              />
+            ))
+          )}
+        </div>
+        {folders.length > 0 && (
+          <Link
+            href="/dashboard/audience?manageFolders=1"
+            className="flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            Manage folders
+          </Link>
+        )}
+      </div>
+
+      {/* ── Suppressed: the do-not-mail list, pinned ── */}
+      <div className="mx-3 my-1 border-t border-sidebar-border/50" />
+      <nav className="flex flex-col gap-0.5 px-2 pb-2">
         <NavItem
           href="/dashboard/audience?status=suppressed"
           icon={BanIcon}

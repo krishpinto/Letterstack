@@ -14,7 +14,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { FormCard } from "@/components/dashboard/forms/form-card";
-import { FormSettingsDialog } from "@/components/dashboard/forms/form-settings-dialog";
 import { FormTemplatePicker } from "@/components/dashboard/forms/form-template-picker";
 import type {
   SignupFormRow,
@@ -31,9 +30,7 @@ function FormsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<SignupFormRow | null>(null);
-  const [preset, setPreset] = useState<SignupFormSettingsInput | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -65,30 +62,38 @@ function FormsPage() {
     }
   }, [searchParams, router]);
 
-  // Creating a form is two steps: pick a template, then customize it.
+  // Creating a form is two steps: pick a template, then customize it in the
+  // full-page editor. Picking a template creates the form immediately (so it
+  // has an id) and opens /editor/form/[id].
   function openCreate() {
     setPickerOpen(true);
   }
 
-  function handlePickTemplate(settings: SignupFormSettingsInput) {
-    setPreset(settings);
-    setEditing(null);
-    setPickerOpen(false);
-    setDialogOpen(true);
+  async function handlePickTemplate(settings: SignupFormSettingsInput) {
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...settings, name: settings.name || "Untitled form" }),
+      });
+      const data = await res.json();
+      if (data.ok && data.form) {
+        setPickerOpen(false);
+        router.push(`/editor/form/${data.form.id}`);
+      } else {
+        setError(data.error ?? "Could not create the form.");
+        setCreating(false);
+      }
+    } catch {
+      setError("Could not reach the server.");
+      setCreating(false);
+    }
   }
 
   function openEdit(form: SignupFormRow) {
-    setEditing(form);
-    setDialogOpen(true);
-  }
-
-  function handleSaved(saved: SignupFormRow) {
-    setForms((prev) => {
-      const exists = prev.some((f) => f.id === saved.id);
-      return exists
-        ? prev.map((f) => (f.id === saved.id ? saved : f))
-        : [saved, ...prev];
-    });
+    router.push(`/editor/form/${form.id}`);
   }
 
   function handleDeleted(id: string) {
@@ -156,17 +161,18 @@ function FormsPage() {
 
       <FormTemplatePicker
         open={pickerOpen}
-        onOpenChange={setPickerOpen}
+        onOpenChange={(open) => {
+          if (!creating) setPickerOpen(open);
+        }}
         onSelect={handlePickTemplate}
       />
 
-      <FormSettingsDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        initial={editing}
-        preset={preset}
-        onSaved={handleSaved}
-      />
+      {creating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center gap-2 bg-background/70 text-sm text-muted-foreground backdrop-blur-sm">
+          <Loader2Icon className="size-4 animate-spin" />
+          Creating your form…
+        </div>
+      )}
     </div>
   );
 }

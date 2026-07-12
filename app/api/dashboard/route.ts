@@ -73,6 +73,7 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
+      organizationId,
       stats,
       series,
       recentCampaigns,

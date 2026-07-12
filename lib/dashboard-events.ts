@@ -22,3 +22,18 @@ export function onOrganizationChanged(
   window.addEventListener(ORGANIZATION_CHANGED_EVENT, listener);
   return () => window.removeEventListener(ORGANIZATION_CHANGED_EVENT, listener);
 }
+
+// Fired when the audience or its folders change (contact added, folder
+// created/renamed/deleted) so other surfaces — notably the sidebar's folder
+// list — can refresh without a full reload.
+export const AUDIENCE_CHANGED_EVENT = "letterstack:audience-changed";
+
+export function dispatchAudienceChanged() {
+  window.dispatchEvent(new CustomEvent(AUDIENCE_CHANGED_EVENT));
+}
+
+export function onAudienceChanged(handler: () => void) {
+  const listener = () => handler();
+  window.addEventListener(AUDIENCE_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(AUDIENCE_CHANGED_EVENT, listener);
+}

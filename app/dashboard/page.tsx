@@ -11,7 +11,6 @@ import {
   ArrowRightIcon,
   ArrowUpRightIcon,
   BarChart3Icon,
-  CalendarIcon,
   GlobeIcon,
   MailCheckIcon,
   MailIcon,
@@ -28,13 +27,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { CampaignStatusIcon } from "@/components/campaign-status-icon";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
 import { ChartCard } from "@/components/ui/chart-card";
 import {
   Empty,
@@ -120,6 +113,7 @@ type Services = {
 };
 
 type DashboardData = {
+  organizationId: string;
   stats: Stats;
   series: SeriesPoint[];
   recentCampaigns: RecentCampaign[];
@@ -343,7 +337,11 @@ export default function DashboardHome() {
       </div>
 
       {/* ── Getting started (hides once set up, or when dismissed) ── */}
-      <GettingStarted userName={firstName} steps={onboardingSteps} />
+      <GettingStarted
+        userName={firstName}
+        steps={onboardingSteps}
+        organizationId={data.organizationId}
+      />
 
       {/* ── Stat cards ── */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

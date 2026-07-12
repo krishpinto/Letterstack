@@ -9,8 +9,6 @@ import {
   DownloadIcon,
   Edit2Icon,
   FolderIcon,
-  FolderPlusIcon,
-  FolderOpenIcon,
   PlusIcon,
   SearchIcon,
   TagIcon,
@@ -21,13 +19,12 @@ import {
 } from "lucide-react";
 
 import { ImportWizard } from "./import-wizard";
-import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { dispatchAudienceChanged, onOrganizationChanged } from "@/lib/dashboard-events";
 import { confirmDialog } from "@/components/app-dialogs";
 import { SelectionPill } from "@/components/selection-pill";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -76,14 +73,9 @@ import {
 } from "@/components/ui/pagination";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -188,11 +180,38 @@ export default function AudiencePage() {
   const [adding, setAdding] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  // The module sidebar drives these via the URL: ?status=suppressed filters
-  // the list, ?import=1 opens the import wizard.
+  // Folders to drop the new contact into, chosen right in the add dialog.
+  const [addFolders, setAddFolders] = useState<Set<string>>(new Set());
+  const [addNewFolder, setAddNewFolder] = useState("");
+  const [addCreatingFolder, setAddCreatingFolder] = useState(false);
+
+  // Build a URL that keeps the current filters while changing/removing a couple
+  // of query params. One-shot params (dialogs, import) never carry over.
+  const buildHref = useCallback(
+    (updates: Record<string, string | null>) => {
+      const sp = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) sp.delete(key);
+        else sp.set(key, value);
+      }
+      sp.delete("newFolder");
+      sp.delete("manageFolders");
+      sp.delete("import");
+      const qs = sp.toString();
+      return qs ? `${pathname}?${qs}` : pathname;
+    },
+    [searchParams, pathname],
+  );
+
+  // The module sidebar drives the page through the URL: ?status= and ?folder=
+  // filter the list; ?import=1 / ?newFolder=1 / ?manageFolders=1 open flows.
   useEffect(() => {
     const status = searchParams.get("status") as StatusKey | null;
     setStatusFilter(status && STATUS_KEYS.includes(status) ? status : "all");
+
+    const folder = searchParams.get("folder");
+    setFolderFilter(folder ? new Set([folder]) : new Set());
+
     if (searchParams.get("import") === "1") setImportOpen(true);
   }, [searchParams]);
 
@@ -205,6 +224,18 @@ export default function AudiencePage() {
   const [seeMoreOpen, setSeeMoreOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+
+  // One-shot dialog opens from the sidebar links (?newFolder / ?manageFolders),
+  // stripped from the URL after firing so a refresh doesn't reopen them.
+  useEffect(() => {
+    if (searchParams.get("newFolder") === "1") {
+      setCreateFolderOpen(true);
+      router.replace(pathname);
+    } else if (searchParams.get("manageFolders") === "1") {
+      setSeeMoreOpen(true);
+      router.replace(pathname);
+    }
+  }, [searchParams, pathname, router]);
   
   // Selection mapping dialog
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
@@ -474,13 +505,65 @@ export default function AudiencePage() {
         return;
       }
 
+      // Drop the new contact into any folders picked in the dialog.
+      if (addFolders.size > 0 && response.recipient?.id) {
+        await fetch("/api/audience/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "map",
+            recipientIds: [response.recipient.id],
+            categoryIds: Array.from(addFolders),
+          }),
+        });
+      }
+
       setAddEmail("");
       setAddName("");
+      setAddFolders(new Set());
+      setAddNewFolder("");
       setAddOpen(false);
+      dispatchAudienceChanged();
       showToast("Contact added");
       await load();
     } finally {
       setAdding(false);
+    }
+  }
+
+  function toggleAddFolder(id: string) {
+    setAddFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Create a folder from inside the add dialog and pre-select it for the contact.
+  async function createAddFolder() {
+    const name = addNewFolder.trim();
+    if (!name) return;
+    setAddCreatingFolder(true);
+    try {
+      const r = await fetch("/api/audience/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", name }),
+      });
+      const data = await r.json();
+      if (data.ok && data.category) {
+        setAddNewFolder("");
+        dispatchAudienceChanged();
+        await loadCategories();
+        setAddFolders((prev) => new Set(prev).add(data.category.id));
+      } else {
+        showToast(data.error || "Failed to create folder");
+      }
+    } catch {
+      showToast("Failed to create folder");
+    } finally {
+      setAddCreatingFolder(false);
     }
   }
 
@@ -500,6 +583,7 @@ export default function AudiencePage() {
         showToast("Folder created");
         setNewFolderName("");
         setCreateFolderOpen(false);
+        dispatchAudienceChanged();
         await loadCategories();
       } else {
         showToast(data.error || "Failed to create category");
@@ -523,6 +607,7 @@ export default function AudiencePage() {
       if (data.ok) {
         showToast("Folder renamed");
         setEditingCategoryId(null);
+        dispatchAudienceChanged();
         await loadCategories();
       } else {
         showToast(data.error || "Failed to rename folder");
@@ -547,12 +632,10 @@ export default function AudiencePage() {
       const data = await r.json();
       if (data.ok) {
         showToast("Folder deleted");
-        setFolderFilter((prev) => {
-          if (!prev.has(id)) return prev;
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
+        if (searchParams.get("folder") === id) {
+          router.replace(buildHref({ folder: null }));
+        }
+        dispatchAudienceChanged();
         await loadCategories();
       } else {
         showToast(data.error || "Failed to delete folder");
@@ -579,6 +662,7 @@ export default function AudiencePage() {
         showToast("Categories updated");
         setManageCategoriesOpen(false);
         clearSelection();
+        dispatchAudienceChanged();
         await loadCategories();
       } else {
         showToast(data.error || "Failed to update categories");
@@ -606,18 +690,8 @@ export default function AudiencePage() {
     folderFilter.size > 0 || statusFilter !== "all" || addedFilter !== "any";
 
   function clearAllFilters() {
-    setFolderFilter(new Set());
     setAddedFilter("any");
-    if (statusFilter !== "all") router.replace(pathname);
-  }
-
-  function toggleFolder(id: string) {
-    setFolderFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    router.replace(buildHref({ folder: null, status: null }));
   }
 
   return (
@@ -638,51 +712,10 @@ export default function AudiencePage() {
               />
             </div>
 
-            {/* Folders: multi-select */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <FolderIcon data-icon="inline-start" />
-                  Folders
-                  {folderFilter.size > 0 && (
-                    <Badge variant="secondary">{folderFilter.size}</Badge>
-                  )}
-                  <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                {categories.length === 0 ? (
-                  <DropdownMenuLabel className="font-normal text-muted-foreground">
-                    No folders yet
-                  </DropdownMenuLabel>
-                ) : (
-                  categories.map((cat) => (
-                    <DropdownMenuCheckboxItem
-                      key={cat.id}
-                      checked={folderFilter.has(cat.id)}
-                      onCheckedChange={() => toggleFolder(cat.id)}
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{cat.name}</span>
-                      <span className="ml-2 text-xs tabular-nums text-muted-foreground">
-                        {categoryCounts[cat.id] || 0}
-                      </span>
-                    </DropdownMenuCheckboxItem>
-                  ))
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setCreateFolderOpen(true)}>
-                  <FolderPlusIcon />
-                  New folder
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSeeMoreOpen(true)}>
-                  <Edit2Icon />
-                  Manage folders
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Folders live in the sidebar now — the page keeps the refining
+                filters only (status, added, search). */}
 
-            {/* Status: mirrors the sidebar via ?status= */}
+            {/* Status: refines the current view via ?status= */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
@@ -698,7 +731,7 @@ export default function AudiencePage() {
                   value={statusFilter}
                   onValueChange={(value) =>
                     router.replace(
-                      value === "all" ? pathname : `${pathname}?status=${value}`,
+                      buildHref({ status: value === "all" ? null : value }),
                     )
                   }
                 >
@@ -776,7 +809,7 @@ export default function AudiencePage() {
                     type="button"
                     aria-label={`Remove ${cat.name} filter`}
                     className="cursor-pointer rounded-full p-0.5 hover:bg-muted"
-                    onClick={() => toggleFolder(id)}
+                    onClick={() => router.replace(buildHref({ folder: null }))}
                   >
                     <XIcon className="size-2.5" />
                   </button>
@@ -790,7 +823,7 @@ export default function AudiencePage() {
                   type="button"
                   aria-label="Clear status filter"
                   className="cursor-pointer rounded-full p-0.5 hover:bg-muted"
-                  onClick={() => router.replace(pathname)}
+                  onClick={() => router.replace(buildHref({ status: null }))}
                 >
                   <XIcon className="size-2.5" />
                 </button>
@@ -1028,7 +1061,14 @@ export default function AudiencePage() {
       {/* dialog for single contact add */}
       <AddContactDialog
         open={addOpen}
-        onOpenChange={setAddOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open);
+          if (!open) {
+            setAddFolders(new Set());
+            setAddNewFolder("");
+            setAddError(null);
+          }
+        }}
         email={addEmail}
         name={addName}
         error={addError}
@@ -1040,6 +1080,13 @@ export default function AudiencePage() {
           setAddOpen(false);
           setImportOpen(true);
         }}
+        folders={categories}
+        selectedFolders={addFolders}
+        onToggleFolder={toggleAddFolder}
+        newFolderValue={addNewFolder}
+        onNewFolderChange={setAddNewFolder}
+        onCreateFolder={createAddFolder}
+        creatingFolder={addCreatingFolder}
       />
 
       {/* CSV importer */}
@@ -1259,7 +1306,7 @@ export default function AudiencePage() {
                             <div
                               className="flex flex-1 items-center gap-3 cursor-pointer min-w-0"
                               onClick={() => {
-                                toggleFolder(cat.id);
+                                router.replace(buildHref({ folder: cat.id }));
                                 setSeeMoreOpen(false);
                               }}
                             >
@@ -1372,6 +1419,13 @@ function AddContactDialog({
   onNameChange,
   onAdd,
   onImport,
+  folders,
+  selectedFolders,
+  onToggleFolder,
+  newFolderValue,
+  onNewFolderChange,
+  onCreateFolder,
+  creatingFolder,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1383,6 +1437,13 @@ function AddContactDialog({
   onNameChange: (value: string) => void;
   onAdd: () => void;
   onImport: () => void;
+  folders: Category[];
+  selectedFolders: Set<string>;
+  onToggleFolder: (id: string) => void;
+  newFolderValue: string;
+  onNewFolderChange: (value: string) => void;
+  onCreateFolder: () => void;
+  creatingFolder: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1420,6 +1481,59 @@ function AddContactDialog({
                 if (event.key === "Enter" && email.trim()) onAdd();
               }}
             />
+          </Field>
+
+          <Field>
+            <FieldLabel>Add to folder (optional)</FieldLabel>
+            {folders.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {folders.map((folder) => {
+                  const on = selectedFolders.has(folder.id);
+                  return (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      onClick={() => onToggleFolder(folder.id)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                        on
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground",
+                      )}
+                    >
+                      {folder.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                value={newFolderValue}
+                onChange={(event) => onNewFolderChange(event.target.value)}
+                placeholder={
+                  folders.length > 0
+                    ? "Or create a new folder…"
+                    : "Create a folder…"
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && newFolderValue.trim()) {
+                    event.preventDefault();
+                    onCreateFolder();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={onCreateFolder}
+                disabled={creatingFolder || !newFolderValue.trim()}
+                aria-label="Create folder"
+              >
+                {creatingFolder ? <Spinner /> : <PlusIcon className="size-4" />}
+              </Button>
+            </div>
           </Field>
 
           {error && (

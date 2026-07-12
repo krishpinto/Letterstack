@@ -204,10 +204,41 @@ export default function TemplatesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* The module sidebar + breadcrumb already title this page; the sidebar
-          also owns the Gallery / Saved / Recently sent views. */}
-      <div className="flex flex-col justify-end gap-3 md:flex-row md:items-center">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* One toolbar: search + category filters on the left (gallery only),
+          create actions pinned to the far right. The module sidebar owns the
+          page title and the Gallery / Saved / Recently sent switch. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        {tab === "letterstack" && (
+          <>
+            <div className="relative w-full shrink-0 lg:w-64">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search templates..."
+                className="pl-8"
+              />
+            </div>
+            <div className="scrollbar-none flex min-w-0 flex-1 snap-x gap-1.5 overflow-x-auto pb-1">
+              {TEMPLATE_CATEGORIES.map((item) => {
+                const isActive = category === item.key;
+                return (
+                  <Button
+                    key={item.key}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 shrink-0 snap-start rounded-full px-3 text-xs"
+                    onClick={() => setCategory(item.key)}
+                  >
+                    {item.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
@@ -240,7 +271,7 @@ export default function TemplatesPage() {
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-5">
 
-        <TabsContent value="saved" className="pt-2">
+        <TabsContent value="saved" className="pt-0">
           <SavedTab
             loading={loadingSaved}
             templates={savedTemplates}
@@ -251,40 +282,11 @@ export default function TemplatesPage() {
           />
         </TabsContent>
 
-        <TabsContent value="recent" className="pt-2">
+        <TabsContent value="recent" className="pt-0">
           <RecentlySentTab />
         </TabsContent>
 
-        <TabsContent value="letterstack" className="flex flex-col gap-4 pt-2">
-
-        {/* Category pills + search, Mailchimp-style single row */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="scrollbar-none flex min-w-0 snap-x gap-1.5 overflow-x-auto pb-1">
-            {TEMPLATE_CATEGORIES.map((item) => {
-              const isActive = category === item.key;
-              return (
-                <Button
-                  key={item.key}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 shrink-0 snap-start rounded-full px-3 text-xs"
-                  onClick={() => setCategory(item.key)}
-                >
-                  {item.label}
-                </Button>
-              );
-            })}
-          </div>
-          <div className="relative shrink-0 lg:w-72">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search templates..."
-              className="pl-8"
-            />
-          </div>
-        </div>
+        <TabsContent value="letterstack" className="pt-0">
 
         {/* Templates Grid */}
         {filtered.length > 0 ? (
