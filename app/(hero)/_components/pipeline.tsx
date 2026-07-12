@@ -15,7 +15,7 @@ const RECIPIENTS = [
 
 export function PipelineSection() {
   return (
-    <section className="py-20 sm:py-24 bg-[#FAFAFA] border-b border-[#E4E4E7] overflow-hidden">
+    <section id="how-it-works" className="scroll-mt-24 py-20 sm:py-24 bg-[#FAFAFA] border-b border-[#E4E4E7] overflow-hidden">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
         
         {/* ── Title block ─────────────────────────────────────────────────── */}

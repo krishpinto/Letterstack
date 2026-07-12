@@ -532,7 +532,7 @@ export function Features() {
 
 
   return (
-    <section className="py-24 sm:py-28 lg:py-32">
+    <section id="features" className="scroll-mt-24 py-24 sm:py-28 lg:py-32">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
         
         {/* â”€â”€ Heading Row (updates with index) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}

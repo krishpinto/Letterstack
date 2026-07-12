@@ -106,7 +106,7 @@ function ReviewCard({
 
 export function Testimonials() {
   return (
-    <section className="overflow-hidden bg-white py-24 sm:py-28">
+    <section id="testimonials" className="scroll-mt-24 overflow-hidden bg-white py-24 sm:py-28">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
         <SectionHeading
           className="mb-14"
