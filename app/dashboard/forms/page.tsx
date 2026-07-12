@@ -14,11 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { FormCard } from "@/components/dashboard/forms/form-card";
-import { FormTemplatePicker } from "@/components/dashboard/forms/form-template-picker";
-import type {
-  SignupFormRow,
-  SignupFormSettingsInput,
-} from "@/components/dashboard/forms/types";
+import type { SignupFormRow } from "@/components/dashboard/forms/types";
 
 function FormsPage() {
   const router = useRouter();
@@ -28,9 +24,6 @@ function FormsPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -53,43 +46,16 @@ function FormsPage() {
     void load();
   }, [load]);
 
-  // Honor ?create=1 from the sidebar's "New form", then strip it so a refresh
-  // doesn't reopen the picker.
+  // Honor ?create=1 from the sidebar's "New form" by forwarding into the
+  // create flow (type → template → editor).
   useEffect(() => {
     if (searchParams.get("create") === "1") {
-      setPickerOpen(true);
-      router.replace("/dashboard/forms");
+      router.replace("/dashboard/forms/new");
     }
   }, [searchParams, router]);
 
-  // Creating a form is two steps: pick a template, then customize it in the
-  // full-page editor. Picking a template creates the form immediately (so it
-  // has an id) and opens /editor/form/[id].
   function openCreate() {
-    setPickerOpen(true);
-  }
-
-  async function handlePickTemplate(settings: SignupFormSettingsInput) {
-    setCreating(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/forms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...settings, name: settings.name || "Untitled form" }),
-      });
-      const data = await res.json();
-      if (data.ok && data.form) {
-        setPickerOpen(false);
-        router.push(`/editor/form/${data.form.id}`);
-      } else {
-        setError(data.error ?? "Could not create the form.");
-        setCreating(false);
-      }
-    } catch {
-      setError("Could not reach the server.");
-      setCreating(false);
-    }
+    router.push("/dashboard/forms/new");
   }
 
   function openEdit(form: SignupFormRow) {
@@ -159,20 +125,6 @@ function FormsPage() {
         </div>
       )}
 
-      <FormTemplatePicker
-        open={pickerOpen}
-        onOpenChange={(open) => {
-          if (!creating) setPickerOpen(open);
-        }}
-        onSelect={handlePickTemplate}
-      />
-
-      {creating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center gap-2 bg-background/70 text-sm text-muted-foreground backdrop-blur-sm">
-          <Loader2Icon className="size-4 animate-spin" />
-          Creating your form…
-        </div>
-      )}
     </div>
   );
 }
