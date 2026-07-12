@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { ArrowRightIcon, XIcon } from "lucide-react";
@@ -21,20 +21,40 @@ export type OnboardingStep = {
   icon: LucideIcon;
 };
 
-const DISMISS_KEY = "letterstack:getting-started-dismissed";
+// Dismissal is scoped per workspace: the key carries the organization id so a
+// new workspace always shows the guide, and dismissing one workspace never
+// hides it in another.
+const DISMISS_PREFIX = "letterstack:getting-started-dismissed";
+const dismissKeyFor = (organizationId: string) =>
+  `${DISMISS_PREFIX}:${organizationId}`;
+
+function readDismissed(organizationId: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(dismissKeyFor(organizationId)) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function GettingStarted({
   userName,
   steps,
+  organizationId,
 }: {
   userName: string;
   steps: OnboardingStep[];
+  organizationId: string;
 }) {
-  const [dismissed, setDismissed] = useState<boolean>(
-    () =>
-      typeof window !== "undefined" &&
-      window.localStorage.getItem(DISMISS_KEY) === "1",
+  const [dismissed, setDismissed] = useState<boolean>(() =>
+    readDismissed(organizationId),
   );
+
+  // Re-evaluate when the active workspace changes (the component can stay
+  // mounted across a workspace switch).
+  useEffect(() => {
+    setDismissed(readDismissed(organizationId));
+  }, [organizationId]);
 
   const [expanded, setExpanded] = useState<boolean>(true);
 
@@ -56,7 +76,7 @@ export function GettingStarted({
 
   function dismiss() {
     try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
+      window.localStorage.setItem(dismissKeyFor(organizationId), "1");
     } catch {
       // Storage unavailable
     }

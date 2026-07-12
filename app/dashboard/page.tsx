@@ -113,6 +113,7 @@ type Services = {
 };
 
 type DashboardData = {
+  organizationId: string;
   stats: Stats;
   series: SeriesPoint[];
   recentCampaigns: RecentCampaign[];
@@ -336,7 +337,11 @@ export default function DashboardHome() {
       </div>
 
       {/* ── Getting started (hides once set up, or when dismissed) ── */}
-      <GettingStarted userName={firstName} steps={onboardingSteps} />
+      <GettingStarted
+        userName={firstName}
+        steps={onboardingSteps}
+        organizationId={data.organizationId}
+      />
 
       {/* ── Stat cards ── */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
