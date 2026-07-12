@@ -25,6 +25,8 @@ export type SendEmailInput = {
   fromName: string;
   /** Must be an address on a domain verified in this SES region. */
   fromEmail: string;
+  /** Where replies land (e.g. the visitor behind a contact-form message). */
+  replyTo?: string;
   listUnsubscribeUrl?: string;
   tags?: { name: string; value: string }[];
 };
@@ -34,6 +36,7 @@ export async function sendEmail(input: SendEmailInput): Promise<string> {
   const command = new SendEmailCommand({
     FromEmailAddress: `${input.fromName} <${input.fromEmail}>`,
     Destination: { ToAddresses: [input.to] },
+    ReplyToAddresses: input.replyTo ? [input.replyTo] : undefined,
     ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
     Content: {
       Simple: {
