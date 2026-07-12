@@ -81,13 +81,18 @@ export function FormCard({
             {form.headline}
           </CardDescription>
         </div>
-        <Badge variant="secondary" className="shrink-0 gap-1">
-          <UsersIcon className="size-3" />
-          {form.subscriberCount}
-          <span className="text-muted-foreground">
-            {form.subscriberCount === 1 ? "subscriber" : "subscribers"}
-          </span>
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Badge variant="outline" className="capitalize">
+            {form.formType ?? "static"}
+          </Badge>
+          <Badge variant="secondary" className="gap-1">
+            <UsersIcon className="size-3" />
+            {form.subscriberCount}
+            <span className="text-muted-foreground">
+              {form.subscriberCount === 1 ? "subscriber" : "subscribers"}
+            </span>
+          </Badge>
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">

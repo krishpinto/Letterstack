@@ -2,6 +2,7 @@ import type {
   FormCornerStyle,
   FormLayout,
   FormTheme,
+  FormType,
 } from "@/db/signup-forms";
 
 // Shape of a signup form as the dashboard sees it (JSON from /api/forms — dates
@@ -11,6 +12,7 @@ export type SignupFormRow = {
   id: string;
   publicKey: string;
   name: string;
+  formType: FormType;
   headline: string;
   description: string;
   buttonLabel: string;
@@ -27,6 +29,7 @@ export type SignupFormRow = {
 /** The editable subset sent on create/update. */
 export type SignupFormSettingsInput = {
   name: string;
+  formType: FormType;
   headline: string;
   description: string;
   buttonLabel: string;
@@ -40,6 +43,7 @@ export type SignupFormSettingsInput = {
 
 export const DEFAULT_FORM_SETTINGS: SignupFormSettingsInput = {
   name: "",
+  formType: "static",
   headline: "Subscribe to our newsletter",
   description: "Get our latest updates straight to your inbox.",
   buttonLabel: "Subscribe",

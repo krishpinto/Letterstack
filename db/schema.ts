@@ -249,6 +249,9 @@ export const signupForms = pgTable("signup_forms", {
   accentColor: text("accent_color").notNull().default("#4f46e5"),
   // Whether the widget asks for a name alongside the email.
   collectName: boolean("collect_name").notNull().default(false),
+  // How the form appears on the host site. static: inline in the page.
+  // popup: modal overlay. animated: slides in with motion.
+  formType: text("form_type").notNull().default("static"),
   // Widget presentation. layout: card | minimal | inline. theme: light | dark.
   // cornerStyle: sharp | rounded | pill. Resolved to concrete styles at render.
   layout: text("layout").notNull().default("card"),

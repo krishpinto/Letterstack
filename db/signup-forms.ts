@@ -6,12 +6,14 @@ import { signupForms } from "./schema";
 export type SignupForm = typeof signupForms.$inferSelect;
 
 /** Editable widget fields — everything except identity/ownership/counters. */
+export type FormType = "static" | "popup" | "animated";
 export type FormLayout = "card" | "minimal" | "inline";
 export type FormTheme = "light" | "dark";
 export type FormCornerStyle = "sharp" | "rounded" | "pill";
 
 export type SignupFormSettings = {
   name: string;
+  formType: FormType;
   headline: string;
   description: string;
   buttonLabel: string;
@@ -116,6 +118,7 @@ export async function incrementSubscriberCount(id: string) {
 function cleanSettings(input: Partial<SignupFormSettings>) {
   const out: Partial<SignupFormSettings> = {};
   if (input.name !== undefined) out.name = input.name;
+  if (input.formType !== undefined) out.formType = input.formType;
   if (input.headline !== undefined) out.headline = input.headline;
   if (input.description !== undefined) out.description = input.description;
   if (input.buttonLabel !== undefined) out.buttonLabel = input.buttonLabel;

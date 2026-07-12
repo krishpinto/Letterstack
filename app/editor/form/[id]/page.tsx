@@ -37,6 +37,7 @@ export default function EditFormPage() {
           const f = data.form;
           setValues({
             name: f.name,
+            formType: f.formType ?? "static",
             headline: f.headline,
             description: f.description,
             buttonLabel: f.buttonLabel,
