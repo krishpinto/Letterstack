@@ -232,6 +232,11 @@ export function CreateWorkspaceScreen({
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  For now this is just a label on your workspace — pick
+                  whichever fits. Plans and team features will build on it
+                  later.
+                </p>
               </div>
 
               {error && <p className="text-sm text-destructive">{error}</p>}

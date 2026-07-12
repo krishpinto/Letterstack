@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import {
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -141,6 +142,11 @@ export default function OnboardingPage() {
                         );
                       })}
                     </ToggleGroup>
+                    <FieldDescription>
+                      For now this is just a label on your workspace — pick
+                      whichever fits. Plans and team features will build on it
+                      later.
+                    </FieldDescription>
                   </Field>
 
                   <Field>
