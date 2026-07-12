@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   BellIcon,
-  CheckIcon,
   ChevronDownIcon,
   HelpCircleIcon,
   LogOutIcon,
@@ -38,12 +37,17 @@ export type NavbarOrganization = {
   memberCount?: number;
 };
 
+function capitalize(value: string) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
+
 function orgMeta(org: NavbarOrganization) {
-  const role = org.role
-    ? org.role.charAt(0).toUpperCase() + org.role.slice(1)
-    : "Member";
+  const role = capitalize(org.role ?? "member");
   const count = org.memberCount ?? 1;
-  return `${role} • ${count} ${count === 1 ? "Member" : "Members"}`;
+  // The workspace type is a label for now (no plans/tiers yet) — surfacing
+  // it here is what makes the create-screen choice mean something.
+  const type = capitalize(org.type || "workspace");
+  return `${type} • ${role} • ${count} ${count === 1 ? "member" : "members"}`;
 }
 
 type TopNavbarProps = {
@@ -110,7 +114,19 @@ export function TopNavbar({
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 bg-background px-3">
+    <header className="relative flex h-12 shrink-0 items-center gap-3 bg-background px-3">
+      {/* Create-workspace morph origin: parked over the workspace switcher so
+          the takeover expands from the left, where the action started. No
+          transforms here — the screen inside positions itself with fixed. */}
+      <span aria-hidden className="pointer-events-none absolute left-4 top-5">
+        <CreateWorkspaceScreen
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          userEmail={userEmail}
+          onCreated={handleWorkspaceCreated}
+        />
+      </span>
+
       {/* ── Left: org dropdown ── */}
       <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -135,68 +151,92 @@ export function TopNavbar({
             {userEmail}
           </p>
 
-          {/* Workspace list: avatar, name, role • members, check on active */}
-          {orgs.map((org) => (
-            <DropdownMenuItem
-              key={org.id}
-              className="gap-2.5 px-2 py-1.5"
-              disabled={Boolean(switchingId)}
-              onSelect={(event) => {
-                event.preventDefault();
-                void selectOrganization(org.id);
-              }}
-            >
-              <Avatar className="size-8 rounded-lg">
+          {/* Active workspace card — mirrors the profile card in the avatar
+              menu so both navbar menus share one design language. */}
+          <div className="mb-1 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+            <div className="flex items-center gap-2.5">
+              <Avatar className="size-9 rounded-lg">
                 <AvatarFallback className="rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-                  {org.name.trim().slice(0, 1).toUpperCase()}
+                  {orgInitial}
                 </AvatarFallback>
               </Avatar>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  {org.name}
-                  {switchingId === org.id ? " …" : ""}
+                <span className="block truncate text-sm font-semibold">
+                  {activeOrg.name}
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {orgMeta(org)}
+                <span className="block truncate text-xs text-muted-foreground">
+                  {orgMeta(activeOrg)}
                 </span>
               </span>
-              {org.id === activeOrg.id && (
-                <CheckIcon className="size-4 shrink-0" />
-              )}
-            </DropdownMenuItem>
-          ))}
-
-          {/* Actions for the active workspace */}
-          <div className="mt-1 flex gap-1.5 px-1 pb-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-              asChild
-            >
-              <Link
-                href="/dashboard/settings"
-                onClick={() => setOrgMenuOpen(false)}
+            </div>
+            <div className="mt-2.5 flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+                asChild
               >
-                <SettingsIcon className="size-3.5" />
-                Settings
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-              asChild
-            >
-              <Link
-                href="/dashboard/settings"
-                onClick={() => setOrgMenuOpen(false)}
+                <Link
+                  href="/dashboard/settings"
+                  onClick={() => setOrgMenuOpen(false)}
+                >
+                  <SettingsIcon className="size-3.5" />
+                  Settings
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+                asChild
               >
-                <UserPlusIcon className="size-3.5" />
-                Invite members
-              </Link>
-            </Button>
+                <Link
+                  href="/dashboard/settings"
+                  onClick={() => setOrgMenuOpen(false)}
+                >
+                  <UserPlusIcon className="size-3.5" />
+                  Invite members
+                </Link>
+              </Button>
+            </div>
           </div>
+
+          {/* Other workspaces */}
+          {orgs.filter((org) => org.id !== activeOrg.id).length > 0 && (
+            <>
+              <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Switch workspace
+              </p>
+              {orgs
+                .filter((org) => org.id !== activeOrg.id)
+                .map((org) => (
+                  <DropdownMenuItem
+                    key={org.id}
+                    className="gap-2.5 px-2 py-1.5"
+                    disabled={Boolean(switchingId)}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void selectOrganization(org.id);
+                    }}
+                  >
+                    <Avatar className="size-8 rounded-lg">
+                      <AvatarFallback className="rounded-lg bg-muted text-xs font-semibold text-foreground">
+                        {org.name.trim().slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {org.name}
+                        {switchingId === org.id ? " …" : ""}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {orgMeta(org)}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+            </>
+          )}
 
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -317,13 +357,6 @@ export function TopNavbar({
         </DropdownMenu>
       </div>
 
-      {/* ── Create workspace: Plane-style full-screen takeover ── */}
-      <CreateWorkspaceScreen
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        userEmail={userEmail}
-        onCreated={handleWorkspaceCreated}
-      />
     </header>
   );
 }
