@@ -18,12 +18,12 @@ import {
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/features", homeHref: "#features", label: "Features" },
+  { href: "/features", label: "Features" },
   { href: "/design", label: "Design" },
   { href: "/templates", label: "Templates" },
-  { href: "/pricing", homeHref: "#pricing", label: "Pricing" },
-  { href: "/about", homeHref: "#about", label: "About" },
-  { href: "/contact", homeHref: "#contact", label: "Contact" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/about", label: "About" },
+  { href: "/contact", label: "Contact" },
 ] as const;
 
 export function Navbar() {
@@ -40,7 +40,7 @@ export function Navbar() {
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.href}
-              href={getItemHref(item, pathname)}
+              href={item.href}
               active={isActivePath(item.href, pathname)}
             >
               {item.label}
@@ -137,7 +137,7 @@ function MobileNav({
             {NAV_ITEMS.map((item) => (
               <SheetClose key={item.href} asChild>
                 <Link
-                  href={getItemHref(item, pathname)}
+                  href={item.href}
                   className={cn(
                     "rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                     isActivePath(item.href, pathname) && "bg-muted text-foreground",
@@ -176,10 +176,6 @@ function MobileNav({
       </SheetContent>
     </Sheet>
   );
-}
-
-function getItemHref(item: (typeof NAV_ITEMS)[number], pathname: string) {
-  return pathname === "/" && "homeHref" in item ? item.homeHref : item.href;
 }
 
 function isActivePath(href: string, pathname: string) {
