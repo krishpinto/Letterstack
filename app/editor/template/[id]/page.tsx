@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { alertDialog } from "@/components/app-dialogs";
-import { EditorBackLink } from "@/components/editor/editor-back-link";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { Spinner } from "@/components/ui/spinner";
 import { type EmailDocument } from "@/lib/email/document";
@@ -15,10 +14,6 @@ export default function EditTemplatePage() {
 
   const [initialDoc, setInitialDoc] = React.useState<EmailDocument | null>(null);
   const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    localStorage.setItem("letterstack-return-to", "/dashboard/templates");
-  }, []);
 
   React.useEffect(() => {
     async function loadTemplate() {
@@ -81,14 +76,11 @@ export default function EditTemplatePage() {
   if (!initialDoc) return null;
 
   return (
-    <>
-      <EditorBackLink />
-      <EditorShell
-        mode="template-editor"
-        initialDocument={initialDoc}
-        onSave={handleSave}
-        onExit={handleExit}
-      />
-    </>
+    <EditorShell
+      mode="template-editor"
+      initialDocument={initialDoc}
+      onSave={handleSave}
+      onExit={handleExit}
+    />
   );
 }

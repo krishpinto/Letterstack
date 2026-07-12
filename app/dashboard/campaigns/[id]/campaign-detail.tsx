@@ -626,10 +626,6 @@ export function CampaignDetail({
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(campaign.document));
         localStorage.setItem("letterstack-editing-campaign", campaign.id);
-        localStorage.setItem(
-          "letterstack-return-to",
-          `/dashboard/campaigns/${campaign.id}`,
-        );
       } catch {
         // ignore unavailable storage
       }

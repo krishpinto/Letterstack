@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { alertDialog } from "@/components/app-dialogs";
-import { EditorBackLink } from "@/components/editor/editor-back-link";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -27,7 +26,6 @@ export default function EditorPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("letterstack-return-to", "/dashboard/templates");
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved && saved !== "null") {
@@ -81,14 +79,11 @@ export default function EditorPage() {
   }
 
   return (
-    <>
-      <EditorBackLink />
-      <EditorShell
-        mode="template-creator"
-        initialDocument={initialDoc}
-        onSaveAsTemplate={handleSaveAsTemplate}
-        onExit={() => router.push("/dashboard/templates")}
-      />
-    </>
+    <EditorShell
+      mode="template-creator"
+      initialDocument={initialDoc}
+      onSaveAsTemplate={handleSaveAsTemplate}
+      onExit={() => router.push("/dashboard/templates")}
+    />
   );
 }

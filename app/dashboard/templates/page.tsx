@@ -135,7 +135,6 @@ export default function TemplatesPage() {
         if (!ok) return;
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-      localStorage.setItem("letterstack-return-to", "/dashboard/templates");
     } catch {
       // If storage is unavailable, the editor falls back to its default document.
     }
