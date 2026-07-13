@@ -6,6 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { SignupFormSettingsInput } from "./types";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // The editable fields for a signup form — shared by the full-page editor
 // (/editor/form/[id]) so the controls live in one place.
@@ -20,131 +26,157 @@ export function FormFields({
   ) => void;
 }) {
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="form-name">Form name</Label>
-        <Input
-          id="form-name"
-          value={values.name}
-          onChange={(e) => set("name", e.target.value)}
-          placeholder="Website footer form"
-        />
-        <p className="text-xs text-muted-foreground">
-          Internal label — only you see this.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="form-headline">Headline</Label>
-        <Input
-          id="form-headline"
-          value={values.headline}
-          onChange={(e) => set("headline", e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="form-description">Description</Label>
-        <Textarea
-          id="form-description"
-          rows={2}
-          value={values.description}
-          onChange={(e) => set("description", e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="form-button">Button label</Label>
-        <Input
-          id="form-button"
-          value={values.buttonLabel}
-          onChange={(e) => set("buttonLabel", e.target.value)}
-        />
-      </div>
-
-      {/* Style */}
-      <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-        <p className="text-sm font-medium">Style</p>
-
-        <Segmented
-          label="Layout"
-          value={values.layout}
-          onChange={(v) => set("layout", v)}
-          options={[
-            { value: "card", label: "Card" },
-            { value: "minimal", label: "Minimal" },
-            { value: "inline", label: "Inline" },
-          ]}
-        />
-        <Segmented
-          label="Theme"
-          value={values.theme}
-          onChange={(v) => set("theme", v)}
-          options={[
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-          ]}
-        />
-        <Segmented
-          label="Corners"
-          value={values.cornerStyle}
-          onChange={(v) => set("cornerStyle", v)}
-          options={[
-            { value: "sharp", label: "Sharp" },
-            { value: "rounded", label: "Rounded" },
-            { value: "pill", label: "Pill" },
-          ]}
-        />
-
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="form-accent" className="text-xs font-normal">
-            Accent color
-          </Label>
-          <div className="flex items-center gap-2">
-            <input
-              id="form-accent"
-              type="color"
-              value={values.accentColor}
-              onChange={(e) => set("accentColor", e.target.value)}
-              className="h-8 w-10 cursor-pointer rounded-md border border-input bg-transparent"
-              aria-label="Accent color"
-            />
+    <Accordion type="single" defaultValue="general-settings" className="w-full border-none">
+      {/* 1. General Settings */}
+      <AccordionItem value="general-settings" className="border-none">
+        <AccordionTrigger className="text-sm font-semibold hover:no-underline py-2.5 px-0.5 text-foreground/90">
+          General Settings
+        </AccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 pt-1 pb-4 px-0.5">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="form-name" className="text-xs font-semibold text-foreground/80">Form name</Label>
             <Input
-              value={values.accentColor}
-              onChange={(e) => set("accentColor", e.target.value)}
-              className="h-8 w-24 font-mono text-xs"
+              id="form-name"
+              value={values.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="Website footer form"
+              className="h-8.5 text-xs bg-muted/10"
+            />
+            <p className="text-[10px] text-muted-foreground/70">
+              Internal label — only you see this.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg p-3 bg-muted/15 mt-1">
+            <div>
+              <Label htmlFor="form-collect-name" className="text-xs font-semibold text-foreground/80">Ask for a name</Label>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                Adds a name field above the email.
+              </p>
+            </div>
+            <Switch
+              id="form-collect-name"
+              checked={!!values.collectName}
+              onCheckedChange={(checked) => set("collectName", checked)}
             />
           </div>
-        </div>
-      </div>
+        </AccordionContent>
+      </AccordionItem>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="form-success">Success message</Label>
-        <Textarea
-          id="form-success"
-          rows={2}
-          value={values.successMessage}
-          onChange={(e) => set("successMessage", e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          Shown right after someone subscribes.
-        </p>
-      </div>
+      {/* 2. Form Content */}
+      <AccordionItem value="content" className="border-none">
+        <AccordionTrigger className="text-sm font-semibold hover:no-underline py-2.5 px-0.5 text-foreground/90">
+          Form Content
+        </AccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 pt-1 pb-4 px-0.5">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="form-headline" className="text-xs font-semibold text-foreground/80">Headline</Label>
+            <Input
+              id="form-headline"
+              value={values.headline}
+              onChange={(e) => set("headline", e.target.value)}
+              className="h-8.5 text-xs bg-muted/10"
+            />
+          </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-border p-3">
-        <div>
-          <Label htmlFor="form-collect-name">Ask for a name</Label>
-          <p className="text-xs text-muted-foreground">
-            Adds a name field above the email.
-          </p>
-        </div>
-        <Switch
-          id="form-collect-name"
-          checked={values.collectName}
-          onCheckedChange={(checked) => set("collectName", checked)}
-        />
-      </div>
-    </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="form-description" className="text-xs font-semibold text-foreground/80">Description</Label>
+            <Textarea
+              id="form-description"
+              rows={2}
+              value={values.description}
+              onChange={(e) => set("description", e.target.value)}
+              className="text-xs bg-muted/10 resize-none"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="form-button" className="text-xs font-semibold text-foreground/80">Button label</Label>
+            <Input
+              id="form-button"
+              value={values.buttonLabel}
+              onChange={(e) => set("buttonLabel", e.target.value)}
+              className="h-8.5 text-xs bg-muted/10"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="form-success" className="text-xs font-semibold text-foreground/80">Success message</Label>
+            <Textarea
+              id="form-success"
+              rows={2}
+              value={values.successMessage}
+              onChange={(e) => set("successMessage", e.target.value)}
+              className="text-xs bg-muted/10 resize-none"
+            />
+            <p className="text-[10px] text-muted-foreground/70">
+              Shown right after someone subscribes.
+            </p>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+
+      {/* 3. Design & Styles */}
+      <AccordionItem value="styles" className="border-none">
+        <AccordionTrigger className="text-sm font-semibold hover:no-underline py-2.5 px-0.5 text-foreground/90">
+          Design & Styles
+        </AccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4 pt-1 pb-4 px-0.5">
+          <div className="flex flex-col gap-3.5 rounded-lg p-3 bg-muted/15">
+            <Segmented
+              label="Layout"
+              value={values.layout}
+              onChange={(v) => set("layout", v)}
+              options={[
+                { value: "card", label: "Card" },
+                { value: "minimal", label: "Minimal" },
+                { value: "inline", label: "Inline" },
+              ]}
+            />
+            <Segmented
+              label="Theme"
+              value={values.theme}
+              onChange={(v) => set("theme", v)}
+              options={[
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+              ]}
+            />
+            <Segmented
+              label="Corners"
+              value={values.cornerStyle}
+              onChange={(v) => set("cornerStyle", v)}
+              options={[
+                { value: "sharp", label: "Sharp" },
+                { value: "rounded", label: "Rounded" },
+                { value: "pill", label: "Pill" },
+              ]}
+            />
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <Label htmlFor="form-accent" className="text-xs font-normal text-muted-foreground">
+                Accent color
+              </Label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="form-accent"
+                  type="color"
+                  value={values.accentColor}
+                  onChange={(e) => set("accentColor", e.target.value)}
+                  className="h-7 w-9 cursor-pointer rounded-md border border-input bg-transparent"
+                  aria-label="Accent color"
+                />
+                <Input
+                  value={values.accentColor}
+                  onChange={(e) => set("accentColor", e.target.value)}
+                  className="h-7 w-20 font-mono text-[10px]"
+                />
+              </div>
+            </div>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }
 

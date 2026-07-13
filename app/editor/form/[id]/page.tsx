@@ -3,7 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeftIcon, Loader2Icon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  CheckIcon,
+  Loader2Icon,
+  PencilIcon,
+  EyeIcon
+} from "lucide-react";
 
 import { alertDialog } from "@/components/app-dialogs";
 import { Button } from "@/components/ui/button";
@@ -14,6 +20,14 @@ import {
   DEFAULT_FORM_SETTINGS,
   type SignupFormSettingsInput,
 } from "@/components/dashboard/forms/types";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function EditFormPage() {
   const params = useParams();
@@ -108,50 +122,90 @@ export default function EditFormPage() {
   const preview = values ?? DEFAULT_FORM_SETTINGS;
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/forms">
-              <ArrowLeftIcon data-icon="inline-start" />
-              Forms
-            </Link>
-          </Button>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">
-              {values.name || "Untitled form"}
-            </p>
-            <p className="text-xs text-muted-foreground">Signup form editor</p>
-          </div>
-        </div>
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "23rem",
+        } as React.CSSProperties
+      }
+      className="min-h-0 h-screen w-screen !bg-background flex flex-col overflow-hidden"
+    >
+      {/* Top Header */}
+      <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
+        {/* Left: Back chevron + Title */}
         <div className="flex items-center gap-3">
-          {savedAt && <span className="text-xs font-medium text-emerald-500">Saved</span>}
-          <Button onClick={() => void save()} disabled={busy}>
-            {busy && <Loader2Icon data-icon="inline-start" className="animate-spin" />}
-            Save changes
+          <Link
+            href="/dashboard/forms"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <ChevronLeftIcon className="size-4" />
+          </Link>
+          <span className="text-sm font-semibold text-foreground tracking-tight select-none">
+            {values.name || "Untitled Form"}
+          </span>
+        </div>
+
+
+
+        {/* Right: Status & Actions */}
+        <div className="flex items-center gap-3">
+          {savedAt && (
+            <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 select-none mr-1.5">
+              <CheckIcon className="size-3.5" />
+              Saved
+            </span>
+          )}
+          {error && (
+            <span className="text-xs text-destructive select-none truncate max-w-[200px] mr-1.5">
+              {error}
+            </span>
+          )}
+          <Button
+            onClick={() => void save()}
+            disabled={busy}
+            size="sm"
+            className="h-8 px-4 font-semibold shadow-xs"
+          >
+            {busy && <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />}
+            Save
           </Button>
         </div>
       </header>
 
-      <div className="grid flex-1 overflow-hidden md:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
-        {/* Controls */}
-        <div className="overflow-y-auto border-b border-border p-6 md:border-b-0 md:border-r">
-          <FormFields values={values} set={set} />
-          {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-        </div>
+      {/* Main Workspace below header */}
+      <div className="flex-1 min-h-0 flex relative">
+        {/* Left Sidebar for Controls */}
+        <Sidebar
+          variant="inset"
+          collapsible="none"
+          className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background"
+        >
+          <SidebarContent className="overflow-hidden">
+            <SidebarGroup className="min-h-0 flex-1 p-0">
+              <div className="p-5">
+                <div className="mb-5">
+                  <p className="text-sm font-bold text-foreground">Form controls</p>
+                  <p className="text-[11px] text-muted-foreground/75 mt-0.5">
+                    Configure layout, content, styles, and field inputs.
+                  </p>
+                </div>
+                <FormFields values={values} set={set} />
+              </div>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
 
-        {/* Live preview */}
-        <div className="flex flex-col overflow-hidden bg-muted/30">
-          <div className="border-b border-border px-4 py-2.5">
-            <p className="text-xs font-medium text-muted-foreground">Live preview</p>
-          </div>
-          <div className="flex flex-1 items-center justify-center overflow-y-auto p-8">
-            <div className="w-full max-w-md overflow-hidden rounded-xl border border-border shadow-sm">
-              <FormPreview settings={preview} className="min-h-[320px] w-full" />
+        {/* Live Preview Area inside SidebarInset */}
+        <SidebarInset className="min-h-0 overflow-hidden flex flex-col !bg-muted/30 !m-[1px] !w-auto rounded-xl border border-border">
+          <div className="relative flex min-h-0 flex-1 overflow-hidden">
+            <div className="flex flex-1 items-center justify-center p-8 overflow-auto">
+              <div className="w-full max-w-md overflow-hidden rounded-xl border border-border shadow-sm bg-card">
+                <FormPreview settings={preview} className="min-h-[320px] w-full" />
+              </div>
             </div>
           </div>
-        </div>
+        </SidebarInset>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }
