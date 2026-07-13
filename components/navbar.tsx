@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { Layers2Icon, MenuIcon } from "lucide-react";
+import { MenuIcon } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { RichButton } from "@/components/rich-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,9 +77,7 @@ export function Navbar() {
 function Brand() {
   return (
     <Link href="/" className="flex min-w-0 items-center gap-2.5">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground shadow-xs shadow-zinc-950/10">
-        <Layers2Icon className="size-4.5" />
-      </span>
+      <BrandLogo className="size-9 shrink-0" aria-hidden />
       <span className="truncate text-sm font-semibold tracking-normal text-[#0A0A0A]">
         Letterstack
       </span>

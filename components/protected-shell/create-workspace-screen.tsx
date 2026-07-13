@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import {
   BriefcaseBusinessIcon,
-  Layers2Icon,
   UserRoundIcon,
   XIcon,
 } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import {
   ExpandableScreen,
@@ -144,9 +144,7 @@ export function CreateWorkspaceScreen({
           {/* ── Top row: brand + account ── */}
           <div className="flex shrink-0 items-center justify-between">
             <span className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Layers2Icon className="size-4" />
-              </span>
+              <BrandLogo className="size-8" aria-hidden />
               <span className="text-sm font-semibold">LetterStack</span>
             </span>
             <span className="flex items-center gap-3">

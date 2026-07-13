@@ -1,0 +1,101 @@
+import * as React from "react"
+
+// The Letterstack brand mark: gradient tile + paper-plane glyph, from the
+// brand SVG. Scales to any size via className (e.g. size-9); the tile,
+// corner radius and inner shadows are baked in, so callers don't wrap it
+// in their own bg-primary box. Pass aria-hidden when it sits next to the
+// wordmark.
+export function BrandLogo({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>) {
+  // Gradient/filter ids must be unique per instance — pages like login
+  // render the logo twice (desktop rail + mobile header). useId can emit
+  // colons, which break SVG url(#…) references, so strip them.
+  const uid = React.useId().replace(/:/g, "")
+  const shadow = `${uid}-shadow`
+  const base = `${uid}-base`
+  const shine = `${uid}-shine`
+
+  return (
+    <svg
+      viewBox="0 0 256 256"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <g filter={`url(#${shadow})`}>
+        <rect width="256" height="256" rx="56.2987" fill={`url(#${base})`} />
+        <rect
+          width="256"
+          height="256"
+          rx="56.2987"
+          fill={`url(#${shine})`}
+          fillOpacity="0.2"
+          className="mix-blend-soft-light"
+        />
+      </g>
+      <path
+        d="M63.9536 115.28C60.4547 116.441 56.8086 117.083 53.3988 118.534C50.4161 119.809 47.0834 119.967 44.1665 121.384C44.4781 123.354 46.0541 124.69 47.7466 125.53C57.9442 130.974 68.7273 135.327 78.9105 140.817C81.6556 142.011 81.5198 145.398 82.151 147.882C83.3074 156.016 85.9932 163.821 88.302 171.707C90.4298 178.449 92.4798 185.247 95.2038 191.786C95.869 193.527 97.1525 194.931 98.536 196.145C99.3994 194.619 100.238 193.075 101.368 191.724C107.63 184.067 115.05 177.291 120.491 168.961C125.289 171.351 129.664 174.502 134.412 176.986C135.788 176.378 136.535 174.935 137.392 173.779C144.278 162.94 152.43 152.987 160.372 142.937C160.459 142.532 160.631 141.702 160.719 141.297C163.836 137.72 166.597 133.81 169.941 130.436C176.459 123.846 182.044 116.427 187.912 109.289C195.905 98.0577 206.038 88.5729 214.881 78.0544C215.805 76.779 215.734 75.0966 216.045 73.6361C214.628 73.578 213.175 73.5689 211.759 73.7929C191.541 77.4466 172.082 84.259 152.215 89.3121C122.448 96.6909 92.7474 104.624 63.9536 115.28ZM99.9329 188.541C99.9705 182.89 100.132 177.197 99.455 171.55C98.8823 166.559 98.2284 161.603 97.8037 156.589C104.357 160.221 110.907 163.832 117.492 167.394C110.819 173.683 105.352 181.17 99.9329 188.541ZM182.229 108.559C171.581 121.361 160.71 133.981 150.408 147.053C145.99 152.811 141.792 158.73 138.077 164.963C136.655 167.338 135.138 169.663 133.498 171.898C121.962 165.384 109.858 159.938 98.5101 153.112C107.391 144.477 116.868 136.463 125.665 127.711C130.983 122.44 136.602 117.426 141.586 111.817C142.812 110.668 143.104 108.95 143.352 107.369C139.733 108.18 136.571 110.243 133.311 111.953C116.833 121.313 99.6611 129.435 83.4015 139.216C77.7971 135.694 71.625 133.24 65.6995 130.29C60.8957 127.858 56.0241 125.545 51.2847 122.972C62.79 116.962 75.4919 113.998 87.823 110.332C108.126 104.341 128.645 99.1634 149.258 94.4483C168.871 89.9783 187.971 83.5048 207.713 79.5789C199.086 89.1297 190.43 98.6414 182.229 108.559Z"
+        fill="#FBFBFB"
+      />
+      <path
+        d="M145.414 129.994C149.515 132.364 153.654 134.706 158.084 136.415C154.9 132.858 150.546 129.161 145.414 129.994Z"
+        fill="#F5F8FF"
+      />
+      <path
+        d="M138.399 136.728C142.262 139.786 146.732 142.575 151.76 142.996C147.84 139.99 143.494 137.029 138.399 136.728Z"
+        fill="#F5F8FF"
+      />
+      <path
+        d="M146.818 146.405C142.635 145.156 138.483 143.424 134.039 143.541C137.731 146.062 142.411 147.167 146.818 146.405Z"
+        fill="#F5F8FF"
+      />
+      <defs>
+        <filter
+          id={shadow}
+          x="-2.04722"
+          y="-2.04722"
+          width="260.094"
+          height="260.094"
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
+          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+          <feColorMatrix
+            in="SourceAlpha"
+            type="matrix"
+            values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"
+            result="hardAlpha"
+          />
+          <feOffset dx="2.04722" dy="2.04722" />
+          <feGaussianBlur stdDeviation="1.02361" />
+          <feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1" />
+          <feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.2 0" />
+          <feBlend mode="normal" in2="shape" result="effect1_innerShadow" />
+          <feColorMatrix
+            in="SourceAlpha"
+            type="matrix"
+            values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"
+            result="hardAlpha"
+          />
+          <feOffset dx="-2.04722" dy="-2.04722" />
+          <feGaussianBlur stdDeviation="1.02361" />
+          <feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1" />
+          <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0" />
+          <feBlend mode="normal" in2="effect1_innerShadow" result="effect2_innerShadow" />
+        </filter>
+        <linearGradient id={base} x1="128" y1="0" x2="128" y2="256" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6C5ED1" />
+          <stop offset="1" stopColor="#6355C9" />
+        </linearGradient>
+        <linearGradient id={shine} x1="128" y1="0" x2="128" y2="256" gradientUnits="userSpaceOnUse">
+          <stop offset="0.328125" stopColor="white" />
+          <stop offset="1" stopOpacity="0.1" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}

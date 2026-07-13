@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Layers2Icon } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+
+import { BrandLogo } from "@/components/brand-logo";
 
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
@@ -27,9 +28,7 @@ export function Footer() {
         {/* ── Top Row: Logo & Socials ────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-4 mb-8">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground shadow-xs shadow-zinc-950/10">
-              <Layers2Icon className="size-4.5" />
-            </span>
+            <BrandLogo className="size-9 shrink-0" aria-hidden />
             <span className="text-sm font-semibold tracking-normal text-[#0A0A0A]">
               Letterstack
             </span>

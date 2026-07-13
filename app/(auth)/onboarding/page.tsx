@@ -7,11 +7,11 @@ import {
   ArrowRightIcon,
   BriefcaseBusinessIcon,
   CheckIcon,
-  Layers2Icon,
   SparklesIcon,
   UserRoundIcon,
 } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,9 +87,7 @@ export default function OnboardingPage() {
     <main className="min-h-svh bg-muted/20 p-4 md:p-8">
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-6xl flex-col gap-6 md:min-h-[calc(100svh-4rem)]">
         <Link href="/" className="flex w-fit items-center gap-2">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Layers2Icon className="size-4" />
-          </span>
+          <BrandLogo className="size-9" aria-hidden />
           <span className="font-semibold tracking-normal">LetterStack</span>
         </Link>
 
