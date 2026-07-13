@@ -3,13 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import {
-  ChevronLeftIcon,
-  CheckIcon,
-  Loader2Icon,
-  PencilIcon,
-  EyeIcon
-} from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, Loader2Icon } from "lucide-react";
 
 import { alertDialog } from "@/components/app-dialogs";
 import { Button } from "@/components/ui/button";
@@ -27,7 +21,6 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function EditFormPage() {
   const params = useParams();
@@ -123,6 +116,8 @@ export default function EditFormPage() {
 
   return (
     <SidebarProvider
+      // Inline style is the documented shadcn way to size the sidebar —
+      // the provider reads this CSS variable.
       style={
         {
           "--sidebar-width": "23rem",
@@ -180,7 +175,7 @@ export default function EditFormPage() {
           collapsible="none"
           className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background"
         >
-          <SidebarContent className="overflow-hidden">
+          <SidebarContent className="overflow-y-auto">
             <SidebarGroup className="min-h-0 flex-1 p-0">
               <div className="p-5">
                 <div className="mb-5">
