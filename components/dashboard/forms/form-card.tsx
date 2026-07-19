@@ -15,14 +15,21 @@ import { confirmDialog } from "@/components/app-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/coss-dialog";
+import { ScaledPreview } from "./scaled-preview";
 import type { SignupFormRow } from "./types";
 
+// Gallery card for a signup form: a live preview thumbnail up top (like the
+// templates page), name + badges below. Clicking the card opens the details
+// dialog with the embed snippet and hosted link; the corner icon opens the
+// real hosted preview in a new tab.
 export function FormCard({
   form,
   baseUrl,
@@ -31,6 +38,101 @@ export function FormCard({
 }: {
   form: SignupFormRow;
   baseUrl: string;
+  onEdit: (form: SignupFormRow) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const hostedUrl = `${baseUrl}/s/${form.publicKey}`;
+  // Popup and animated forms are dismissable on the host site, so their
+  // thumbnails wear the little close dot; a static section has none.
+  const showClose = form.formType === "popup" || form.formType === "animated";
+
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setDetailsOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailsOpen(true);
+          }
+        }}
+        aria-label={`Open details for ${form.name}`}
+        className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        {/* Preview band */}
+        <div className="relative h-[190px] w-full border-b border-border bg-muted/50 p-4">
+          <div className="relative h-full overflow-hidden rounded-lg border border-border shadow-sm">
+            <ScaledPreview settings={form} scale={85} />
+            {showClose && (
+              <span className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full border border-border bg-background/90 text-[9px] leading-none text-muted-foreground shadow-sm">
+                ✕
+              </span>
+            )}
+          </div>
+          {/* Live preview in a new tab — the only action on the card face. */}
+          <a
+            href={hostedUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`Open live preview of ${form.name} in a new tab`}
+            title="Open live preview"
+            className="absolute right-2.5 top-2.5 z-10 flex size-7 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-sm transition-colors hover:border-primary hover:text-foreground"
+          >
+            <ExternalLinkIcon className="size-3.5" />
+          </a>
+        </div>
+
+        {/* Meta row */}
+        <div className="flex w-full items-center justify-between gap-3 p-3.5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{form.name}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {form.headline}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge variant="outline" className="capitalize">
+              {form.formType ?? "static"}
+            </Badge>
+            <Badge variant="secondary" className="gap-1">
+              <UsersIcon className="size-3" />
+              {form.subscriberCount}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <FormDetailsDialog
+        form={form}
+        baseUrl={baseUrl}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        onEdit={onEdit}
+        onDeleted={onDeleted}
+      />
+    </>
+  );
+}
+
+// Everything that used to live on the card face: the embed snippet, the
+// hosted link, and the edit/delete actions.
+function FormDetailsDialog({
+  form,
+  baseUrl,
+  open,
+  onOpenChange,
+  onEdit,
+  onDeleted,
+}: {
+  form: SignupFormRow;
+  baseUrl: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onEdit: (form: SignupFormRow) => void;
   onDeleted: (id: string) => void;
 }) {
@@ -66,115 +168,100 @@ export function FormCard({
     try {
       const res = await fetch(`/api/forms/${form.id}`, { method: "DELETE" });
       const data = await res.json();
-      if (data.ok) onDeleted(form.id);
+      if (data.ok) {
+        onOpenChange(false);
+        onDeleted(form.id);
+      }
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div className="min-w-0">
-          <CardTitle className="truncate">{form.name}</CardTitle>
-          <CardDescription className="truncate">
-            {form.headline}
-          </CardDescription>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Badge variant="outline" className="capitalize">
-            {form.formType ?? "static"}
-          </Badge>
-          <Badge variant="secondary" className="gap-1">
-            <UsersIcon className="size-3" />
-            {form.subscriberCount}
-            <span className="text-muted-foreground">
-              {form.subscriberCount === 1 ? "subscriber" : "subscribers"}
-            </span>
-          </Badge>
-        </div>
-      </CardHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="truncate">{form.name}</DialogTitle>
+          <DialogDescription>
+            <span className="capitalize">{form.formType ?? "static"}</span> form
+            · {form.subscriberCount}{" "}
+            {form.subscriberCount === 1 ? "subscriber" : "subscribers"}
+          </DialogDescription>
+        </DialogHeader>
 
-      <CardContent className="flex flex-col gap-4">
-        {/* Embed snippet */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <CodeIcon className="size-3.5" />
-            Embed on your site
+        <DialogPanel className="flex flex-col gap-5">
+          {/* Embed snippet */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <CodeIcon className="size-3.5" />
+              Embed on your site
+            </div>
+            <div className="flex items-stretch gap-2">
+              <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-xs whitespace-nowrap">
+                {embedSnippet}
+              </code>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => void copy("embed", embedSnippet)}
+              >
+                {copied === "embed" ? (
+                  <CheckIcon data-icon="inline-start" />
+                ) : (
+                  <CopyIcon data-icon="inline-start" />
+                )}
+                {copied === "embed" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Paste this one line wherever you want the form to appear.
+            </p>
           </div>
-          <div className="flex items-stretch gap-2">
-            <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-xs whitespace-nowrap">
-              {embedSnippet}
-            </code>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => void copy("embed", embedSnippet)}
-            >
-              {copied === "embed" ? (
-                <CheckIcon data-icon="inline-start" />
-              ) : (
-                <CopyIcon data-icon="inline-start" />
-              )}
-              {copied === "embed" ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Paste this one line wherever you want the form to appear.
-          </p>
-        </div>
 
-        {/* Hosted link */}
-        <div className="flex flex-col gap-2">
-          <div className="text-xs font-medium text-muted-foreground">
-            Or share a direct link
+          {/* Hosted link */}
+          <div className="flex flex-col gap-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              Or share a direct link
+            </div>
+            <div className="flex items-stretch gap-2">
+              <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-xs whitespace-nowrap">
+                {hostedUrl}
+              </code>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => void copy("link", hostedUrl)}
+              >
+                {copied === "link" ? (
+                  <CheckIcon data-icon="inline-start" />
+                ) : (
+                  <CopyIcon data-icon="inline-start" />
+                )}
+                {copied === "link" ? "Copied" : "Copy"}
+              </Button>
+            </div>
           </div>
-          <div className="flex items-stretch gap-2">
-            <code className="min-w-0 flex-1 overflow-x-auto rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-xs whitespace-nowrap">
-              {hostedUrl}
-            </code>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => void copy("link", hostedUrl)}
-            >
-              {copied === "link" ? (
-                <CheckIcon data-icon="inline-start" />
-              ) : (
-                <CopyIcon data-icon="inline-start" />
-              )}
-              {copied === "link" ? "Copied" : "Copy"}
-            </Button>
-          </div>
-        </div>
+        </DialogPanel>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <Button variant="ghost" size="sm" asChild>
-            <a href={hostedUrl} target="_blank" rel="noreferrer">
-              <ExternalLinkIcon data-icon="inline-start" />
-              Preview
-            </a>
+        <DialogFooter className="justify-between gap-2 sm:justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void remove()}
+            disabled={busy}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete
           </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onEdit(form)}>
-              <PencilIcon data-icon="inline-start" />
-              Edit
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void remove()}
-              disabled={busy}
-            >
-              <Trash2Icon data-icon="inline-start" />
-              Delete
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+          <Button size="sm" onClick={() => onEdit(form)}>
+            <PencilIcon data-icon="inline-start" />
+            Edit form
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }

@@ -12,7 +12,7 @@ import { motion, useReducedMotion } from "motion/react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FormPreview } from "@/components/dashboard/forms/form-preview";
+import { ScaledPreview } from "@/components/dashboard/forms/scaled-preview";
 import { FORM_TEMPLATES } from "@/components/dashboard/forms/templates";
 import type { SignupFormSettingsInput } from "@/components/dashboard/forms/types";
 import type { FormType } from "@/db/signup-forms";
@@ -162,37 +162,6 @@ function AnimatedIllustration({ animate }: { animate: boolean }) {
 }
 
 // ─── Template showcase cards (Mailchimp-style: mobile + desktop preview) ─────
-
-/**
- * The form art uses fixed pixel sizes, so narrow frames render it oversized
- * and scale down — the thumbnail trick — to keep both frames faithful.
- */
-function ScaledPreview({
-  settings,
-  scale,
-}: {
-  settings: SignupFormSettingsInput;
-  scale: number;
-}) {
-  // scale is a percentage (70 → 0.7): the box must be oversized by its
-  // reciprocal, also in percent — 70% scale means a 10000/70 ≈ 143% box.
-  const inverse = 10000 / scale;
-  return (
-    <div className="h-full w-full overflow-hidden">
-      <div
-        // Size/transform are derived from the scale prop — inline by necessity.
-        style={{
-          width: `${inverse}%`,
-          height: `${inverse}%`,
-          transform: `scale(${scale / 100})`,
-          transformOrigin: "top left",
-        }}
-      >
-        <FormPreview settings={settings} className="h-full w-full" />
-      </div>
-    </div>
-  );
-}
 
 function TemplateShowcaseCard({
   title,
