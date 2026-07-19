@@ -93,9 +93,11 @@ export default function EditFormPage() {
       const data = await res.json();
       if (data.ok) {
         setSavedAt(Date.now());
-      } else {
-        setError(data.error ?? "Could not save the form.");
+        // Saving is "I'm done here" — land back on the forms list.
+        router.push("/dashboard/forms");
+        return;
       }
+      setError(data.error ?? "Could not save the form.");
     } catch {
       setError("Could not reach the server.");
     } finally {
