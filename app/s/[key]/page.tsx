@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSignupFormByPublicKey } from "@/db/signup-forms";
 import { widgetConfig } from "@/lib/forms/widget";
-import { SubscribeWidget } from "./subscribe-widget";
+import { HostedFormExperience } from "./hosted-form-experience";
 
 export const runtime = "nodejs";
 
@@ -30,23 +30,8 @@ export default async function HostedSubscribePage({
   const form = await getSignupFormByPublicKey(key);
   if (!form) notFound();
 
-  const config = widgetConfig(form);
-
-  return (
-    // Backdrop follows the form's theme so a dark form lands on a dark page.
-    <div
-      className="flex min-h-dvh flex-col items-center justify-center px-4 py-10"
-      style={{ backgroundColor: config.colors.pageBg }}
-    >
-      <div className="w-full max-w-md">
-        <SubscribeWidget config={config} />
-        <p
-          className="mt-6 text-center text-xs"
-          style={{ color: config.colors.muted }}
-        >
-          Powered by LetterStack
-        </p>
-      </div>
-    </div>
-  );
+  // The experience renders per form type: static centered, popup as a modal
+  // over a mock page, animated sliding into the corner. Backdrop follows the
+  // form's theme so a dark form lands on a dark page.
+  return <HostedFormExperience config={widgetConfig(form)} />;
 }

@@ -1,4 +1,4 @@
-import type { FormLayout, SignupForm } from "@/db/signup-forms";
+import type { FormLayout, FormType, SignupForm } from "@/db/signup-forms";
 import { appBaseUrl } from "@/lib/send/qstash";
 import {
   asCorner,
@@ -21,6 +21,8 @@ export { safeAccent } from "./style";
 
 export type WidgetConfig = {
   key: string;
+  /** How the form appears on the host site — static, popup, or animated. */
+  formType: FormType;
   headline: string;
   description: string;
   buttonLabel: string;
@@ -38,6 +40,10 @@ export type WidgetConfig = {
 export function widgetConfig(form: SignupForm): WidgetConfig {
   return {
     key: form.publicKey,
+    formType:
+      form.formType === "popup" || form.formType === "animated"
+        ? form.formType
+        : "static",
     headline: form.headline,
     description: form.description,
     buttonLabel: form.buttonLabel,
