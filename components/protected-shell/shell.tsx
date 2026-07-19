@@ -40,7 +40,8 @@ export function ProtectedShell({
   const isFullBleedList =
     pathname === "/dashboard/campaigns" ||
     pathname === "/dashboard/audience" ||
-    pathname === "/dashboard/contacts";
+    pathname === "/dashboard/contacts" ||
+    pathname === "/dashboard/forms";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
