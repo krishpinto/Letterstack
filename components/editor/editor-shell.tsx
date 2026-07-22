@@ -26,7 +26,6 @@ import {
   DoorOpenIcon,
   LayoutTwoColumnIcon,
   PaintBrush01Icon,
-  Settings02Icon,
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
@@ -1107,17 +1106,18 @@ function EmailHtmlPane({
 function EditorLeftSidebar({
   onAddBlock,
   onOpenTheme,
-  onOpenSettings,
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
   onOpenTheme: () => void
-  onOpenSettings: () => void
+  // onOpenSettings kept off the params while the Campaign settings button is
+  // commented out below; re-add it here (and in the caller) to restore.
+  onOpenSettings?: () => void
 }) {
   return (
     <Sidebar variant="inset" collapsible="offcanvas" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
         <SidebarGroup className="min-h-0 flex-1 p-0">
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
             <BlockLibrary onAddBlock={onAddBlock} />
           </ScrollArea>
         </SidebarGroup>
@@ -1137,6 +1137,7 @@ function EditorLeftSidebar({
             />
             Edit theme
           </Button>
+          {/* Campaign settings — hidden for now (not useful in the editor sidebar).
           <Button
             type="button"
             variant="ghost"
@@ -1148,6 +1149,7 @@ function EditorLeftSidebar({
           >
             <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
           </Button>
+          */}
         </div>
       </SidebarFooter>
     </Sidebar>
@@ -1410,14 +1412,14 @@ function CanvasFormattingToolbar({ onClose }: { onClose: () => void }) {
       className="sticky top-4 z-30 mb-8 flex w-full justify-center"
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-3xl border border-white/10 bg-zinc-950 px-3 py-2 text-zinc-100 shadow-2xl">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
         <FormattingToolbar editor={activeEditor} />
         <Separator orientation="vertical" className="mx-1 data-vertical:h-7" />
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          className="text-muted-foreground"
           onMouseDown={(event) => event.preventDefault()}
           onClick={onClose}
         >

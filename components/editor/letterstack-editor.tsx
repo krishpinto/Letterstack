@@ -513,7 +513,7 @@ function FormattingToolbarOverlay({ pinnedOffset }: { pinnedOffset: number }) {
         transition: "padding-left 260ms cubic-bezier(0.22,1,0.36,1)",
       }}
     >
-      <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-3xl border border-white/10 bg-zinc-950 px-3 py-2 text-zinc-100 shadow-2xl">
+      <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
         <FormattingToolbar editor={activeEditor} />
       </div>
     </div>

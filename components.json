@@ -28,6 +28,7 @@
     "@evilcharts": "https://evilcharts.com/r/{name}.json",
     "@componentry": "https://componentry.fun/r/{name}.json",
     "@magicui": "https://magicui.design/r/{name}",
-    "@coss": "https://coss.com/ui/r/{name}.json"
+    "@coss": "https://coss.com/ui/r/{name}.json",
+    "@beui": "https://beui.dev/r/{name}.json"
   }
 }
