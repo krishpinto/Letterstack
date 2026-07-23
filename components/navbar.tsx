@@ -64,7 +64,9 @@ export function Navbar() {
             </Button>
           )}
           <RichButton color="primary" size="sm" asChild>
-            <Link href="/dashboard">Dashboard</Link>
+            <Link href={isSignedIn ? "/dashboard" : "/signup"}>
+              {isSignedIn ? "Dashboard" : "Get started"}
+            </Link>
           </RichButton>
         </div>
 
@@ -126,7 +128,9 @@ function MobileNav({ isSignedIn }: { isSignedIn: boolean }) {
             )}
             <SheetClose asChild>
               <RichButton color="primary" size="sm" asChild>
-                <Link href="/dashboard">Dashboard</Link>
+                <Link href={isSignedIn ? "/dashboard" : "/signup"}>
+                  {isSignedIn ? "Dashboard" : "Get started"}
+                </Link>
               </RichButton>
             </SheetClose>
             {isSignedIn && (
