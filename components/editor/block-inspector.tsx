@@ -1,12 +1,24 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  ArrowLeft01Icon,
+  ArrowUp01Icon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+} from "@hugeicons/core-free-icons";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -15,9 +27,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { OptionToggle, SliderField } from "./inspector-controls";
 import {
   createColumn,
   updateBlock,
@@ -69,138 +85,165 @@ export function BlockInspector({
     <>
       {/* Header */}
       <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          ← Blocks
-        </button>
-        <div className="mx-1 h-3 w-px bg-border" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onBack}
+              aria-label="Back to blocks"
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} data-icon="icon" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Back to blocks</TooltipContent>
+        </Tooltip>
+        <div className="mx-0.5 h-3 w-px bg-border" />
         <Badge variant="secondary" className="text-[10px]">
           {BLOCK_LABELS[block.type]}
         </Badge>
         <div className="ml-auto flex items-center gap-0.5">
-          <button
-            onClick={onMoveUp}
-            title="Move up"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-3.5" />
-          </button>
-          <button
-            onClick={onMoveDown}
-            title="Move down"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onMoveUp}
+                aria-label="Move block up"
+              >
+                <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} data-icon="icon" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Move up</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onMoveDown}
+                aria-label="Move block down"
+              >
+                <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} data-icon="icon" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Move down</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-5 p-4">
-          <FieldGroup>
-            {block.type === "text"        && <TextBlockFields        block={block} onChange={setBlock} />}
-            {block.type === "heading"     && <HeadingBlockFields     block={block} onChange={setBlock} />}
-            {block.type === "paragraph"   && <ParagraphBlockFields   block={block} onChange={setBlock} />}
-            {block.type === "image"       && <ImageBlockFields       block={block} onChange={setBlock} />}
-            {block.type === "button"      && <ButtonBlockFields      block={block} onChange={setBlock} />}
-            {block.type === "columns"     && <ColumnsBlockFields     block={block} onChange={setBlock} />}
-            {block.type === "articleCard" && <ArticleCardBlockFields block={block} onChange={setBlock} />}
-            {block.type === "spacer"      && <SpacerBlockFields      block={block} onChange={setBlock} />}
-            {block.type === "rawHtml"     && <RawHtmlBlockFields     block={block} onChange={setBlock} />}
-            {block.type === "video"       && <VideoBlockFields       block={block} onChange={setBlock} />}
-            {block.type === "social"      && <SocialBlockFields      block={block} onChange={setBlock} />}
-            {block.type === "logo"        && <LogoBlockFields        block={block} onChange={setBlock} />}
-            {block.type === "footer"      && <FooterBlockFields      block={block} onChange={setBlock} />}
-            {block.type === "divider" && (
-              <Field>
-                <FieldTitle>Divider</FieldTitle>
-                <FieldDescription>Renders as a 1px horizontal rule.</FieldDescription>
-              </Field>
-            )}
-          </FieldGroup>
-
-          <Separator />
-
-          {/* Per-block styling overrides */}
-          <FieldGroup>
-            <Field><FieldTitle>Block styling</FieldTitle></Field>
-
-            <Field>
-              <FieldLabel>Background</FieldLabel>
-              <div className="flex items-center gap-2">
-                <div className="grid flex-1 grid-cols-[28px_1fr] items-center gap-2">
-                  <input
-                    type="color"
-                    value={block.backgroundColor ?? "#ffffff"}
-                    onChange={(e) => setBlock((b) => ({ ...b, backgroundColor: e.target.value }))}
-                    className="h-7 w-7 cursor-pointer rounded border p-0.5"
-                  />
-                  <Input
-                    value={block.backgroundColor ?? ""}
-                    placeholder="Transparent"
-                    onChange={(e) =>
-                      setBlock((b) => ({ ...b, backgroundColor: e.target.value || undefined }))
-                    }
-                    className="h-7 font-mono text-xs"
-                  />
-                </div>
-                {block.backgroundColor && (
-                  <Button
-                    variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs"
-                    onClick={() => setBlock((b) => ({ ...b, backgroundColor: undefined }))}
-                  >
-                    Clear
-                  </Button>
+      <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
+        {/* One section open at a time (like the theme editor); the block's own
+            content section starts open. */}
+        <Accordion type="single" collapsible defaultValue="content" className="w-full">
+          <AccordionItem value="content">
+            <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
+              {BLOCK_LABELS[block.type]}
+            </AccordionTrigger>
+            <AccordionContent className="h-auto px-4 pb-4">
+              <FieldGroup>
+                {block.type === "text"        && <TextBlockFields        block={block} onChange={setBlock} />}
+                {block.type === "heading"     && <HeadingBlockFields     block={block} onChange={setBlock} />}
+                {block.type === "paragraph"   && <ParagraphBlockFields   block={block} onChange={setBlock} />}
+                {block.type === "image"       && <ImageBlockFields       block={block} onChange={setBlock} />}
+                {block.type === "button"      && <ButtonBlockFields      block={block} onChange={setBlock} />}
+                {block.type === "columns"     && <ColumnsBlockFields     block={block} onChange={setBlock} />}
+                {block.type === "articleCard" && <ArticleCardBlockFields block={block} onChange={setBlock} />}
+                {block.type === "spacer"      && <SpacerBlockFields      block={block} onChange={setBlock} />}
+                {block.type === "rawHtml"     && <RawHtmlBlockFields     block={block} onChange={setBlock} />}
+                {block.type === "video"       && <VideoBlockFields       block={block} onChange={setBlock} />}
+                {block.type === "social"      && <SocialBlockFields      block={block} onChange={setBlock} />}
+                {block.type === "logo"        && <LogoBlockFields        block={block} onChange={setBlock} />}
+                {block.type === "footer"      && <FooterBlockFields      block={block} onChange={setBlock} />}
+                {block.type === "divider" && (
+                  <Field>
+                    <FieldDescription>Renders as a 1px horizontal rule.</FieldDescription>
+                  </Field>
                 )}
-              </div>
-            </Field>
+              </FieldGroup>
+            </AccordionContent>
+          </AccordionItem>
 
-            <Field>
-              <FieldLabel>Text color</FieldLabel>
-              <div className="flex items-center gap-2">
-                <div className="grid flex-1 grid-cols-[28px_1fr] items-center gap-2">
-                  <input
-                    type="color"
-                    value={block.textColor ?? document.settings.textColor}
-                    onChange={(e) => setBlock((b) => ({ ...b, textColor: e.target.value }))}
-                    className="h-7 w-7 cursor-pointer rounded border p-0.5"
-                  />
-                  <Input
-                    value={block.textColor ?? ""}
-                    placeholder="Default"
-                    onChange={(e) =>
-                      setBlock((b) => ({ ...b, textColor: e.target.value || undefined }))
-                    }
-                    className="h-7 font-mono text-xs"
-                  />
-                </div>
-                {block.textColor && (
-                  <Button
-                    variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs"
-                    onClick={() => setBlock((b) => ({ ...b, textColor: undefined }))}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-            </Field>
+          <AccordionItem value="styling">
+            <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
+              Block styling
+            </AccordionTrigger>
+            <AccordionContent className="h-auto px-4 pb-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel>Background</FieldLabel>
+                  <div className="flex items-center gap-2">
+                    <div className="grid flex-1 grid-cols-[28px_1fr] items-center gap-2">
+                      <input
+                        type="color"
+                        value={block.backgroundColor ?? "#ffffff"}
+                        onChange={(e) => setBlock((b) => ({ ...b, backgroundColor: e.target.value }))}
+                        className="h-7 w-7 cursor-pointer rounded border p-0.5"
+                      />
+                      <Input
+                        value={block.backgroundColor ?? ""}
+                        placeholder="Transparent"
+                        onChange={(e) =>
+                          setBlock((b) => ({ ...b, backgroundColor: e.target.value || undefined }))
+                        }
+                        className="h-7 font-mono text-xs"
+                      />
+                    </div>
+                    {block.backgroundColor && (
+                      <Button
+                        variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs"
+                        onClick={() => setBlock((b) => ({ ...b, backgroundColor: undefined }))}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </Field>
 
-            <div className="grid grid-cols-2 gap-3">
-              <InlineNumberField
-                id="block-pt" label="Padding top" value={block.paddingTop ?? 0}
-                min={0} max={80} step={4} suffix="px"
-                onChange={(v) => setBlock((b) => ({ ...b, paddingTop: v || undefined }))}
-              />
-              <InlineNumberField
-                id="block-pb" label="Padding bottom" value={block.paddingBottom ?? 0}
-                min={0} max={80} step={4} suffix="px"
-                onChange={(v) => setBlock((b) => ({ ...b, paddingBottom: v || undefined }))}
-              />
-            </div>
-          </FieldGroup>
-        </div>
+                <Field>
+                  <FieldLabel>Text color</FieldLabel>
+                  <div className="flex items-center gap-2">
+                    <div className="grid flex-1 grid-cols-[28px_1fr] items-center gap-2">
+                      <input
+                        type="color"
+                        value={block.textColor ?? document.settings.textColor}
+                        onChange={(e) => setBlock((b) => ({ ...b, textColor: e.target.value }))}
+                        className="h-7 w-7 cursor-pointer rounded border p-0.5"
+                      />
+                      <Input
+                        value={block.textColor ?? ""}
+                        placeholder="Default"
+                        onChange={(e) =>
+                          setBlock((b) => ({ ...b, textColor: e.target.value || undefined }))
+                        }
+                        className="h-7 font-mono text-xs"
+                      />
+                    </div>
+                    {block.textColor && (
+                      <Button
+                        variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs"
+                        onClick={() => setBlock((b) => ({ ...b, textColor: undefined }))}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </Field>
+
+                <SliderField
+                  label="Padding top" value={block.paddingTop ?? 0}
+                  min={0} max={80} step={4} suffix="px"
+                  onChange={(v) => setBlock((b) => ({ ...b, paddingTop: v || undefined }))}
+                />
+                <SliderField
+                  label="Padding bottom" value={block.paddingBottom ?? 0}
+                  min={0} max={80} step={4} suffix="px"
+                  onChange={(v) => setBlock((b) => ({ ...b, paddingBottom: v || undefined }))}
+                />
+              </FieldGroup>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </ScrollArea>
     </>
   );
@@ -241,18 +284,16 @@ function HeadingBlockFields({
       </Field>
       <Field>
         <FieldLabel>Heading level</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Heading level"
           value={String(block.level)}
-          onValueChange={(v) => {
-            if (v) onChange((b) => ({ ...b, level: Number(v) as 1 | 2 | 3 }) as HeadingBlock);
-          }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="1">H1</ToggleGroupItem>
-          <ToggleGroupItem value="2">H2</ToggleGroupItem>
-          <ToggleGroupItem value="3">H3</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => onChange((b) => ({ ...b, level: Number(v) as 1 | 2 | 3 }) as HeadingBlock)}
+          options={[
+            { value: "1", label: "H1" },
+            { value: "2", label: "H2" },
+            { value: "3", label: "H3" },
+          ]}
+        />
       </Field>
       <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as HeadingBlock)} />
     </>
@@ -287,13 +328,20 @@ function ImageBlockFields({
         <Input id="img-alt" value={block.alt} onChange={(e) => onChange((b) => ({ ...b, alt: e.target.value }) as ImageBlock)} />
       </Field>
       <Field>
-        <FieldLabel>Width</FieldLabel>
-        <FieldContent>
-          <Slider value={[block.width]} min={40} max={100} step={5}
-            onValueChange={([w]) => onChange((b) => ({ ...b, width: w }) as ImageBlock)} />
-          <FieldDescription>{block.width}% of the email container</FieldDescription>
-        </FieldContent>
+        <FieldLabel htmlFor="img-href">Link URL</FieldLabel>
+        <Input
+          id="img-href"
+          value={block.href ?? ""}
+          placeholder="https://… (optional)"
+          onChange={(e) => onChange((b) => ({ ...b, href: e.target.value || undefined }) as ImageBlock)}
+        />
+        <FieldDescription>Makes the image clickable in the email.</FieldDescription>
       </Field>
+      <SliderField
+        label="Width" value={block.width} min={40} max={100} step={5} suffix="%"
+        description="Percentage of the email container"
+        onChange={(w) => onChange((b) => ({ ...b, width: w }) as ImageBlock)}
+      />
     </>
   );
 }
@@ -387,7 +435,24 @@ function ButtonBlockFields({
       <Field>
         <FieldTitle>Layout</FieldTitle>
       </Field>
-      <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as ButtonBlock)} />
+      <Field>
+        <FieldLabel>Button width</FieldLabel>
+        <OptionToggle
+          ariaLabel="Button width"
+          value={block.fullWidth ? "full" : "auto"}
+          onChange={(v) => setButton({ fullWidth: v === "full" })}
+          options={[
+            { value: "auto", label: "Default" },
+            { value: "full", label: "Stretched" },
+          ]}
+        />
+        <FieldDescription>
+          {block.fullWidth ? "Fills the content width." : "Hugs the label."}
+        </FieldDescription>
+      </Field>
+      {!block.fullWidth && (
+        <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as ButtonBlock)} />
+      )}
     </>
   );
 }
@@ -402,17 +467,15 @@ function ButtonVariantField({
   return (
     <Field>
       <FieldLabel>Button type</FieldLabel>
-      <ToggleGroup
-        type="single"
+      <OptionToggle
+        ariaLabel="Button type"
         value={value}
-        onValueChange={(v) => {
-          if (v) onChange(v as ButtonVariant);
-        }}
-        variant="outline"
-      >
-        <ToggleGroupItem value="primary">Primary</ToggleGroupItem>
-        <ToggleGroupItem value="secondary">Secondary</ToggleGroupItem>
-      </ToggleGroup>
+        onChange={(v) => onChange(v as ButtonVariant)}
+        options={[
+          { value: "primary", label: "Primary" },
+          { value: "secondary", label: "Secondary" },
+        ]}
+      />
     </Field>
   );
 }
@@ -435,50 +498,45 @@ function ArticleCardBlockFields({
       </Field>
       <Field>
         <FieldLabel>Image position</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Image position"
           value={block.imagePosition}
-          onValueChange={(v) => { if (v) setArticle({ imagePosition: v as ArticleCardBlock["imagePosition"] }); }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="left">Image left</ToggleGroupItem>
-          <ToggleGroupItem value="right">Image right</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => setArticle({ imagePosition: v as ArticleCardBlock["imagePosition"] })}
+          options={[
+            { value: "left", label: "Left" },
+            { value: "right", label: "Right" },
+          ]}
+        />
       </Field>
 
       <Separator />
 
       <Field>
         <FieldLabel>Read more CTA</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Read more CTA"
           value={block.showCta ? "on" : "off"}
-          onValueChange={(value) => {
-            if (value) setArticle({ showCta: value === "on" });
-          }}
-          variant="outline"
-          className="grid grid-cols-2"
-        >
-          <ToggleGroupItem value="on">On</ToggleGroupItem>
-          <ToggleGroupItem value="off">Off</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => setArticle({ showCta: v === "on" })}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
         <FieldDescription>Show or hide the article action.</FieldDescription>
       </Field>
 
       {block.showCta && (
         <Field>
           <FieldLabel>CTA type</FieldLabel>
-          <ToggleGroup
-            type="single"
+          <OptionToggle
+            ariaLabel="CTA type"
             value={block.ctaStyle}
-            onValueChange={(v) => {
-              if (v) setArticle({ ctaStyle: v as ArticleCtaStyle });
-            }}
-            variant="outline"
-          >
-            <ToggleGroupItem value="link">Link</ToggleGroupItem>
-            <ToggleGroupItem value="button">Button</ToggleGroupItem>
-          </ToggleGroup>
+            onChange={(v) => setArticle({ ctaStyle: v as ArticleCtaStyle })}
+            options={[
+              { value: "link", label: "Link" },
+              { value: "button", label: "Button" },
+            ]}
+          />
         </Field>
       )}
 
@@ -541,31 +599,27 @@ function ColumnsBlockFields({
     <>
       <Field>
         <FieldLabel>Number of columns</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Number of columns"
           value={String(block.columns.length)}
-          onValueChange={(v) => { if (v) setColumnCount(Number(v)); }}
-          variant="outline"
-        >
-          {[2, 3, 4].map((n) => (
-            <ToggleGroupItem key={n} value={String(n)}>{n}</ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+          onChange={(v) => setColumnCount(Number(v))}
+          options={[2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))}
+        />
         <FieldDescription>Preset email columns. Inner block dropping is disabled.</FieldDescription>
       </Field>
 
       <Field>
         <FieldLabel>Mobile content orientation</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Mobile content orientation"
           value={block.mobile}
-          onValueChange={(v) => { if (v) set({ mobile: v as ColumnMobile }); }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="stack">Stack</ToggleGroupItem>
-          <ToggleGroupItem value="stack-reverse">Reverse</ToggleGroupItem>
-          <ToggleGroupItem value="row">Row</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => set({ mobile: v as ColumnMobile })}
+          options={[
+            { value: "stack", label: "Stack" },
+            { value: "stack-reverse", label: "Reverse" },
+            { value: "row", label: "Row" },
+          ]}
+        />
       </Field>
 
       <Field>
@@ -598,17 +652,17 @@ function ColumnsBlockFields({
 
       <Field>
         <FieldLabel>Border</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Border style"
           value={block.borderStyle}
-          onValueChange={(v) => { if (v) set({ borderStyle: v as BorderStyle }); }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="none">None</ToggleGroupItem>
-          <ToggleGroupItem value="solid">Solid</ToggleGroupItem>
-          <ToggleGroupItem value="dashed">Dashed</ToggleGroupItem>
-          <ToggleGroupItem value="dotted">Dotted</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => set({ borderStyle: v as BorderStyle })}
+          options={[
+            { value: "none", label: "None" },
+            { value: "solid", label: "Solid" },
+            { value: "dashed", label: "Dashed" },
+            { value: "dotted", label: "Dotted" },
+          ]}
+        />
       </Field>
 
       {block.borderStyle !== "none" && (
@@ -632,44 +686,34 @@ function ColumnsBlockFields({
 
       <Field>
         <FieldLabel>Vertical alignment</FieldLabel>
-        <ToggleGroup
-          type="single"
+        <OptionToggle
+          ariaLabel="Vertical alignment"
           value={block.valign}
-          onValueChange={(v) => { if (v) set({ valign: v as ColumnVAlign }); }}
-          variant="outline"
-        >
-          <ToggleGroupItem value="top">Top</ToggleGroupItem>
-          <ToggleGroupItem value="middle">Middle</ToggleGroupItem>
-          <ToggleGroupItem value="bottom">Bottom</ToggleGroupItem>
-        </ToggleGroup>
+          onChange={(v) => set({ valign: v as ColumnVAlign })}
+          options={[
+            { value: "top", label: "Top" },
+            { value: "middle", label: "Middle" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+        />
       </Field>
 
-      <Field>
-        <FieldLabel>Rounded corners</FieldLabel>
-        <FieldContent>
-          <Slider value={[block.borderRadius]} min={0} max={32} step={1}
-            onValueChange={([v]) => set({ borderRadius: v })} />
-          <FieldDescription>{block.borderRadius}px</FieldDescription>
-        </FieldContent>
-      </Field>
+      <SliderField
+        label="Rounded corners" value={block.borderRadius} min={0} max={32} step={1} suffix="px"
+        onChange={(v) => set({ borderRadius: v })}
+      />
 
-      <Field>
-        <FieldLabel>Column gap</FieldLabel>
-        <FieldContent>
-          <Slider value={[block.gap]} min={0} max={40} step={2}
-            onValueChange={([v]) => set({ gap: v })} />
-          <FieldDescription>{block.gap}px between columns</FieldDescription>
-        </FieldContent>
-      </Field>
+      <SliderField
+        label="Column gap" value={block.gap} min={0} max={40} step={2} suffix="px"
+        description="Space between columns"
+        onChange={(v) => set({ gap: v })}
+      />
 
-      <Field>
-        <FieldLabel>Cell padding</FieldLabel>
-        <FieldContent>
-          <Slider value={[block.cellPadding]} min={0} max={40} step={2}
-            onValueChange={([v]) => set({ cellPadding: v })} />
-          <FieldDescription>{block.cellPadding}px inside each column</FieldDescription>
-        </FieldContent>
-      </Field>
+      <SliderField
+        label="Cell padding" value={block.cellPadding} min={0} max={40} step={2} suffix="px"
+        description="Inside each column"
+        onChange={(v) => set({ cellPadding: v })}
+      />
 
       <Separator />
 
@@ -693,17 +737,15 @@ function ColumnsBlockFields({
 
             <Field>
               <FieldLabel>Image</FieldLabel>
-              <ToggleGroup
-                type="single"
+              <OptionToggle
+                ariaLabel="Column image"
                 value={column.showImage ? "on" : "off"}
-                onValueChange={(v) => {
-                  if (v) setColumn(column.id, { showImage: v === "on" });
-                }}
-                variant="outline"
-              >
-                <ToggleGroupItem value="on">On</ToggleGroupItem>
-                <ToggleGroupItem value="off">Off</ToggleGroupItem>
-              </ToggleGroup>
+                onChange={(v) => setColumn(column.id, { showImage: v === "on" })}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
             </Field>
             {column.showImage && (
               <Field>
@@ -718,17 +760,15 @@ function ColumnsBlockFields({
 
             <Field>
               <FieldLabel>CTA</FieldLabel>
-              <ToggleGroup
-                type="single"
+              <OptionToggle
+                ariaLabel="Column CTA"
                 value={column.showCta ? "on" : "off"}
-                onValueChange={(v) => {
-                  if (v) setColumn(column.id, { showCta: v === "on" });
-                }}
-                variant="outline"
-              >
-                <ToggleGroupItem value="on">On</ToggleGroupItem>
-                <ToggleGroupItem value="off">Off</ToggleGroupItem>
-              </ToggleGroup>
+                onChange={(v) => setColumn(column.id, { showCta: v === "on" })}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
             </Field>
             {column.showCta && (
               <div className="grid gap-2">
@@ -768,14 +808,11 @@ function SpacerBlockFields({
   block, onChange,
 }: { block: SpacerBlock; onChange: (u: (b: EmailBlock) => EmailBlock) => void }) {
   return (
-    <Field>
-      <FieldLabel>Height</FieldLabel>
-      <FieldContent>
-        <Slider value={[block.height]} min={8} max={80} step={4}
-          onValueChange={([h]) => onChange((b) => ({ ...b, height: h }) as SpacerBlock)} />
-        <FieldDescription>{block.height}px vertical gap</FieldDescription>
-      </FieldContent>
-    </Field>
+    <SliderField
+      label="Height" value={block.height} min={8} max={80} step={4} suffix="px"
+      description="Vertical gap"
+      onChange={(h) => onChange((b) => ({ ...b, height: h }) as SpacerBlock)}
+    />
   );
 }
 
@@ -863,14 +900,10 @@ function LogoBlockFields({
         <Input id="logo-href" value={block.href ?? ""}
           onChange={(e) => onChange((b) => ({ ...b, href: e.target.value || undefined }) as LogoBlock)} />
       </Field>
-      <Field>
-        <FieldLabel>Width</FieldLabel>
-        <FieldContent>
-          <Slider value={[block.width]} min={10} max={80} step={5}
-            onValueChange={([w]) => onChange((b) => ({ ...b, width: w }) as LogoBlock)} />
-          <FieldDescription>{block.width}%</FieldDescription>
-        </FieldContent>
-      </Field>
+      <SliderField
+        label="Width" value={block.width} min={10} max={80} step={5} suffix="%"
+        onChange={(w) => onChange((b) => ({ ...b, width: w }) as LogoBlock)}
+      />
       <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as LogoBlock)} />
     </>
   );
@@ -901,40 +934,17 @@ function AlignmentField({
   return (
     <Field>
       <FieldLabel>Alignment</FieldLabel>
-      <ToggleGroup
-        type="single"
+      <OptionToggle
+        ariaLabel="Alignment"
         value={value}
-        onValueChange={(v) => { if (v) onChange(v as TextAlign); }}
-        variant="outline"
-      >
-        <ToggleGroupItem value="left">Left</ToggleGroupItem>
-        <ToggleGroupItem value="center">Center</ToggleGroupItem>
-        <ToggleGroupItem value="right">Right</ToggleGroupItem>
-      </ToggleGroup>
+        onChange={(v) => onChange(v as TextAlign)}
+        options={[
+          { value: "left", label: "Align left", icon: TextAlignLeftIcon },
+          { value: "center", label: "Align center", icon: TextAlignCenterIcon },
+          { value: "right", label: "Align right", icon: TextAlignRightIcon },
+        ]}
+      />
     </Field>
   );
 }
 
-function InlineNumberField({
-  id, label, value, min, max, step, suffix, onChange,
-}: {
-  id: string; label: string; value: number; min: number; max: number; step: number;
-  suffix: string; onChange: (v: number) => void;
-}) {
-  const clamp = (n: number) => Math.min(max, Math.max(min, n));
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-muted-foreground">{label}</label>
-      <div className="relative">
-        <Input
-          id={id} type="number" value={value} min={min} max={max} step={step}
-          onChange={(e) => onChange(clamp(Number(e.target.value)))}
-          className="h-7 pr-7 text-right text-xs"
-        />
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-          {suffix}
-        </span>
-      </div>
-    </div>
-  );
-}

@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { RangeSlider } from "@/components/motion/range-slider";
 import {
   touchDocument,
   type EmailDocument,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/email/document";
 import themePresets from "@/lib/email/theme-presets.json";
 import { FONT_FAMILIES } from "./editor-types";
+import { OptionToggle } from "./inspector-controls";
 
 type ThemePreset = {
   id: string;
@@ -93,7 +94,7 @@ export function StylesPanel({
   };
 
   return (
-    <div className="flex flex-col overflow-auto">
+    <div className="flex flex-col overflow-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="border-b px-4 py-3">
         <p className="text-sm font-semibold">Email styles</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -115,10 +116,9 @@ export function StylesPanel({
                   onValueChange={applyPreset}
                 >
                   <SelectTrigger className="h-8 w-full text-xs">
-                    <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-                      {activePreset && <ThemePresetSwatches preset={activePreset} />}
-                      <SelectValue placeholder="Choose a theme" />
-                    </span>
+                    {/* SelectValue already renders the chosen option (swatches +
+                        name); a manual swatch here duplicated the color scheme. */}
+                    <SelectValue placeholder="Choose a theme" />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
@@ -146,7 +146,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Background
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <div className="flex flex-col gap-3">
               <StyleColorRow
                 label="Outer background"
@@ -166,7 +166,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Text
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <div className="flex flex-col gap-3">
               <Field>
                 <FieldLabel>Font family</FieldLabel>
@@ -199,7 +199,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Link
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <StyleColorRow
               label="Link color"
               value={s.linkColor}
@@ -212,7 +212,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Button
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <div className="flex flex-col gap-3">
               <StyleColorRow
                 label="Primary bg"
@@ -246,7 +246,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Divider
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <p className="text-xs text-muted-foreground">
               1px solid line. Color inherits from the border token.
             </p>
@@ -257,7 +257,7 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Layout
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <div className="flex flex-col gap-3">
               <StyleSliderRow label="Max width"    value={s.maxWidth} min={480} max={760} suffix="px" onChange={(v) => set("maxWidth", v)} />
               <StyleSliderRow label="Side padding" value={s.padding}  min={0}   max={48}  suffix="px" onChange={(v) => set("padding",  v)} />
@@ -270,22 +270,19 @@ export function StylesPanel({
           <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline">
             Shadow
           </AccordionTrigger>
-          <AccordionContent className="px-4 pb-4">
+          <AccordionContent className="h-auto px-4 pb-4">
             <div className="flex flex-col gap-3">
               <Field>
                 <FieldLabel>Email shadow</FieldLabel>
-                <ToggleGroup
-                  type="single"
+                <OptionToggle
+                  ariaLabel="Email shadow"
                   value={s.shadowEnabled ? "on" : "off"}
-                  onValueChange={(value) => {
-                    if (value) set("shadowEnabled", value === "on");
-                  }}
-                  variant="outline"
-                  className="grid grid-cols-2"
-                >
-                  <ToggleGroupItem value="on">On</ToggleGroupItem>
-                  <ToggleGroupItem value="off">Off</ToggleGroupItem>
-                </ToggleGroup>
+                  onChange={(v) => set("shadowEnabled", v === "on")}
+                  options={[
+                    { value: "on", label: "On" },
+                    { value: "off", label: "Off" },
+                  ]}
+                />
               </Field>
               <StyleColorRow
                 label="Color"
@@ -384,15 +381,15 @@ export function StyleSliderRow({
   return (
     <div className="flex items-center gap-2">
       <label className="w-28 shrink-0 text-xs text-muted-foreground">{label}</label>
-      <input
-        type="range"
+      <RangeSlider
         value={value}
         min={min}
         max={max}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1.5 flex-1 cursor-pointer accent-primary"
+        onValueChange={onChange}
+        aria-label={label}
+        className="h-7 flex-1 rounded-full"
       />
-      <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+      <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
         {value}{suffix}
       </span>
     </div>

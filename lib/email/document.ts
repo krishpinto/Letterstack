@@ -84,6 +84,8 @@ export type ImageBlock = BaseBlock<"image"> & {
   src: string;
   alt: string;
   width: number;
+  /** Optional link — the image becomes clickable and navigates here. */
+  href?: string;
 };
 
 export type ButtonBlock = BaseBlock<"button"> & {
@@ -91,6 +93,8 @@ export type ButtonBlock = BaseBlock<"button"> & {
   href: string;
   align: TextAlign;
   variant: ButtonVariant;
+  /** "Stretched" — buttons fill the content width instead of hugging content. */
+  fullWidth?: boolean;
   secondaryLabel?: string;
   secondaryHref?: string;
   secondaryVariant?: ButtonVariant;
