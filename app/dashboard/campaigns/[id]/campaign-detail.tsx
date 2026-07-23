@@ -304,7 +304,15 @@ export function CampaignDetail({
       .catch(() => {});
   }, []);
 
-  // Poll send progress once the campaign is actually sending
+  // Poll send progress once the campaign is actually sending. Also tracks how
+  // long sent+failed has gone unchanged — a batch whose QStash retries all
+  // failed leaves its recipients "pending" forever with no further updates,
+  // and that staleness is the only client-side signal that a send has
+  // actually stalled rather than just being slow.
+  const [stalled, setStalled] = useState(false);
+  const lastProgressRef = useRef<{ done: number; at: number } | null>(null);
+  const STALL_THRESHOLD_MS = 45_000;
+
   useEffect(() => {
     if (isEditable) return;
     let alive = true;
@@ -318,6 +326,17 @@ export function CampaignDetail({
         if (data.ok) {
           setCampaign((c) => ({ ...(c ?? initialRef.current), ...data.campaign }));
           setProgress(data.progress);
+
+          const done = data.progress.sent + data.progress.failed;
+          const now = Date.now();
+          const last = lastProgressRef.current;
+          if (last === null || last.done !== done) {
+            lastProgressRef.current = { done, at: now };
+            setStalled(false);
+          } else if (data.progress.pending > 0 && now - last.at > STALL_THRESHOLD_MS) {
+            setStalled(true);
+          }
+
           if (data.progress.pending > 0) {
             timer = setTimeout(poll, 1500);
           }
@@ -828,13 +847,34 @@ export function CampaignDetail({
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="font-medium">
-                Sending… {progressDone}/{progressTotal}
+                {stalled
+                  ? `Stalled at ${progressDone}/${progressTotal}`
+                  : `Sending… ${progressDone}/${progressTotal}`}
               </span>
               <span className="tabular-nums text-muted-foreground">
                 {progressPct}%
               </span>
             </div>
             <Progress value={progressPct} />
+            {stalled && (
+              <div className="flex items-center justify-between gap-3 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+                <span>
+                  No progress for a while — the remaining{" "}
+                  {progress?.pending ?? 0} recipients may be stuck. Safe to
+                  resume: already-sent recipients are never re-sent.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={send}
+                  disabled={sending}
+                  className="shrink-0 border-amber-500/40 text-amber-600 hover:text-amber-600 dark:text-amber-400"
+                >
+                  {sending && <Spinner data-icon="inline-start" />}
+                  {sending ? "Resuming…" : "Resume send"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
