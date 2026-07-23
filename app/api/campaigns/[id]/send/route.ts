@@ -1,9 +1,13 @@
-// POST — send a draft campaign now. Freezes the audience from the campaign's
-// current snapshot and hands batches to QStash. Idempotent-ish: only a draft
-// can be sent (startCampaign flips it to "sending").
+// POST — send a draft campaign now, or resume one stuck mid-send. Freezes the
+// audience from the campaign's current snapshot and hands batches to QStash.
+// Idempotent: startCampaign only ever picks up recipients still "pending", so
+// calling it again (a "sending" campaign whose batches stalled — e.g. a QStash
+// batch exhausted its retries) just re-dispatches what never went out, and
+// never re-sends to anyone already marked sent/failed.
 
 import { NextResponse } from "next/server";
 import { getCampaignForUser } from "@/db/campaigns";
+import { countPendingForCampaign } from "@/db/campaign-recipients";
 import { startCampaign } from "@/lib/send/send-campaign";
 import { currentUserId } from "@/lib/auth-helpers";
 
@@ -23,7 +27,12 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     }
     // "scheduled" is sendable too — Send now overrides the schedule, and the
     // delayed dispatch message no-ops once the status leaves "scheduled".
-    if (campaign.status !== "draft" && campaign.status !== "scheduled") {
+    // "sending" is resumable, but only if it actually stalled — otherwise a
+    // second click while a send is genuinely in flight would double-dispatch
+    // batches for recipients whose worker just hasn't reported back yet.
+    const resumable =
+      campaign.status === "sending" && (await countPendingForCampaign(id)) > 0;
+    if (campaign.status !== "draft" && campaign.status !== "scheduled" && !resumable) {
       return NextResponse.json(
         { ok: false, error: "Campaign has already been sent" },
         { status: 400 },
