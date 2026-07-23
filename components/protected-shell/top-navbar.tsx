@@ -117,8 +117,14 @@ export function TopNavbar({
     <header className="relative flex h-12 shrink-0 items-center gap-3 bg-background px-3">
       {/* Create-workspace morph origin: parked over the workspace switcher so
           the takeover expands from the left, where the action started. No
-          transforms here — the screen inside positions itself with fixed. */}
-      <span aria-hidden className="pointer-events-none absolute left-4 top-5">
+          transforms here — the screen inside positions itself with fixed.
+          Deliberately no aria-hidden/pointer-events-none here: those apply
+          only to the invisible trigger square (handled inside
+          CreateWorkspaceScreen) — putting them on this wrapper instead
+          disabled every input in the expanded takeover, since pointer-events
+          is inherited by descendants regardless of their own fixed/absolute
+          positioning. */}
+      <span className="absolute left-4 top-5">
         <CreateWorkspaceScreen
           open={createOpen}
           onOpenChange={setCreateOpen}
