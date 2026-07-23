@@ -18,6 +18,7 @@ import {
 
 import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { paginationRange } from "@/lib/pagination";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { confirmDialog } from "@/components/app-dialogs";
 import { SelectionPill } from "@/components/selection-pill";
@@ -69,6 +70,7 @@ import {
 import {
   Pagination,
   PaginationContent,
+  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
@@ -633,18 +635,22 @@ export default function CampaignsPage() {
                     tabIndex={page === 1 ? -1 : undefined}
                   />
                 </PaginationItem>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map(
-                  (pageNumber) => (
-                    <PaginationItem key={pageNumber}>
+                {paginationRange(page, pageCount).map((entry, index) =>
+                  entry === "ellipsis" ? (
+                    <PaginationItem key={`ellipsis-${index}`}>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  ) : (
+                    <PaginationItem key={entry}>
                       <PaginationLink
                         href="#"
-                        isActive={pageNumber === page}
+                        isActive={entry === page}
                         onClick={(event) => {
                           event.preventDefault();
-                          setPage(pageNumber);
+                          setPage(entry);
                         }}
                       >
-                        {pageNumber}
+                        {entry}
                       </PaginationLink>
                     </PaginationItem>
                   ),
