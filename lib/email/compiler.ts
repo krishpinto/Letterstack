@@ -53,7 +53,7 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
               <td style="padding:24px ${document.settings.padding}px;" align="center">
                 <p style="margin:0;font-family:${document.settings.fontFamily};font-size:12px;color:#999999;line-height:1.5;">
                   You received this email because you are subscribed to updates.<br>
-                  <a href="{{unsubscribe_url}}" style="color:#999999;text-decoration:underline;">Unsubscribe</a>
+                  <a href="{{unsubscribe_url}}" ses:no-track style="color:#999999;text-decoration:underline;">Unsubscribe</a>
                 </p>
               </td>
             </tr>
