@@ -41,7 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 
 // Founder-only infra monitor (krish + Ethan, via ADMIN_EMAILS). Not linked
-// from anywhere in the product — bookmark /internal.
+// from anywhere in the product — bookmark /admin.
 
 type Block<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -278,7 +278,7 @@ const riskRadarConfig = {
 const pctOf = (used: number, limit: number) =>
   limit > 0 ? Math.min(100, Math.round((used / limit) * 1000) / 10) : 0;
 
-export default function InternalInfraPage() {
+export default function AdminInfraPage() {
   const [data, setData] = useState<InfraPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -286,7 +286,7 @@ export default function InternalInfraPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/internal/infra");
+      const r = await fetch("/api/admin/infra");
       if (r.status === 404) {
         setDenied(true);
         return;

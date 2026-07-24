@@ -28,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
 import { CreateWorkspaceScreen } from "./create-workspace-screen";
+import { InviteMembersDialog } from "./invite-members-dialog";
 
 export type NavbarOrganization = {
   id: string;
@@ -72,6 +73,7 @@ export function TopNavbar({
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
@@ -133,6 +135,12 @@ export function TopNavbar({
         />
       </span>
 
+      <InviteMembersDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        organizationName={activeOrg.name}
+      />
+
       {/* ── Left: org dropdown ── */}
       <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -153,10 +161,6 @@ export function TopNavbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72 p-1.5">
-          <p className="truncate px-2 pb-1.5 pt-1 text-xs text-muted-foreground">
-            {userEmail}
-          </p>
-
           {/* Active workspace card — mirrors the profile card in the avatar
               menu so both navbar menus share one design language. */}
           <div className="mb-1 rounded-lg border border-border/60 bg-muted/30 p-2.5">
@@ -180,29 +184,13 @@ export function TopNavbar({
                 variant="outline"
                 size="sm"
                 className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-                asChild
+                onClick={() => {
+                  setOrgMenuOpen(false);
+                  setInviteOpen(true);
+                }}
               >
-                <Link
-                  href="/dashboard/settings"
-                  onClick={() => setOrgMenuOpen(false)}
-                >
-                  <SettingsIcon className="size-3.5" />
-                  Settings
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-                asChild
-              >
-                <Link
-                  href="/dashboard/settings"
-                  onClick={() => setOrgMenuOpen(false)}
-                >
-                  <UserPlusIcon className="size-3.5" />
-                  Invite members
-                </Link>
+                <UserPlusIcon className="size-3.5" />
+                Invite members
               </Button>
             </div>
           </div>
