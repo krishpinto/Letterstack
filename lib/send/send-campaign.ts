@@ -4,6 +4,7 @@ import {
   markCampaignRecipient,
   prepareCampaignAudience,
 } from "@/db/campaign-recipients";
+import { BETA_EMAIL_SEND_CAP, tryReserveSendQuota } from "@/db/organizations";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import {
@@ -88,6 +89,17 @@ export async function startCampaign(campaignId: string) {
   const audience = await prepareCampaignAudience(campaignId, campaign.organizationId);
   if (audience.length === 0) {
     throw new Error("Add at least one recipient before sending");
+  }
+
+  // Beta-phase hard cap on total org send volume. All-or-nothing: reserve the
+  // whole batch up front so a campaign never gets cut off partway through
+  // recipients arbitrarily. Reservation is atomic (a guarded UPDATE), so this
+  // is also what stays correct if "Send now" and "Resume" race each other.
+  const reserved = await tryReserveSendQuota(campaign.organizationId, audience.length);
+  if (!reserved) {
+    throw new Error(
+      `Sending this would exceed the beta cap of ${BETA_EMAIL_SEND_CAP.toLocaleString()} emails for this workspace. Check Settings → Billing for remaining quota.`,
+    );
   }
 
   await markCampaignSending(campaignId);

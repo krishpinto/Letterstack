@@ -36,6 +36,11 @@ export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   type: text("type").notNull().default("business"),
+  // Beta send cap tracking: total marketing emails (campaigns + automations)
+  // ever sent from this org. Incremented atomically at the point of send —
+  // see tryReserveSendQuota in db/organizations.ts. Transactional emails
+  // (password resets, invites) don't count against this.
+  emailsSentCount: integer("emails_sent_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -73,6 +78,25 @@ export const organizationMembers = pgTable(
     ),
   ],
 );
+
+// Pending invites to join an organization. tokenHash is the sha256 of the
+// raw token mailed to the invitee — same pattern as passwordResets, so a
+// leaked table can't be replayed into a membership.
+export const organizationInvites = pgTable("organization_invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  invitedByUserId: uuid("invited_by_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const recipients = pgTable(
   "recipients",

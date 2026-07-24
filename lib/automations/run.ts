@@ -19,6 +19,7 @@ import {
   listEnabledAutomationsForOrganization,
 } from "@/db/automations";
 import { isSuppressedForOrganization } from "@/db/suppression";
+import { tryReserveSendQuota } from "@/db/organizations";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { normalizeDocument, type EmailDocument } from "@/lib/email/document";
 import { resolveTemplateVariables } from "@/lib/email/templates";
@@ -268,6 +269,9 @@ async function executeSendEmail(
   }
   if (await isSuppressedForOrganization(organizationId, contact.email)) {
     return `suppressed ${contact.email} — skipped`;
+  }
+  if (!(await tryReserveSendQuota(organizationId, 1))) {
+    return `beta send cap reached — skipped ${contact.email}`;
   }
 
   const [template] = await db
