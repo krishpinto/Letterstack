@@ -53,7 +53,7 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
               <td style="padding:24px ${document.settings.padding}px;" align="center">
                 <p style="margin:0;font-family:${document.settings.fontFamily};font-size:12px;color:#999999;line-height:1.5;">
                   You received this email because you are subscribed to updates.<br>
-                  <a href="{{unsubscribe_url}}" style="color:#999999;text-decoration:underline;">Unsubscribe</a>
+                  <a href="{{unsubscribe_url}}" ses:no-track style="color:#999999;text-decoration:underline;">Unsubscribe</a>
                 </p>
               </td>
             </tr>
@@ -118,17 +118,22 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument): string {
       return renderHeadingBlock(block, document);
     case "paragraph":
       return renderParagraphBlock(block, document);
-    case "image":
+    case "image": {
       // Centered like the editor canvas (margin:auto for modern clients,
       // align="center" for table-based ones). The width attribute is scaled
       // to the block's percentage so Outlook doesn't stretch partial-width
       // images to the full column.
+      const img = `<img src="${escapeAttribute(block.src)}" width="${Math.round((document.settings.maxWidth * block.width) / 100)}" alt="${escapeAttribute(block.alt)}" style="display:block;margin:0 auto;width:${block.width}%;max-width:${document.settings.maxWidth}px;height:auto;border:0;">`;
+      const content = block.href
+        ? `<a href="${escapeAttribute(block.href)}" style="display:block;text-decoration:none;">${img}</a>`
+        : img;
       return `
             <tr>
               <td align="center" style="padding:0;">
-                <img src="${escapeAttribute(block.src)}" width="${Math.round((document.settings.maxWidth * block.width) / 100)}" alt="${escapeAttribute(block.alt)}" style="display:block;margin:0 auto;width:${block.width}%;max-width:${document.settings.maxWidth}px;height:auto;border:0;">
+                ${content}
               </td>
             </tr>`;
+    }
     case "button":
       return renderButtonBlock(block, document);
     case "divider":
@@ -420,7 +425,7 @@ function blockToText(block: EmailBlock): string[] {
     case "paragraph":
       return [stripHtml(block.body)];
     case "image":
-      return [block.alt];
+      return [block.href ? `${block.alt}: ${block.href}` : block.alt];
     case "button":
       return getButtonItems(block).map((button) => `${button.label}: ${button.href}`);
     case "divider":
@@ -592,6 +597,8 @@ function getButtonItems(block: ButtonBlock) {
 }
 
 function renderButtonBlock(block: ButtonBlock, document: EmailDocument) {
+  const p = document.settings.padding;
+  const full = block.fullWidth ?? false;
   const buttons = getButtonItems(block)
     .map((button) => {
       const colors = getButtonColors(button.variant, document);
@@ -599,13 +606,18 @@ function renderButtonBlock(block: ButtonBlock, document: EmailDocument) {
         button.variant === "secondary"
           ? `border:1px solid ${document.settings.secondaryButtonTextColor};`
           : "border:1px solid transparent;";
-      return `<a href="${escapeAttribute(button.href)}" style="display:inline-block;background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;margin:0 6px 8px 0;">${escapeHtml(button.label)}</a>`;
+      // Stretched buttons become block-level and fill the column; default
+      // buttons hug their label inline.
+      const layout = full
+        ? "display:block;width:100%;box-sizing:border-box;text-align:center;margin:0 0 8px 0;"
+        : "display:inline-block;margin:0 6px 8px 0;";
+      return `<a href="${escapeAttribute(button.href)}" style="${layout}background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(button.label)}</a>`;
     })
     .join("");
 
   return `
             <tr>
-              <td align="${block.align}" style="padding:4px ${document.settings.padding}px 28px ${document.settings.padding}px;">
+              <td align="${full ? "center" : block.align}" style="padding:4px ${p}px 12px ${p}px;">
                 ${buttons}
               </td>
             </tr>`;

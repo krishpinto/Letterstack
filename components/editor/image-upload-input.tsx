@@ -6,6 +6,20 @@ import { Loader2Icon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUploadThing } from "@/lib/upload/client";
+import { extractUploadThingKey } from "@/lib/upload/key";
+
+// Fire-and-forget: remove the file an upload just replaced. Never blocks the
+// editor — an orphaned file is a storage-cost problem, not a UX one.
+function deleteReplacedImage(oldUrl: string) {
+  if (!oldUrl || !extractUploadThingKey(oldUrl)) return;
+  fetch("/api/uploadthing/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: oldUrl }),
+  }).catch((error) => {
+    console.error("Failed to clean up replaced image", error);
+  });
+}
 
 // Emails stay light: anything wider than this gets scaled down before upload.
 const MAX_WIDTH = 1200;
@@ -73,7 +87,10 @@ export function ImageUploadInput({
   const { startUpload, isUploading } = useUploadThing("emailImage", {
     onClientUploadComplete: (res) => {
       const url = res?.[0]?.ufsUrl;
-      if (url) onChange(url);
+      if (!url) return;
+      const previousUrl = value;
+      onChange(url);
+      if (previousUrl && previousUrl !== url) deleteReplacedImage(previousUrl);
     },
     onUploadError: (e) => {
       setError(e.message || "Upload failed. Try again.");

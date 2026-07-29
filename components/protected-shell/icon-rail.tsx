@@ -7,6 +7,7 @@ import {
   GlobeIcon,
   LayoutDashboardIcon,
   LayoutTemplateIcon,
+  MailPlusIcon,
   SendIcon,
   SettingsIcon,
   UsersIcon,
@@ -55,6 +56,12 @@ const NAV_ITEMS: RailNavItem[] = [
     href: "/dashboard/automations",
     icon: WorkflowIcon,
     label: "Automations",
+    matchPrefix: true,
+  },
+  {
+    href: "/dashboard/forms",
+    icon: MailPlusIcon,
+    label: "Forms",
     matchPrefix: true,
   },
   {

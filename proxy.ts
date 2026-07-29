@@ -27,6 +27,8 @@ export const config = {
     "/dashboard/:path*",
     "/editor/:path*",
     "/onboarding",
+    "/admin/:path*",
+    "/admin",
     "/lab/:path*",
     "/api/lab/:path*",
   ],

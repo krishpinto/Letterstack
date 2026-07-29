@@ -11,13 +11,14 @@ import {
   CalendarClockIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  FolderIcon,
   GlobeIcon,
   HistoryIcon,
   HomeIcon,
   LayoutTemplateIcon,
   MailCheckIcon,
   MailIcon,
-  MailWarningIcon,
+  MailPlusIcon,
   MoreHorizontalIcon,
   PenLineIcon,
   PlusIcon,
@@ -30,7 +31,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { CampaignStatusIcon } from "@/components/campaign-status-icon";
-import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { onAudienceChanged, onOrganizationChanged } from "@/lib/dashboard-events";
 import { cn } from "@/lib/utils";
 
 type RecentCampaign = { id: string; name: string; status: string };
@@ -42,10 +43,11 @@ type NavItemProps = {
   icon: React.ElementType;
   label: string;
   active?: boolean;
+  count?: number;
   className?: string;
 };
 
-function NavItem({ href, icon: Icon, label, active, className }: NavItemProps) {
+function NavItem({ href, icon: Icon, label, active, count, className }: NavItemProps) {
   return (
     <Link
       href={href}
@@ -59,6 +61,11 @@ function NavItem({ href, icon: Icon, label, active, className }: NavItemProps) {
     >
       <Icon className="size-3.5 shrink-0 opacity-70 group-[.active]:opacity-100" />
       <span className="truncate">{label}</span>
+      {typeof count === "number" && (
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground/70">
+          {count}
+        </span>
+      )}
     </Link>
   );
 }
@@ -93,7 +100,13 @@ function SectionHeader({
 
 // Module detection: each icon-rail module gets its own contextual sidebar.
 // The overview (/dashboard) keeps the generic workspace nav.
-type Module = "campaigns" | "audience" | "templates" | "automations" | "domains";
+type Module =
+  | "campaigns"
+  | "audience"
+  | "templates"
+  | "automations"
+  | "forms"
+  | "domains";
 
 function moduleForPath(pathname: string): Module | null {
   if (
@@ -110,6 +123,7 @@ function moduleForPath(pathname: string): Module | null {
   }
   if (pathname.startsWith("/dashboard/templates")) return "templates";
   if (pathname.startsWith("/dashboard/automations")) return "automations";
+  if (pathname.startsWith("/dashboard/forms")) return "forms";
   if (pathname.startsWith("/dashboard/domains")) return "domains";
   return null;
 }
@@ -119,16 +133,17 @@ const MODULE_SIDEBARS: Record<Module, () => React.JSX.Element> = {
   audience: AudienceSidebar,
   templates: TemplatesSidebar,
   automations: AutomationsSidebar,
+  forms: FormsSidebar,
   domains: DomainsSidebar,
 };
 
 export function NavSidebar() {
   const pathname = usePathname();
-  const module = moduleForPath(pathname);
+  const activeModule = moduleForPath(pathname);
 
-  if (!module) return <DefaultSidebar />;
+  if (!activeModule) return <DefaultSidebar />;
 
-  const ModuleSidebar = MODULE_SIDEBARS[module];
+  const ModuleSidebar = MODULE_SIDEBARS[activeModule];
   // useSearchParams (inside) needs a Suspense boundary for prerendering.
   return (
     <Suspense
@@ -173,8 +188,16 @@ const QUICK_ADD_CLASS =
 
 // ─── Campaigns module ─────────────────────────────────────────────────────────
 
+type CampaignCounts = {
+  all: number;
+  draft: number;
+  scheduled: number;
+  sent: number;
+};
+
 function useRecentCampaigns() {
   const [recent, setRecent] = useState<RecentCampaign[]>([]);
+  const [counts, setCounts] = useState<CampaignCounts | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -183,15 +206,20 @@ function useRecentCampaigns() {
         .then((r) => r.json())
         .then((data) => {
           if (!alive || !data.ok) return;
+          const campaigns: RecentCampaign[] = data.campaigns ?? [];
           setRecent(
-            (data.campaigns ?? [])
-              .slice(0, 5)
-              .map((c: RecentCampaign) => ({
-                id: c.id,
-                name: c.name || "Untitled campaign",
-                status: c.status,
-              })),
+            campaigns.slice(0, 5).map((c) => ({
+              id: c.id,
+              name: c.name || "Untitled campaign",
+              status: c.status,
+            })),
           );
+          setCounts({
+            all: campaigns.length,
+            draft: campaigns.filter((c) => c.status === "draft").length,
+            scheduled: campaigns.filter((c) => c.status === "scheduled").length,
+            sent: campaigns.filter((c) => c.status === "sent").length,
+          });
         })
         .catch(() => {});
     load();
@@ -202,12 +230,17 @@ function useRecentCampaigns() {
     };
   }, []);
 
-  return recent;
+  return { recent, counts };
 }
 
-function RecentSection({ pathname }: { pathname: string }) {
+function RecentSection({
+  pathname,
+  recent,
+}: {
+  pathname: string;
+  recent: RecentCampaign[];
+}) {
   const [open, setOpen] = useState(true);
-  const recent = useRecentCampaigns();
 
   return (
     <div className="mt-2 flex flex-1 flex-col overflow-hidden px-2">
@@ -245,6 +278,7 @@ function CampaignsSidebar() {
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
   const onList = pathname === "/dashboard/campaigns";
+  const { recent, counts } = useRecentCampaigns();
 
   const statusViews = [
     { key: "draft", label: "Drafts", icon: PenLineIcon },
@@ -265,7 +299,7 @@ function CampaignsSidebar() {
           className="size-6 text-muted-foreground hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns" aria-label="New campaign">
+          <Link href="/dashboard/campaigns?create=1" aria-label="New campaign">
             <PlusIcon className="size-3.5" />
           </Link>
         </Button>
@@ -279,7 +313,7 @@ function CampaignsSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>
@@ -293,6 +327,7 @@ function CampaignsSidebar() {
           icon={SendIcon}
           label="All campaigns"
           active={onList && !status}
+          count={counts?.all}
         />
         {statusViews.map((view) => (
           <NavItem
@@ -301,6 +336,7 @@ function CampaignsSidebar() {
             icon={view.icon}
             label={view.label}
             active={onList && status === view.key}
+            count={counts?.[view.key]}
           />
         ))}
         <NavItem
@@ -314,20 +350,62 @@ function CampaignsSidebar() {
       {/* ── Divider ── */}
       <div className="mx-3 my-1 border-t border-sidebar-border/50" />
 
-      <RecentSection pathname={pathname} />
+      <RecentSection pathname={pathname} recent={recent} />
     </aside>
   );
 }
 
 // ─── Audience module ──────────────────────────────────────────────────────────
 
+type AudienceFolder = { id: string; name: string; count: number };
+
+// The org's folders (with member counts) for the sidebar. Refreshes on org
+// switch and whenever the audience page reports a folder change.
+function useAudienceFolders() {
+  const [folders, setFolders] = useState<AudienceFolder[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/audience/categories")
+        .then((r) => r.json())
+        .then((data) => {
+          if (!alive || !data.ok) return;
+          const counts: Record<string, number> = {};
+          (data.mappings as { categoryId: string }[]).forEach((m) => {
+            counts[m.categoryId] = (counts[m.categoryId] ?? 0) + 1;
+          });
+          setFolders(
+            (data.categories as { id: string; name: string }[]).map((c) => ({
+              id: c.id,
+              name: c.name,
+              count: counts[c.id] ?? 0,
+            })),
+          );
+        })
+        .catch(() => {});
+    load();
+    const offOrg = onOrganizationChanged(load);
+    const offAudience = onAudienceChanged(load);
+    return () => {
+      alive = false;
+      offOrg();
+      offAudience();
+    };
+  }, []);
+
+  return folders;
+}
+
 function AudienceSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
+  const folder = searchParams.get("folder");
   const importing = searchParams.get("import") === "1";
   const onList =
     pathname === "/dashboard/audience" || pathname === "/dashboard/contacts";
+  const folders = useAudienceFolders();
 
   return (
     <ModuleShell
@@ -358,14 +436,58 @@ function AudienceSidebar() {
           href="/dashboard/audience"
           icon={UsersIcon}
           label="All contacts"
-          active={onList && !status && !importing}
+          active={onList && !status && !folder && !importing}
         />
-        <NavItem
-          href="/dashboard/audience?status=bounced"
-          icon={MailWarningIcon}
-          label="Bounced"
-          active={onList && status === "bounced"}
-        />
+      </nav>
+
+      {/* ── Folders: the lists you send to ── */}
+      <div className="mt-1 flex flex-1 flex-col overflow-hidden px-2">
+        <div className="flex items-center justify-between px-2 py-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            Folders
+          </span>
+          <Link
+            href="/dashboard/audience?newFolder=1"
+            aria-label="New folder"
+            className="text-muted-foreground/70 transition-colors hover:text-foreground"
+          >
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </div>
+        <div className="mt-0.5 flex flex-col gap-0.5 overflow-y-auto pb-1">
+          {folders.length === 0 ? (
+            <Link
+              href="/dashboard/audience?newFolder=1"
+              className="px-2 py-1 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+            >
+              No folders yet — create one
+            </Link>
+          ) : (
+            folders.map((f) => (
+              <NavItem
+                key={f.id}
+                href={`/dashboard/audience?folder=${f.id}`}
+                icon={FolderIcon}
+                label={f.name}
+                active={onList && folder === f.id}
+                count={f.count}
+              />
+            ))
+          )}
+        </div>
+        {folders.length > 0 && (
+          <Link
+            href="/dashboard/audience?manageFolders=1"
+            className="flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground/60 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            Manage folders
+          </Link>
+        )}
+      </div>
+
+      {/* ── Suppressed: the do-not-mail list, pinned ── */}
+      <div className="mx-3 my-1 border-t border-sidebar-border/50" />
+      <nav className="flex flex-col gap-0.5 px-2 pb-2">
         <NavItem
           href="/dashboard/audience?status=suppressed"
           icon={BanIcon}
@@ -506,6 +628,47 @@ function AutomationsSidebar() {
   );
 }
 
+// ─── Forms module ─────────────────────────────────────────────────────────────
+
+function FormsSidebar() {
+  const pathname = usePathname();
+
+  return (
+    <ModuleShell
+      title="Forms"
+      plus={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/forms?create=1" aria-label="New form">
+            <PlusIcon className="size-3.5" />
+          </Link>
+        </Button>
+      }
+      quickAdd={
+        <Button variant="outline" size="sm" className={QUICK_ADD_CLASS} asChild>
+          <Link href="/dashboard/forms?create=1">
+            <PlusIcon className="size-3.5 shrink-0" />
+            New form
+          </Link>
+        </Button>
+      }
+    >
+      <nav className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+        <NavItem
+          href="/dashboard/forms"
+          icon={MailPlusIcon}
+          label="All forms"
+          active={pathname.startsWith("/dashboard/forms")}
+        />
+      </nav>
+    </ModuleShell>
+  );
+}
+
 // ─── Domains module ───────────────────────────────────────────────────────────
 
 function DomainsSidebar() {
@@ -544,6 +707,7 @@ function DomainsSidebar() {
 function DefaultSidebar() {
   const pathname = usePathname();
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const { recent } = useRecentCampaigns();
 
   return (
     <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background">
@@ -578,7 +742,7 @@ function DefaultSidebar() {
           className="w-full justify-start gap-2 border-dashed border-sidebar-border text-muted-foreground h-7 text-xs hover:border-border hover:text-foreground"
           asChild
         >
-          <Link href="/dashboard/campaigns">
+          <Link href="/dashboard/campaigns?create=1">
             <PlusIcon className="size-3.5 shrink-0" />
             New campaign
           </Link>
@@ -618,6 +782,12 @@ function DefaultSidebar() {
           active={pathname.startsWith("/dashboard/automations")}
         />
         <NavItem
+          href="/dashboard/forms"
+          icon={MailPlusIcon}
+          label="Forms"
+          active={pathname.startsWith("/dashboard/forms")}
+        />
+        <NavItem
           href="/dashboard/domains"
           icon={GlobeIcon}
           label="Domains"
@@ -653,7 +823,7 @@ function DefaultSidebar() {
         )}
       </div>
 
-      <RecentSection pathname={pathname} />
+      <RecentSection pathname={pathname} recent={recent} />
     </aside>
   );
 }

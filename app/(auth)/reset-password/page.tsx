@@ -3,8 +3,9 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRightIcon, Layers2Icon, LockKeyholeIcon } from "lucide-react";
+import { ArrowRightIcon, LockKeyholeIcon } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -166,9 +167,7 @@ export default function ResetPasswordPage() {
     <main className="flex min-h-svh items-center justify-center bg-muted/20 p-6 md:p-10">
       <div className="flex w-full max-w-md flex-col gap-6">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Layers2Icon className="size-4" />
-          </span>
+          <BrandLogo className="size-9" aria-hidden />
           <span className="font-semibold tracking-normal">LetterStack</span>
         </Link>
         <Suspense fallback={null}>

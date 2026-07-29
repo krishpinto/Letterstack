@@ -158,13 +158,23 @@ export function RichTextEditor({
     }
   }, [editor, value]);
 
-  // Register as the active editor for the pinned top formatting toolbar while
-  // this block is the editable one. Cleanup only clears if we're still active.
+  // Register as the active editor for the pinned formatting toolbar. A single
+  // block can mount several editable editors at once (a Text block has a
+  // heading + body; an Article Card has a headline + body). Registering on
+  // mount would let whichever mounts last hijack the toolbar, so formatting
+  // always hit the wrong field. Instead the first editor claims the toolbar so
+  // it appears immediately, and *focus* re-targets it to whichever field the
+  // cursor is actually in. Cleanup only clears if we're still the active one.
   const { setActiveEditor } = useEditorToolbar();
   React.useEffect(() => {
     if (!editable || !editor) return;
-    setActiveEditor(editor);
-    return () => setActiveEditor((cur) => (cur === editor ? null : cur));
+    setActiveEditor((cur) => cur ?? editor);
+    const claim = () => setActiveEditor(editor);
+    editor.on("focus", claim);
+    return () => {
+      editor.off("focus", claim);
+      setActiveEditor((cur) => (cur === editor ? null : cur));
+    };
   }, [editable, editor, setActiveEditor]);
 
   const resolvedDefaultFontSize =

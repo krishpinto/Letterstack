@@ -7,11 +7,11 @@ import {
   ArrowRightIcon,
   BriefcaseBusinessIcon,
   CheckIcon,
-  Layers2Icon,
   SparklesIcon,
   UserRoundIcon,
 } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/card";
 import {
   Field,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -86,9 +87,7 @@ export default function OnboardingPage() {
     <main className="min-h-svh bg-muted/20 p-4 md:p-8">
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-6xl flex-col gap-6 md:min-h-[calc(100svh-4rem)]">
         <Link href="/" className="flex w-fit items-center gap-2">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Layers2Icon className="size-4" />
-          </span>
+          <BrandLogo className="size-9" aria-hidden />
           <span className="font-semibold tracking-normal">LetterStack</span>
         </Link>
 
@@ -122,7 +121,7 @@ export default function OnboardingPage() {
                           <ToggleGroupItem
                             key={key}
                             value={key}
-                            className="h-auto justify-start rounded-xl p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                            className="h-auto min-w-0 shrink justify-start rounded-xl p-4 text-left whitespace-normal data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                           >
                             <span className="flex items-start gap-3">
                               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -141,6 +140,11 @@ export default function OnboardingPage() {
                         );
                       })}
                     </ToggleGroup>
+                    <FieldDescription>
+                      For now this is just a label on your workspace — pick
+                      whichever fits. Plans and team features will build on it
+                      later.
+                    </FieldDescription>
                   </Field>
 
                   <Field>

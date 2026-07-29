@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   BellIcon,
-  CheckIcon,
   ChevronDownIcon,
   HelpCircleIcon,
   LogOutIcon,
@@ -20,14 +19,6 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,6 +27,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
+import { CreateWorkspaceScreen } from "./create-workspace-screen";
+import { InviteMembersDialog } from "./invite-members-dialog";
 
 export type NavbarOrganization = {
   id: string;
@@ -45,12 +38,17 @@ export type NavbarOrganization = {
   memberCount?: number;
 };
 
+function capitalize(value: string) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
+
 function orgMeta(org: NavbarOrganization) {
-  const role = org.role
-    ? org.role.charAt(0).toUpperCase() + org.role.slice(1)
-    : "Member";
+  const role = capitalize(org.role ?? "member");
   const count = org.memberCount ?? 1;
-  return `${role} • ${count} ${count === 1 ? "Member" : "Members"}`;
+  // The workspace type is a label for now (no plans/tiers yet) — surfacing
+  // it here is what makes the create-screen choice mean something.
+  const type = capitalize(org.type || "workspace");
+  return `${type} • ${role} • ${count} ${count === 1 ? "member" : "members"}`;
 }
 
 type TopNavbarProps = {
@@ -75,9 +73,7 @@ export function TopNavbar({
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
@@ -109,45 +105,42 @@ export function TopNavbar({
     }
   }
 
-  async function createOrganization(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = newName.trim();
-    if (name.length < 2) {
-      setCreateError("Workspace name must be at least 2 characters.");
-      return;
-    }
-    setCreating(true);
-    setCreateError(null);
-    try {
-      const r = await fetch("/api/organizations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: "business" }),
-      });
-      const data = await r.json().catch(() => null);
-      if (!r.ok || !data?.ok) {
-        throw new Error(data?.error ?? "Could not create workspace.");
-      }
-      const created = data.organization as NavbarOrganization;
-      setOrgs((current) =>
-        Array.isArray(data.organizations) ? data.organizations : [...current, created],
-      );
-      setActiveOrg(created);
-      dispatchOrganizationChanged(created.id);
-      setCreateOpen(false);
-      setNewName("");
-      startRefresh(() => router.refresh());
-    } catch (error) {
-      setCreateError(
-        error instanceof Error ? error.message : "Could not create workspace.",
-      );
-    } finally {
-      setCreating(false);
-    }
+  function handleWorkspaceCreated(
+    created: NavbarOrganization,
+    organizations?: NavbarOrganization[],
+  ) {
+    setOrgs((current) => organizations ?? [...current, created]);
+    setActiveOrg(created);
+    dispatchOrganizationChanged(created.id);
+    startRefresh(() => router.refresh());
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 bg-background px-3">
+    <header className="relative flex h-12 shrink-0 items-center gap-3 bg-background px-3">
+      {/* Create-workspace morph origin: parked over the workspace switcher so
+          the takeover expands from the left, where the action started. No
+          transforms here — the screen inside positions itself with fixed.
+          Deliberately no aria-hidden/pointer-events-none here: those apply
+          only to the invisible trigger square (handled inside
+          CreateWorkspaceScreen) — putting them on this wrapper instead
+          disabled every input in the expanded takeover, since pointer-events
+          is inherited by descendants regardless of their own fixed/absolute
+          positioning. */}
+      <span className="absolute left-4 top-5">
+        <CreateWorkspaceScreen
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          userEmail={userEmail}
+          onCreated={handleWorkspaceCreated}
+        />
+      </span>
+
+      <InviteMembersDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        organizationName={activeOrg.name}
+      />
+
       {/* ── Left: org dropdown ── */}
       <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -168,72 +161,76 @@ export function TopNavbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72 p-1.5">
-          <p className="truncate px-2 pb-1.5 pt-1 text-xs text-muted-foreground">
-            {userEmail}
-          </p>
-
-          {/* Workspace list: avatar, name, role • members, check on active */}
-          {orgs.map((org) => (
-            <DropdownMenuItem
-              key={org.id}
-              className="gap-2.5 px-2 py-1.5"
-              disabled={Boolean(switchingId)}
-              onSelect={(event) => {
-                event.preventDefault();
-                void selectOrganization(org.id);
-              }}
-            >
-              <Avatar className="size-8 rounded-lg">
+          {/* Active workspace card — mirrors the profile card in the avatar
+              menu so both navbar menus share one design language. */}
+          <div className="mb-1 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+            <div className="flex items-center gap-2.5">
+              <Avatar className="size-9 rounded-lg">
                 <AvatarFallback className="rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-                  {org.name.trim().slice(0, 1).toUpperCase()}
+                  {orgInitial}
                 </AvatarFallback>
               </Avatar>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  {org.name}
-                  {switchingId === org.id ? " …" : ""}
+                <span className="block truncate text-sm font-semibold">
+                  {activeOrg.name}
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {orgMeta(org)}
+                <span className="block truncate text-xs text-muted-foreground">
+                  {orgMeta(activeOrg)}
                 </span>
               </span>
-              {org.id === activeOrg.id && (
-                <CheckIcon className="size-4 shrink-0" />
-              )}
-            </DropdownMenuItem>
-          ))}
-
-          {/* Actions for the active workspace */}
-          <div className="mt-1 flex gap-1.5 px-1 pb-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-              asChild
-            >
-              <Link
-                href="/dashboard/settings"
-                onClick={() => setOrgMenuOpen(false)}
-              >
-                <SettingsIcon className="size-3.5" />
-                Settings
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-              asChild
-            >
-              <Link
-                href="/dashboard/settings"
-                onClick={() => setOrgMenuOpen(false)}
+            </div>
+            <div className="mt-2.5 flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+                onClick={() => {
+                  setOrgMenuOpen(false);
+                  setInviteOpen(true);
+                }}
               >
                 <UserPlusIcon className="size-3.5" />
                 Invite members
-              </Link>
-            </Button>
+              </Button>
+            </div>
           </div>
+
+          {/* Other workspaces */}
+          {orgs.filter((org) => org.id !== activeOrg.id).length > 0 && (
+            <>
+              <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Switch workspace
+              </p>
+              {orgs
+                .filter((org) => org.id !== activeOrg.id)
+                .map((org) => (
+                  <DropdownMenuItem
+                    key={org.id}
+                    className="gap-2.5 px-2 py-1.5"
+                    disabled={Boolean(switchingId)}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void selectOrganization(org.id);
+                    }}
+                  >
+                    <Avatar className="size-8 rounded-lg">
+                      <AvatarFallback className="rounded-lg bg-muted text-xs font-semibold text-foreground">
+                        {org.name.trim().slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {org.name}
+                        {switchingId === org.id ? " …" : ""}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {orgMeta(org)}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+            </>
+          )}
 
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -354,57 +351,6 @@ export function TopNavbar({
         </DropdownMenu>
       </div>
 
-      {/* ── Create workspace dialog ── */}
-      <Dialog
-        open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) {
-            setNewName("");
-            setCreateError(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <form onSubmit={createOrganization} className="grid gap-5">
-            <DialogHeader>
-              <DialogTitle>Create workspace</DialogTitle>
-              <DialogDescription>
-                Add a new business workspace. It becomes your active workspace
-                right away.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium" htmlFor="new-workspace-name">
-                Workspace name
-              </label>
-              <Input
-                id="new-workspace-name"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder="Acme Studio"
-                disabled={creating}
-              />
-            </div>
-            {createError && (
-              <p className="text-sm text-destructive">{createError}</p>
-            )}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateOpen(false)}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? "Creating..." : "Create workspace"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </header>
   );
 }

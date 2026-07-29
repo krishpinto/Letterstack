@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "71c1fd346a302a22263756f165fe4db49b233f60",
-    "indexed_at": "2026-07-29T17:06:07Z",
+    "commit": "6be63af460f82632198c879d11b8379ebac4ff4c",
+    "indexed_at": "2026-07-29T17:15:37Z",
     "project": "C-Users-Ethan-Rodrigues-Documents-letterstack",
-    "nodes": 3229,
-    "edges": 8799,
-    "original_size": 11993088,
-    "compressed_size": 2156715,
+    "nodes": 4016,
+    "edges": 10932,
+    "original_size": 14483456,
+    "compressed_size": 2645786,
     "compression_level": 3
 }

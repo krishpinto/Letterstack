@@ -31,6 +31,7 @@ import {
   type EmailDocument,
 } from "@/lib/email/document";
 import { compileEmailDocument } from "@/lib/email/compiler";
+import { confirmDialog, promptDialog } from "@/components/app-dialogs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,12 +40,13 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,10 +91,11 @@ export default function TemplatesPage() {
   const [category, setCategory] = useState<CategoryKey>("all");
   const [importOpen, setImportOpen] = useState(false);
 
-  // The module sidebar switches tabs via ?tab=saved etc.
+  // The module sidebar is the only tab switcher (?tab=saved etc.) — no param
+  // means the Gallery view.
   useEffect(() => {
     const requested = searchParams.get("tab") as Tab | null;
-    if (requested && TAB_KEYS.includes(requested)) setTab(requested);
+    setTab(requested && TAB_KEYS.includes(requested) ? requested : "letterstack");
   }, [searchParams]);
 
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
@@ -119,17 +122,19 @@ export default function TemplatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function openDoc(doc: EmailDocument) {
+  async function openDoc(doc: EmailDocument) {
     try {
       const existing = localStorage.getItem(STORAGE_KEY);
       if (existing && existing !== "null") {
-        const ok = window.confirm(
-          "Opening this will replace your current editor draft. Continue?",
-        );
+        const ok = await confirmDialog({
+          title: "Replace your current draft?",
+          description:
+            "Opening this template will replace the draft currently in the editor.",
+          confirmLabel: "Open template",
+        });
         if (!ok) return;
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
-      localStorage.setItem("letterstack-return-to", "/dashboard/templates");
     } catch {
       // If storage is unavailable, the editor falls back to its default document.
     }
@@ -144,9 +149,13 @@ export default function TemplatesPage() {
       const data = await r.json();
       if (!data.ok) return;
       const url = `${window.location.origin}/templates/shared/${data.shareToken}`;
-      await navigator.clipboard.writeText(url).catch(() => {
-        window.prompt("Copy this share link:", url);
-      });
+      await navigator.clipboard.writeText(url).catch(() =>
+        promptDialog({
+          title: "Copy this share link",
+          description: "Clipboard access was blocked — copy it manually.",
+          defaultValue: url,
+        }),
+      );
       setCopiedShareId(id);
       setTimeout(
         () => setCopiedShareId((current) => (current === id ? null : current)),
@@ -158,7 +167,13 @@ export default function TemplatesPage() {
   }
 
   async function handleDeleteSavedTemplate(id: string) {
-    if (!confirm("Are you sure you want to delete this template?")) return;
+    const ok = await confirmDialog({
+      title: "Delete this template?",
+      description: "This permanently removes the template. This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       const r = await fetch(`/api/templates/${id}`, {
         method: "DELETE",
@@ -188,16 +203,41 @@ export default function TemplatesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Templates</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Start from a LetterStack template, your own HTML, or a blank canvas.
-          </p>
-        </div>
+      {/* One toolbar: search + category filters on the left (gallery only),
+          create actions pinned to the far right. The module sidebar owns the
+          page title and the Gallery / Saved / Recently sent switch. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        {tab === "letterstack" && (
+          <>
+            <div className="relative w-full shrink-0 lg:w-64">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search templates..."
+                className="pl-8"
+              />
+            </div>
+            <div className="scrollbar-none flex min-w-0 flex-1 snap-x gap-1.5 overflow-x-auto pb-1">
+              {TEMPLATE_CATEGORIES.map((item) => {
+                const isActive = category === item.key;
+                return (
+                  <Button
+                    key={item.key}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 shrink-0 snap-start rounded-full px-3 text-xs"
+                    onClick={() => setCategory(item.key)}
+                  >
+                    {item.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
@@ -229,29 +269,8 @@ export default function TemplatesPage() {
       </div>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="flex flex-col gap-5">
-        <TabsList variant="line">
-          <TabsTrigger value="letterstack">
-            LetterStack templates
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {PREBUILT_TEMPLATES.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="saved">
-            Saved
-            <Badge
-              variant="outline"
-              className="ml-1.5 px-1.5 py-0 text-[10px] font-normal tabular-nums"
-            >
-              {loadingSaved ? "…" : savedTemplates.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="recent">Recently sent</TabsTrigger>
-        </TabsList>
 
-        <TabsContent value="saved" className="pt-2">
+        <TabsContent value="saved" className="pt-0">
           <SavedTab
             loading={loadingSaved}
             templates={savedTemplates}
@@ -262,40 +281,11 @@ export default function TemplatesPage() {
           />
         </TabsContent>
 
-        <TabsContent value="recent" className="pt-2">
+        <TabsContent value="recent" className="pt-0">
           <RecentlySentTab />
         </TabsContent>
 
-        <TabsContent value="letterstack" className="flex flex-col gap-4 pt-2">
-
-        {/* Category pills + search, Mailchimp-style single row */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="scrollbar-none flex min-w-0 snap-x gap-1.5 overflow-x-auto pb-1">
-            {TEMPLATE_CATEGORIES.map((item) => {
-              const isActive = category === item.key;
-              return (
-                <Button
-                  key={item.key}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 shrink-0 snap-start rounded-full px-3 text-xs"
-                  onClick={() => setCategory(item.key)}
-                >
-                  {item.label}
-                </Button>
-              );
-            })}
-          </div>
-          <div className="relative shrink-0 lg:w-72">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search templates..."
-              className="pl-8"
-            />
-          </div>
-        </div>
+        <TabsContent value="letterstack" className="pt-0">
 
         {/* Templates Grid */}
         {filtered.length > 0 ? (
@@ -734,15 +724,15 @@ function ImportHtmlDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-6">
-        <DialogHeader className="p-0 pb-4">
+      <DialogPopup className="sm:max-w-lg">
+        <DialogHeader>
           <DialogTitle>Import HTML</DialogTitle>
           <DialogDescription>
             Import your custom email HTML template. It opens in the editor as a custom block.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-2">
+        <DialogPanel className="flex flex-col gap-4">
           <Tabs value={mode} onValueChange={(v) => setMode(v as "upload" | "paste")} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="upload">Upload HTML file</TabsTrigger>
@@ -797,9 +787,9 @@ function ImportHtmlDialog({
               </FieldGroup>
             </TabsContent>
           </Tabs>
-        </div>
+        </DialogPanel>
 
-        <DialogFooter className="p-0 pt-4">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -810,7 +800,7 @@ function ImportHtmlDialog({
             Open in editor
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

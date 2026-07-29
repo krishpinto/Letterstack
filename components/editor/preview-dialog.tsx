@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
+  DialogPopup,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { PreviewMode } from "./editor-types";
@@ -25,20 +25,19 @@ export function PreviewDialog({
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <HugeiconsIcon icon={EyeIcon} strokeWidth={2} data-icon="inline-start" />
-          Preview
-        </Button>
+      {/* Base UI trigger composes via render, not Radix asChild. */}
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <HugeiconsIcon icon={EyeIcon} strokeWidth={2} data-icon="inline-start" />
+        Preview
       </DialogTrigger>
-      <DialogContent className="flex h-[90vh] max-w-4xl flex-col">
+      <DialogPopup className="h-[90vh] sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Email preview</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 px-6 pb-6">
           <PreviewPane html={compiled.html} mode={mode} onModeChange={setMode} />
         </div>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }

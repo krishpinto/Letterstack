@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import {
@@ -24,13 +24,12 @@ import {
   Cancel01Icon,
   Copy01Icon,
   DoorOpenIcon,
-  FloppyDiskIcon,
   LayoutTwoColumnIcon,
   PaintBrush01Icon,
-  Settings02Icon,
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
+import { alertDialog } from "@/components/app-dialogs"
 import { BlockInspector } from "@/components/editor/block-inspector"
 import { CanvasBlockPreview } from "@/components/editor/canvas-block-preview"
 import {
@@ -62,26 +61,39 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog"
+} from "@/components/ui/coss-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
-import { MoreHorizontalIcon, Redo2Icon, Undo2Icon } from "lucide-react"
+import {
+  MoreHorizontalIcon,
+  Redo2Icon,
+  Undo2Icon,
+  ChevronLeftIcon,
+  PencilIcon,
+  CodeIcon,
+  EyeIcon,
+  CheckIcon,
+  MonitorIcon,
+  SmartphoneIcon,
+  SearchIcon
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarHeader,
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
@@ -101,8 +113,30 @@ import {
   type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document"
+import { compileEmailDocument } from "@/lib/email/compiler"
 import { getEmailContainerShadow } from "@/lib/email/shadow"
 import { cn } from "@/lib/utils"
+
+type EditorView = "editor" | "html" | "preview"
+
+type PreviewViewport = "desktop" | "mobile"
+
+// Clipboard write with an execCommand fallback for non-secure contexts.
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = globalThis.document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  globalThis.document.body.appendChild(textarea)
+  textarea.select()
+  globalThis.document.execCommand("copy")
+  textarea.remove()
+}
 
 type ActiveDrag =
   | { kind: "palette"; blockType: EmailBlock["type"] }
@@ -147,6 +181,9 @@ export function EditorShell({
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
   const [dockStatus, setDockStatus] = React.useState<"idle" | "saved" | "copied">("idle")
+  const [view, setView] = React.useState<EditorView>("editor")
+  const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
+  const [sidebarOpen, setSidebarOpen] = React.useState(true)
   const saveStatusTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = React.useState(false)
@@ -290,24 +327,21 @@ export function EditorShell({
   }, [document, onSave, showDockStatus])
 
   const copyTemplateJson = React.useCallback(async () => {
-    const json = JSON.stringify(document, null, 2)
-
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(json)
-    } else {
-      const textarea = globalThis.document.createElement("textarea")
-      textarea.value = json
-      textarea.setAttribute("readonly", "")
-      textarea.style.position = "fixed"
-      textarea.style.opacity = "0"
-      globalThis.document.body.appendChild(textarea)
-      textarea.select()
-      globalThis.document.execCommand("copy")
-      textarea.remove()
-    }
-
+    await copyToClipboard(JSON.stringify(document, null, 2))
     showDockStatus("copied")
   }, [document, showDockStatus])
+
+  // What the HTML and Preview views show — the exact compiler output that a
+  // send would use, recompiled whenever the document changes.
+  const compiled = React.useMemo(
+    () => (view === "editor" ? null : compileEmailDocument(document)),
+    [view, document]
+  )
+
+  const copyCompiledHtml = React.useCallback(async () => {
+    await copyToClipboard(compileEmailDocument(documentRef.current).html)
+    showDockStatus("copied")
+  }, [showDockStatus])
 
   const handlePasteJson = React.useCallback(() => {
     try {
@@ -319,10 +353,16 @@ export function EditorShell({
         setPasteJsonText("")
         showDockStatus("saved")
       } else {
-        alert("Invalid email template JSON structure.")
+        void alertDialog({
+          title: "Invalid template JSON",
+          description: "The pasted JSON is not a valid email template structure.",
+        })
       }
     } catch {
-      alert("Invalid JSON format.")
+      void alertDialog({
+        title: "Invalid JSON",
+        description: "The pasted text could not be parsed as JSON.",
+      })
     }
   }, [pasteJsonText, showDockStatus, updateDocument])
 
@@ -340,6 +380,12 @@ export function EditorShell({
       setSavingTemplate(false)
     }
   }, [templateName, document, onSaveAsTemplate])
+
+  const renameDocument = React.useCallback(
+    (name: string) =>
+      updateDocument((current) => touchDocument({ ...current, name })),
+    [updateDocument]
+  )
 
   const saveAndExit = React.useCallback(async () => {
     await saveDocument()
@@ -527,36 +573,83 @@ export function EditorShell({
 
   return (
     <EditorToolbarProvider>
-      <DndContext
-        id="editor-dnd"
-        sensors={sensors}
-        collisionDetection={collisionDetection}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <SidebarProvider
-          style={
-            {
-              "--sidebar-width": "19rem",
-            } as React.CSSProperties
-          }
-        >
-          <EditorLeftSidebar
-            onAddBlock={addBlock}
-            onOpenTheme={() => {
-              setSelectedBlockId("")
-              setRightPanel("theme")
-            }}
-            onOpenSettings={() => {
-              setSelectedBlockId("")
-              setRightPanel("settings")
-            }}
-          />
-          <SidebarInset className="h-[calc(100svh-1rem)] overflow-hidden">
-            {/* <EditorHeader /> */}
-            <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">
+        <EditorHeader
+          documentName={document.name}
+          onRename={renameDocument}
+          onExit={onExit ?? (() => router.push("/"))}
+          onSave={() => void saveDocument()}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          status={dockStatus}
+          mode={mode}
+          onSaveAndExit={() => void saveAndExit()}
+          onSaveAsTemplate={() => {
+            setTemplateName(document.name || "")
+            setSaveTemplateDialogOpen(true)
+          }}
+          onCopyJson={() => void copyTemplateJson()}
+          onPasteJson={() => setPasteOpen(true)}
+          view={view}
+          onViewChange={setView}
+          viewport={previewViewport}
+          onViewportChange={(viewport) => {
+            setPreviewViewport(viewport)
+            // The device toggle only means anything in the rendered preview,
+            // so picking one from another view jumps there.
+            setView("preview")
+          }}
+        />
+        
+        <div className="flex-1 min-h-0 flex relative">
+          <DndContext
+            id="editor-dnd"
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SidebarProvider
+              style={
+                {
+                  "--sidebar-width": "19rem",
+                } as React.CSSProperties
+              }
+              className="min-h-0 h-full w-full !bg-background border-none"
+              // Fold the block library away in HTML/preview — those views are
+              // about the output, not editing. The inset keeps a small left
+              // margin so its rounded edge never touches the screen.
+              open={view === "editor" && sidebarOpen}
+              onOpenChange={setSidebarOpen}
+            >
+              <EditorLeftSidebar
+                onAddBlock={addBlock}
+                onOpenTheme={() => {
+                  setSelectedBlockId("")
+                  setRightPanel("theme")
+                }}
+                onOpenSettings={() => {
+                  setSelectedBlockId("")
+                  setRightPanel("settings")
+                }}
+              />
+              <SidebarInset className="min-h-0 overflow-hidden flex flex-col bg-background">
+                <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {view === "preview" && compiled ? (
+                <EmailPreviewPane
+                  html={compiled.html}
+                  viewport={previewViewport}
+                />
+              ) : view === "html" && compiled ? (
+                <EmailHtmlPane
+                  html={compiled.html}
+                  onCopy={() => void copyCompiledHtml()}
+                />
+              ) : (
               <CanvasProvider value={canvasValue}>
                 <EmailCanvas
                   document={document}
@@ -567,13 +660,15 @@ export function EditorShell({
                   }}
                 />
               </CanvasProvider>
+              )}
 
               {/* Docked, not floating: the assistant is a workspace of its own,
-                  and the canvas should reflow rather than be covered. */}
-              {renderAssistant?.({ document, updateDocument })}
+                  and the canvas should reflow rather than be covered. Only in
+                  the editor view — the HTML and preview views are full-bleed. */}
+              {view === "editor" && renderAssistant?.({ document, updateDocument })}
 
-              {inspectorOpen && (
-                <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-3xl border bg-card shadow-2xl">
+              {view === "editor" && inspectorOpen && (
+                <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl">
                   {rightPanel === "theme" ? (
                     <StylesPanel
                       document={document}
@@ -612,35 +707,19 @@ export function EditorShell({
                 </aside>
               )}
 
-          <EditorBottomDock
-            inspectorOpen={inspectorOpen}
-            dockStatus={dockStatus}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            onUndo={undo}
-            onRedo={redo}
-            onCopyJson={copyTemplateJson}
-            onPasteJson={() => setPasteOpen(true)}
-            onSave={saveDocument}
-            onSaveAndExit={saveAndExit}
-            onSaveAsTemplate={() => {
-              setTemplateName(document.name || "")
-              setSaveTemplateDialogOpen(true)
-            }}
-            mode={mode}
-          />
             </div>
 
       {/* Save as Template Dialog */}
       <Dialog open={saveTemplateDialogOpen} onOpenChange={setSaveTemplateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogPopup className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Save as template</DialogTitle>
             <DialogDescription>
               Enter a name for this template to save it to your library.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup className="py-2">
+          <DialogPanel>
+          <FieldGroup>
             <Field>
               <FieldLabel htmlFor="template-name-input">Template name</FieldLabel>
               <Input
@@ -655,6 +734,7 @@ export function EditorShell({
               />
             </Field>
           </FieldGroup>
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveTemplateDialogOpen(false)}>
               Cancel
@@ -663,19 +743,20 @@ export function EditorShell({
               {savingTemplate ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
 
       {/* Paste JSON Dialog */}
       <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogPopup className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Paste template JSON</DialogTitle>
             <DialogDescription>
               Paste the JSON code of a template below to load it into the editor canvas.
             </DialogDescription>
           </DialogHeader>
-          <FieldGroup className="py-2">
+          <DialogPanel>
+          <FieldGroup>
             <Field>
               <FieldLabel htmlFor="paste-json-input">JSON Code</FieldLabel>
               <Textarea
@@ -688,6 +769,7 @@ export function EditorShell({
               />
             </Field>
           </FieldGroup>
+          </DialogPanel>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasteOpen(false)}>
               Cancel
@@ -696,7 +778,7 @@ export function EditorShell({
               Import JSON
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
           </SidebarInset>
         </SidebarProvider>
@@ -720,139 +802,319 @@ export function EditorShell({
           ) : null}
         </DragOverlay>
       </DndContext>
+        </div>
+      </div>
     </EditorToolbarProvider>
   )
 }
 
-// function EditorHeader() {
-//   return (
-//     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/95">
-//       <div className="flex items-center gap-2 px-4">
-//         <SidebarTrigger className="-ml-1" />
-//         <Separator
-//           orientation="vertical"
-//           className="mr-2 data-vertical:h-4 data-vertical:self-auto"
-//         />
-//         <Breadcrumb>
-//           <BreadcrumbList>
-//             <BreadcrumbItem className="hidden md:block">
-//               <BreadcrumbLink href="#">LetterStack</BreadcrumbLink>
-//             </BreadcrumbItem>
-//             <BreadcrumbSeparator className="hidden md:block" />
-//             <BreadcrumbItem>
-//               <BreadcrumbPage>Editor New</BreadcrumbPage>
-//             </BreadcrumbItem>
-//           </BreadcrumbList>
-//         </Breadcrumb>
-//       </div>
-//     </header>
-//   )
-// }
-
-function EditorBottomDock({
-  inspectorOpen,
-  dockStatus,
+function EditorHeader({
+  documentName,
+  onRename,
+  onExit,
+  onSave,
   canUndo,
   canRedo,
   onUndo,
   onRedo,
-  onCopyJson,
-  onPasteJson,
-  onSave,
+  status,
+  mode,
   onSaveAndExit,
   onSaveAsTemplate,
-  mode,
+  onCopyJson,
+  onPasteJson,
+  view,
+  onViewChange,
+  viewport,
+  onViewportChange,
 }: {
-  inspectorOpen: boolean
-  dockStatus: "idle" | "saved" | "copied"
-  canUndo: boolean
-  canRedo: boolean
-  onUndo: () => void
-  onRedo: () => void
-  onCopyJson: () => Promise<void>
-  onPasteJson: () => void
-  onSave: () => void
+  documentName: string
+  onRename: (name: string) => void
+  onExit?: () => void
+  onSave?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
+  status: "idle" | "saved" | "copied"
+  mode: "campaign" | "template-creator" | "template-editor"
   onSaveAndExit: () => void
   onSaveAsTemplate: () => void
-  mode: "campaign" | "template-creator" | "template-editor"
+  onCopyJson: () => void
+  onPasteJson: () => void
+  view: EditorView
+  onViewChange: (view: EditorView) => void
+  viewport: PreviewViewport
+  onViewportChange: (viewport: PreviewViewport) => void
+}) {
+  const views = [
+    { id: "editor", label: "Editor", icon: PencilIcon },
+    { id: "html", label: "HTML", icon: CodeIcon },
+    { id: "preview", label: "Preview", icon: EyeIcon },
+  ] as const
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
+      {/* Left: Back chevron + Title */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onExit}
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          type="button"
+        >
+          <ChevronLeftIcon className="size-4" />
+        </button>
+        <HeaderTitle name={documentName} onRename={onRename} />
+      </div>
+
+      {/* Center: Switcher (Editor / HTML / Preview) */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
+        {views.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onViewChange(id)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-3.5 py-1 text-xs transition-colors",
+              view === id
+                ? "bg-card font-semibold text-foreground shadow-xs border border-border/5"
+                : "font-medium text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Icon className={cn("size-3", view === id && "text-primary")} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Right: Actions, Status & Viewport */}
+      <div className="flex items-center gap-3">
+        {/* Status Indicator — flashes briefly after a save or copy lands */}
+        {status !== "idle" && (
+          <span
+            className={cn(
+              "flex items-center gap-1 text-xs font-medium select-none mr-1.5",
+              status === "saved" ? "text-emerald-500" : "text-muted-foreground"
+            )}
+          >
+            <CheckIcon className="size-3.5" />
+            {status === "saved" ? "Saved" : "Copied"}
+          </span>
+        )}
+
+        {/* Undo/Redo Buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+            type="button"
+          >
+            <Undo2Icon className="size-3.5" />
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+            type="button"
+          >
+            <Redo2Icon className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Vertical Divider */}
+        <div className="h-4 w-px bg-border" />
+
+        {/* Device Viewport Toggle (Desktop/Mobile) — drives the preview frame */}
+        <div className="flex items-center gap-0.5 rounded-lg bg-muted p-1 border border-border/10">
+          <button
+            type="button"
+            title="Desktop preview"
+            aria-label="Desktop preview"
+            onClick={() => onViewportChange("desktop")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-md transition-colors",
+              viewport === "desktop"
+                ? "bg-card text-foreground shadow-xs border border-border/5"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <MonitorIcon className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            title="Mobile preview"
+            aria-label="Mobile preview"
+            onClick={() => onViewportChange("mobile")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-md transition-colors",
+              viewport === "mobile"
+                ? "bg-card text-foreground shadow-xs border border-border/5"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <SmartphoneIcon className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Vertical Divider */}
+        <div className="h-4 w-px bg-border" />
+
+        {/* Action Buttons. In template-creator mode the only real persist
+            path is "save as template", so that takes the primary slot. */}
+        <div className="flex items-center gap-1">
+          {mode === "template-creator" ? (
+            <Button
+              onClick={onSaveAsTemplate}
+              variant="default"
+              size="sm"
+              className="h-8 px-4 font-semibold shadow-xs"
+            >
+              Save as template
+            </Button>
+          ) : (
+            <Button
+              onClick={onSave}
+              variant="default"
+              size="sm"
+              className="h-8 px-4 font-semibold shadow-xs"
+            >
+              Save
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                type="button"
+                title="More actions"
+                aria-label="More actions"
+              >
+                <MoreHorizontalIcon className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={onCopyJson}>
+                <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
+                Copy JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onPasteJson}>
+                <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
+                Paste JSON
+              </DropdownMenuItem>
+              {mode !== "template-creator" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onSaveAndExit}>
+                    <HugeiconsIcon icon={DoorOpenIcon} strokeWidth={2} className="size-4 mr-2" />
+                    Save and exit
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+// The document name in the header, editable in place: click to swap the label
+// for an input, commit on Enter/blur, Escape to cancel. Renames flow through
+// updateDocument so they land in undo history like any other edit.
+function HeaderTitle({
+  name,
+  onRename,
+}: {
+  name: string
+  onRename: (name: string) => void
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null)
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        onClick={() => setDraft(name)}
+        title="Rename"
+        className="rounded-md px-1.5 py-0.5 text-sm font-semibold tracking-tight text-foreground transition-colors hover:bg-muted"
+      >
+        {name || "Untitled Email"}
+      </button>
+    )
+  }
+
+  const commit = () => {
+    const next = draft.trim()
+    if (next && next !== name) onRename(next)
+    setDraft(null)
+  }
+
+  return (
+    <Input
+      autoFocus
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit()
+        if (event.key === "Escape") setDraft(null)
+      }}
+      className="h-7 w-56 px-2 text-sm font-semibold"
+    />
+  )
+}
+
+// Renders the compiled email exactly as a client would, inside a sandboxed
+// iframe so nothing in the output (links, raw-HTML blocks) can act on the app.
+function EmailPreviewPane({
+  html,
+  viewport,
+}: {
+  html: string
+  viewport: PreviewViewport
 }) {
   return (
-    <div
-      className={cn(
-        "absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-xl border bg-card/95 p-1 shadow-2xl backdrop-blur transition-[left] duration-200",
-        inspectorOpen && "xl:left-[calc(50%-188px)]",
-      )}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-      >
-        <Undo2Icon className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-      >
-        <Redo2Icon className="size-4" />
-      </Button>
+    <div className="flex min-h-0 flex-1 justify-center overflow-hidden bg-muted/30 p-4">
+      <iframe
+        title="Email preview"
+        srcDoc={html}
+        sandbox=""
+        className={cn(
+          "h-full rounded-lg border bg-white shadow-sm transition-[width] duration-200",
+          viewport === "mobile" ? "w-[375px]" : "w-full"
+        )}
+      />
+    </div>
+  )
+}
 
-      <Separator orientation="vertical" className="h-4 mx-0.5" />
-
-      {/* 3 dots menu */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-            <MoreHorizontalIcon className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem onClick={() => void onCopyJson()}>
-            <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
-            Copy JSON
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onPasteJson}>
-            <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
-            Paste JSON
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <Separator orientation="vertical" className="h-4 mx-0.5" />
-
-      {mode === "template-creator" ? (
-        <Button type="button" size="sm" className="h-8 px-3 text-xs" onClick={onSaveAsTemplate}>
-          <HugeiconsIcon icon={FloppyDiskIcon} strokeWidth={2} data-icon="inline-start" />
-          Save as template
+function EmailHtmlPane({
+  html,
+  onCopy,
+}: {
+  html: string
+  onCopy: () => void
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Compiled email HTML — exactly what gets sent
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          onClick={onCopy}
+        >
+          <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} data-icon="inline-start" />
+          Copy HTML
         </Button>
-      ) : (
-        <>
-          <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onSave}>
-            <HugeiconsIcon icon={FloppyDiskIcon} strokeWidth={2} data-icon="inline-start" />
-            Save
-          </Button>
-          <Button type="button" size="sm" className="h-8 px-2.5 text-xs" onClick={onSaveAndExit}>
-            <HugeiconsIcon icon={DoorOpenIcon} strokeWidth={2} data-icon="inline-start" />
-            Save and exit
-          </Button>
-        </>
-      )}
-
-      {dockStatus !== "idle" && (
-        <span className="px-1.5 text-[11px] font-medium text-muted-foreground">
-          {dockStatus === "saved" ? "Saved" : "Copied JSON"}
-        </span>
-      )}
+      </div>
+      <pre className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+        {html}
+      </pre>
     </div>
   )
 }
@@ -860,30 +1122,18 @@ function EditorBottomDock({
 function EditorLeftSidebar({
   onAddBlock,
   onOpenTheme,
-  onOpenSettings,
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
   onOpenTheme: () => void
-  onOpenSettings: () => void
+  // onOpenSettings kept off the params while the Campaign settings button is
+  // commented out below; re-add it here (and in the caller) to restore.
+  onOpenSettings?: () => void
 }) {
   return (
-    <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="border-b p-2">
-        <div className="flex items-center gap-2 px-2 py-1">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
-          </div>
-          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-            <span className="truncate font-medium">LetterStack</span>
-            <span className="truncate text-xs text-sidebar-foreground/60">
-              Campaign editor
-            </span>
-          </div>
-        </div>
-      </SidebarHeader>
+    <Sidebar variant="inset" collapsible="offcanvas" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
         <SidebarGroup className="min-h-0 flex-1 p-0">
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
             <BlockLibrary onAddBlock={onAddBlock} />
           </ScrollArea>
         </SidebarGroup>
@@ -903,6 +1153,7 @@ function EditorLeftSidebar({
             />
             Edit theme
           </Button>
+          {/* Campaign settings — hidden for now (not useful in the editor sidebar).
           <Button
             type="button"
             variant="ghost"
@@ -914,6 +1165,7 @@ function EditorLeftSidebar({
           >
             <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
           </Button>
+          */}
         </div>
       </SidebarFooter>
     </Sidebar>
@@ -925,6 +1177,8 @@ function BlockLibrary({
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
 }) {
+  const [searchQuery, setSearchQuery] = React.useState("")
+
   const editorNewBlocks = React.useMemo(
     () => [
       ...CONTENT_BLOCKS,
@@ -933,24 +1187,48 @@ function BlockLibrary({
     [],
   )
 
+  const filteredBlocks = React.useMemo(() => {
+    return editorNewBlocks.filter((block) =>
+      block.label.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [editorNewBlocks, searchQuery])
+
   return (
-    <div className="flex flex-col gap-2 p-2">
+    <div className="flex flex-col gap-4 p-3.5">
+      {/* Header */}
       <div>
-        <p className="text-sm font-medium">Content blocks</p>
-        <p className="text-xs text-sidebar-foreground/60">
+        <p className="text-sm font-bold text-foreground">Content blocks</p>
+        <p className="text-[11px] text-muted-foreground/75 mt-0.5">
           Click to add a section to the email.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {editorNewBlocks.map(({ type, label, icon }) => (
+
+      {/* Search Input */}
+      <div className="relative">
+        <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search blocks..."
+          className="h-8.5 pl-8 pr-3 text-xs bg-muted/20 border-border/40 focus-visible:bg-background/80"
+        />
+      </div>
+
+      {/* Grid of Blocks */}
+      <div className="grid grid-cols-2 gap-x-2 gap-y-3 px-0.5">
+        {filteredBlocks.map(({ type, label, icon }) => (
           <DraggableBlockTile
             key={`${type}-${label}`}
             dragId={`editor-palette:${type}:${label}`}
             blockType={type}
             onAddBlock={onAddBlock}
           >
-            <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4" />
-            <span className="w-full truncate leading-tight">{label}</span>
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/20 text-muted-foreground group-hover:bg-muted/40 group-hover:text-foreground transition-all duration-200">
+              <HugeiconsIcon icon={icon} strokeWidth={1.5} className="size-4.5" />
+            </div>
+            <span className="font-semibold text-xs text-muted-foreground/90 group-hover:text-foreground transition-colors truncate">
+              {label === "rawHtml" ? "Code" : label === "articleCard" ? "Article" : label === "paragraph" ? "Text" : label}
+            </span>
           </DraggableBlockTile>
         ))}
       </div>
@@ -982,7 +1260,7 @@ function DraggableBlockTile({
       {...listeners}
       onClick={() => onAddBlock(blockType)}
       className={cn(
-        "flex aspect-square touch-none flex-col items-center justify-center gap-1 rounded-lg border bg-background px-1.5 text-center text-[10px] text-foreground/75 transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98]",
+        "flex touch-none items-center gap-2.5 rounded-xl text-left transition-colors duration-200 hover:bg-muted/45 p-1 active:scale-[0.98] group w-full min-w-0",
         isDragging && "opacity-40"
       )}
     >
@@ -1150,14 +1428,14 @@ function CanvasFormattingToolbar({ onClose }: { onClose: () => void }) {
       className="sticky top-4 z-30 mb-8 flex w-full justify-center"
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-3xl border border-white/10 bg-zinc-950 px-3 py-2 text-zinc-100 shadow-2xl">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
         <FormattingToolbar editor={activeEditor} />
         <Separator orientation="vertical" className="mx-1 data-vertical:h-7" />
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          className="text-muted-foreground"
           onMouseDown={(event) => event.preventDefault()}
           onClick={onClose}
         >

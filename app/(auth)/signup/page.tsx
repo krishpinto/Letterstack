@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import {
   ArrowRightIcon,
-  Layers2Icon,
   LockKeyholeIcon,
   MailIcon,
   UserIcon,
 } from "lucide-react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,9 +31,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
-// Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts — Google OAuth needs paid
-// verification, so the button is hidden until then.
-const GOOGLE_AUTH_ENABLED = false;
+// Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts.
+const GOOGLE_AUTH_ENABLED = true;
 
 export default function SignupPage() {
   const router = useRouter();
@@ -81,9 +80,7 @@ export default function SignupPage() {
     <main className="grid min-h-svh bg-muted/20 lg:grid-cols-[0.92fr_1.08fr]">
       <section className="hidden border-r border-border bg-sidebar p-8 text-sidebar-foreground lg:flex lg:flex-col">
         <Link href="/" className="flex w-fit items-center gap-2">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <Layers2Icon className="size-4" />
-          </span>
+          <BrandLogo className="size-9" aria-hidden />
           <span className="font-semibold tracking-normal">LetterStack</span>
         </Link>
 
@@ -127,9 +124,7 @@ export default function SignupPage() {
       <section className="flex min-h-svh items-center justify-center p-6 md:p-10">
         <div className="flex w-full max-w-md flex-col gap-6">
           <Link href="/" className="flex items-center gap-2 lg:hidden">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Layers2Icon className="size-4" />
-            </span>
+            <BrandLogo className="size-9" aria-hidden />
             <span className="font-semibold tracking-normal">LetterStack</span>
           </Link>
 

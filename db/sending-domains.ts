@@ -2,8 +2,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "./client";
 import { sendingDomains } from "./schema";
 
-/** Per-organization cap on connected sending domains. */
-export const SENDING_DOMAIN_LIMIT = 3;
+/** Per-organization cap on connected sending domains (beta-phase: flat 2, no plans/tiers yet). */
+export const SENDING_DOMAIN_LIMIT = 2;
 
 export async function listSendingDomains(organizationId: string) {
   return db

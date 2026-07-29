@@ -11,6 +11,20 @@ import {
   TextAlignRightIcon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/coss-dialog";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -37,6 +51,14 @@ import {
  */
 export function FormattingToolbar({ editor }: { editor: Editor | null }) {
   const [, force] = React.useReducer((x) => x + 1, 0);
+
+  // Link editing runs through the themed coss-dialog. The TipTap selection is
+  // captured on mousedown (before focus can shift into the dialog) and restored
+  // when the link is applied, so the dialog never acts on a collapsed cursor.
+  const [linkOpen, setLinkOpen] = React.useState(false);
+  const [linkUrl, setLinkUrl] = React.useState("");
+  const [linkText, setLinkText] = React.useState("");
+  const savedSelection = React.useRef<{ from: number; to: number } | null>(null);
 
   React.useEffect(() => {
     if (!editor) return;
@@ -94,14 +116,52 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
     }
   };
 
-  const toggleLink = () => {
-    if (editor.isActive("link")) {
-      editor.chain().focus().unsetLink().run();
+  // Remember the current selection before the pointer can move focus into the
+  // dialog. Runs on mousedown; the dialog opens on the following click.
+  const captureLinkSelection = () => {
+    const { from, to } = editor.state.selection;
+    savedSelection.current = { from, to };
+  };
+
+  const openLinkDialog = () => {
+    const existing = editor.getAttributes("link").href as string | undefined;
+    const sel = savedSelection.current;
+    const selectedText = sel ? editor.state.doc.textBetween(sel.from, sel.to) : "";
+    setLinkUrl(existing ?? "");
+    setLinkText(selectedText);
+    setLinkOpen(true);
+  };
+
+  const applyLink = () => {
+    const href = linkUrl.trim();
+    const sel = savedSelection.current;
+    if (!href || !sel) {
+      setLinkOpen(false);
       return;
     }
 
-    const url = window.prompt("Enter URL:");
-    if (url) editor.chain().focus().setLink({ href: url }).run();
+    const chain = editor.chain().focus().setTextSelection(sel);
+    if (sel.from === sel.to) {
+      // No text selected — insert the label (or the URL) as a linked run.
+      const label = linkText.trim() || href;
+      chain.insertContent({
+        type: "text",
+        text: label,
+        marks: [{ type: "link", attrs: { href } }],
+      });
+    } else {
+      chain.extendMarkRange("link").setLink({ href });
+    }
+    chain.run();
+    setLinkOpen(false);
+  };
+
+  const removeLink = () => {
+    const sel = savedSelection.current;
+    const chain = editor.chain().focus();
+    if (sel) chain.setTextSelection(sel);
+    chain.extendMarkRange("link").unsetLink().run();
+    setLinkOpen(false);
   };
 
   return (
@@ -112,7 +172,7 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
       >
         <SelectTrigger
           size="sm"
-          className="h-7 w-[116px] border-white/10 bg-zinc-900 text-xs text-zinc-100 hover:bg-zinc-800"
+          className="h-7 w-[116px] text-xs"
           onMouseDown={(event) => event.stopPropagation()}
         >
           <SelectValue />
@@ -134,8 +194,9 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
         active={editor.isActive("link")}
         onMouseDown={(event) => {
           event.preventDefault();
-          toggleLink();
+          captureLinkSelection();
         }}
+        onClick={openLinkDialog}
         title="Link"
       >
         <HugeiconsIcon icon={Link01Icon} strokeWidth={2} data-icon="icon" />
@@ -210,7 +271,7 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
       >
         <SelectTrigger
           size="sm"
-          className="h-7 w-[76px] border-white/10 bg-zinc-900 text-xs text-zinc-100 hover:bg-zinc-800"
+          className="h-7 w-[76px] text-xs"
           onMouseDown={(event) => event.stopPropagation()}
         >
           <SelectValue>
@@ -234,6 +295,7 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
       <ToolbarSeparator />
 
       <ColorButton
+        editor={editor}
         title="Text color"
         value={editor.getAttributes("textStyle").color || "#000000"}
         onChange={(value) => editor.chain().focus().setColor(value).run()}
@@ -247,6 +309,7 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
       </ColorButton>
 
       <ColorButton
+        editor={editor}
         title="Highlight"
         value={
           editor.isActive("highlight")
@@ -307,7 +370,7 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 px-2 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+        className="h-7 px-2 text-xs text-muted-foreground"
         title="Clear formatting"
         onMouseDown={(event) => {
           event.preventDefault();
@@ -318,19 +381,117 @@ export function FormattingToolbar({ editor }: { editor: Editor | null }) {
         <HugeiconsIcon icon={AiEraserIcon} strokeWidth={2} data-icon="inline-start" />
         Clear
       </Button>
+
+      <LinkDialog
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        url={linkUrl}
+        text={linkText}
+        onUrlChange={setLinkUrl}
+        onTextChange={setLinkText}
+        collapsed={savedSelection.current?.from === savedSelection.current?.to}
+        isEditing={editor.isActive("link")}
+        onApply={applyLink}
+        onRemove={removeLink}
+      />
     </div>
+  );
+}
+
+function LinkDialog({
+  open,
+  onOpenChange,
+  url,
+  text,
+  onUrlChange,
+  onTextChange,
+  collapsed,
+  isEditing,
+  onApply,
+  onRemove,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  url: string;
+  text: string;
+  onUrlChange: (value: string) => void;
+  onTextChange: (value: string) => void;
+  collapsed: boolean;
+  isEditing: boolean;
+  onApply: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="sm:max-w-md" showCloseButton={false}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onApply();
+          }}
+          className="flex min-h-0 flex-col"
+        >
+          <DialogHeader>
+            <DialogTitle>{isEditing ? "Edit link" : "Add link"}</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="link-url">Link URL</FieldLabel>
+                <Input
+                  id="link-url"
+                  autoFocus
+                  value={url}
+                  placeholder="https://..."
+                  onChange={(event) => onUrlChange(event.target.value)}
+                />
+              </Field>
+              {collapsed && (
+                <Field>
+                  <FieldLabel htmlFor="link-text">Text to display</FieldLabel>
+                  <Input
+                    id="link-text"
+                    value={text}
+                    placeholder="Falls back to the URL"
+                    onChange={(event) => onTextChange(event.target.value)}
+                  />
+                </Field>
+              )}
+            </FieldGroup>
+          </DialogPanel>
+          <DialogFooter>
+            {isEditing && (
+              <Button
+                type="button"
+                variant="outline"
+                className="mr-auto"
+                onClick={onRemove}
+              >
+                Remove link
+              </Button>
+            )}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">{isEditing ? "Update" : "Add link"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
   );
 }
 
 function ToolbarButton({
   active,
   onMouseDown,
+  onClick,
   className,
   title,
   children,
 }: {
   active: boolean;
   onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   title?: string;
   children: React.ReactNode;
@@ -341,12 +502,9 @@ function ToolbarButton({
       variant={active ? "default" : "ghost"}
       size="icon-xs"
       onMouseDown={onMouseDown}
+      onClick={onClick}
       title={title}
-      className={cn(
-        "text-[11px]",
-        !active && "text-zinc-100 hover:bg-white/10 hover:text-zinc-100",
-        className,
-      )}
+      className={cn("text-[11px]", className)}
     >
       {children}
     </Button>
@@ -358,30 +516,40 @@ function ToolbarSeparator() {
 }
 
 function ColorButton({
+  editor,
   title,
   value,
   onChange,
   children,
 }: {
+  editor: Editor;
   title: string;
   value: string;
   onChange: (value: string) => void;
   children: React.ReactNode;
 }) {
+  // The native color input steals focus the moment its picker opens, which can
+  // collapse the editor selection. Snapshot the range on mousedown and restore
+  // it before applying, so the swatch always colors the intended text.
+  const saved = React.useRef<{ from: number; to: number } | null>(null);
   return (
-    <Button
-      asChild
-      variant="ghost"
-      size="icon-xs"
-      className="relative text-zinc-100 hover:bg-white/10 hover:text-zinc-100"
-    >
-      <label title={title}>
+    <Button asChild variant="ghost" size="icon-xs" className="relative">
+      <label
+        title={title}
+        onMouseDown={() => {
+          const { from, to } = editor.state.selection;
+          saved.current = { from, to };
+        }}
+      >
         {children}
         <input
           type="color"
           className="sr-only"
           value={value}
-          onInput={(event) => onChange(event.currentTarget.value)}
+          onInput={(event) => {
+            if (saved.current) editor.commands.setTextSelection(saved.current);
+            onChange(event.currentTarget.value);
+          }}
         />
       </label>
     </Button>

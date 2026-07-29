@@ -13,11 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -256,14 +257,14 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
         open={Boolean(insertTarget)}
         onOpenChange={(open) => !open && setInsertTarget(null)}
       >
-        <DialogContent className="max-w-sm">
+        <DialogPopup className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Add a step</DialogTitle>
             <DialogDescription>
               What should happen next in this flow?
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <DialogPanel className="flex flex-col gap-4">
             {(["Messages", "Flow control", "Audience"] as const).map((group) => (
               <div key={group} className="flex flex-col gap-1.5">
                 <p className="text-xs font-medium text-muted-foreground">
@@ -289,8 +290,8 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
                 )}
               </div>
             ))}
-          </div>
-        </DialogContent>
+          </DialogPanel>
+        </DialogPopup>
       </Dialog>
 
       <NodeConfigSheet

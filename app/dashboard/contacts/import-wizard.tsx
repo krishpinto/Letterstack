@@ -16,12 +16,13 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/coss-dialog";
 import {
   Field,
   FieldDescription,
@@ -49,6 +50,10 @@ type Summary = {
   duplicates: number;
   invalid: number;
   suppressed: number;
+  deadDomain?: number;
+  disposable?: number;
+  roleFlagged?: number;
+  typos?: number;
 };
 
 type Parsed = { headers: string[]; rows: string[][]; fileName: string };
@@ -180,7 +185,7 @@ export function ImportWizard({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogPopup className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
             {summary
@@ -195,6 +200,7 @@ export function ImportWizard({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogPanel>
         {summary ? (
           <SummaryStep summary={summary} />
         ) : parsed ? (
@@ -211,6 +217,7 @@ export function ImportWizard({
         ) : (
           <UploadStep parseError={parseError} onFile={onFile} />
         )}
+        </DialogPanel>
 
         <DialogFooter>
           {summary ? (
@@ -237,7 +244,7 @@ export function ImportWizard({
             </>
           )}
         </DialogFooter>
-      </DialogContent>
+      </DialogPopup>
     </Dialog>
   );
 }
@@ -428,6 +435,11 @@ function Mapper({
 }
 
 function SummaryStep({ summary }: { summary: Summary }) {
+  const deadDomain = summary.deadDomain ?? 0;
+  const disposable = summary.disposable ?? 0;
+  const roleFlagged = summary.roleFlagged ?? 0;
+  const typos = summary.typos ?? 0;
+
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -435,15 +447,31 @@ function SummaryStep({ summary }: { summary: Summary }) {
         <Stat n={summary.duplicates} label="Duplicates" tone="muted" />
         <Stat
           n={summary.invalid}
-          label="Invalid"
+          label="Invalid syntax"
           tone={summary.invalid ? "destructive" : "muted"}
         />
+        <Stat
+          n={deadDomain}
+          label="Dead domain"
+          tone={deadDomain ? "destructive" : "muted"}
+        />
+        <Stat
+          n={disposable}
+          label="Disposable"
+          tone={disposable ? "destructive" : "muted"}
+        />
         <Stat n={summary.suppressed} label="Suppressed" tone="muted" />
+        <Stat n={roleFlagged} label="Role (kept)" tone="muted" />
+        <Stat n={typos} label="Typos (kept)" tone="muted" />
       </div>
       <p className="text-sm text-muted-foreground">
         {summary.imported} new contact{summary.imported === 1 ? "" : "s"} added
-        from {summary.received} row{summary.received === 1 ? "" : "s"}.
-        Duplicates and suppressed addresses were skipped automatically.
+        from {summary.received} row{summary.received === 1 ? "" : "s"}. Invalid,
+        dead-domain, disposable, duplicate, and suppressed addresses were skipped
+        automatically.
+        {roleFlagged + typos > 0
+          ? " Role addresses and likely typos were imported but flagged for you to review."
+          : ""}
       </p>
     </div>
   );

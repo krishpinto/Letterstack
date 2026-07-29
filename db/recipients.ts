@@ -62,6 +62,25 @@ export async function addRecipientsBulk(
   return inserted;
 }
 
+/** True if this email is already in the org's audience (any status). */
+export async function recipientExists(
+  organizationId: string,
+  email: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: recipients.id })
+    .from(recipients)
+    .where(
+      and(
+        eq(recipients.organizationId, organizationId),
+        eq(recipients.email, email),
+      ),
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
 export async function listRecipientsForOrganization(organizationId: string) {
   return db
     .select()
@@ -75,6 +94,30 @@ export async function resetSentFlags(organizationId: string) {
     .update(recipients)
     .set({ sentAt: null })
     .where(eq(recipients.organizationId, organizationId));
+}
+
+export async function updateRecipient(
+  organizationId: string,
+  id: string,
+  patch: { email?: string; name?: string | null },
+) {
+  const values: Partial<typeof recipients.$inferInsert> = {};
+  if (patch.email !== undefined) values.email = patch.email;
+  if (patch.name !== undefined) values.name = patch.name;
+  if (Object.keys(values).length === 0) return null;
+
+  const [row] = await db
+    .update(recipients)
+    .set(values)
+    .where(
+      and(
+        eq(recipients.id, id),
+        eq(recipients.organizationId, organizationId),
+      ),
+    )
+    .returning();
+
+  return row ?? null;
 }
 
 export async function deleteRecipient(organizationId: string, id: string) {

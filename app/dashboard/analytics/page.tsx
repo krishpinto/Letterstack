@@ -775,11 +775,11 @@ export default function AnalyticsPage() {
                         key={row.id}
                         className="cursor-pointer"
                         onClick={() =>
-                          router.push(`/dashboard/campaigns/${row.id}`)
+                          router.push(`/dashboard/campaigns/analytics/${row.id}`)
                         }
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
-                            router.push(`/dashboard/campaigns/${row.id}`);
+                            router.push(`/dashboard/campaigns/analytics/${row.id}`);
                           }
                         }}
                         role="button"

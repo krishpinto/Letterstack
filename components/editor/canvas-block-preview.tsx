@@ -1,7 +1,8 @@
 "use client";
 
+import * as React from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { CodeIcon, Image01Icon, Video01Icon } from "@hugeicons/core-free-icons";
+import { CodeIcon, Image01Icon, Link01Icon, Video01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_FONT_SIZE_BY_TEXT_TYPE,
@@ -17,12 +18,69 @@ import {
   type EmailDocument,
   type HeadingBlock,
   type ParagraphBlock,
+  type RawHtmlBlock,
   type TextBlock,
 } from "@/lib/email/document";
 
 function stripOuterP(html: string): string {
   const stripped = html.replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1").trim();
   return stripped || html;
+}
+
+/** Plain-text fallback kept in sync with the HTML for the plain-text email. */
+function htmlToPlain(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The Custom HTML block's rendered preview, made directly editable. It's an
+ * uncontrolled contentEditable surface: the stored HTML is pushed into the DOM
+ * only when it differs from what's already there (e.g. an edit from the
+ * inspector's source field), so typing here never resets the caret. `block.html`
+ * stays the single source of truth — the inspector textarea and this preview are
+ * two views of it, not two separate editors.
+ */
+function EditableHtmlBlock({
+  block,
+  settings,
+  textColor,
+  onUpdateBlock,
+}: {
+  block: RawHtmlBlock;
+  settings: EmailDocument["settings"];
+  textColor: string;
+  onUpdateBlock: (updater: (b: EmailBlock) => EmailBlock) => void;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== block.html) {
+      el.innerHTML = block.html || "";
+    }
+  }, [block.html]);
+
+  return (
+    <div style={{ padding: `18px ${settings.padding}px` }} onClick={(e) => e.stopPropagation()}>
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <HugeiconsIcon icon={CodeIcon} strokeWidth={1.75} className="size-3.5" />
+        {block.label || "Custom HTML"} · editable preview
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-label="Editable HTML preview"
+        onInput={(e) => {
+          const html = e.currentTarget.innerHTML;
+          onUpdateBlock((b) => ({ ...b, html, text: htmlToPlain(html) }) as RawHtmlBlock);
+        }}
+        className="min-h-[44px] rounded-md border border-dashed border-muted-foreground/30 p-3 text-sm outline-none focus:border-ring"
+        style={{ color: textColor, fontFamily: settings.fontFamily }}
+      />
+    </div>
+  );
 }
 
 const SOCIAL_CHARS: Record<string, string> = {
@@ -111,12 +169,13 @@ export function CanvasBlockPreview({
 
     case "image":
       return (
-        <div>
+        <div className="relative">
           {block.src ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={block.src}
               alt={block.alt}
+              title={block.href || undefined}
               style={{ display: "block", width: `${block.width}%`, maxWidth: "100%", height: "auto", margin: "0 auto" }}
             />
           ) : (
@@ -124,6 +183,12 @@ export function CanvasBlockPreview({
               <HugeiconsIcon icon={Image01Icon} strokeWidth={1.5} className="size-8 text-muted-foreground/40" />
               <span className="text-xs text-muted-foreground">Add an image URL in the inspector</span>
             </div>
+          )}
+          {block.href && block.src && (
+            <span className="pointer-events-none absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-foreground/70 px-2 py-0.5 text-[10px] font-medium text-background">
+              <HugeiconsIcon icon={Link01Icon} strokeWidth={2} className="size-3" />
+              Linked
+            </span>
           )}
         </div>
       );
@@ -385,14 +450,15 @@ export function CanvasBlockPreview({
       );
     }
 
-    case "button":
+    case "button": {
+      const full = block.fullWidth ?? false;
       return (
-        <div style={{ padding: `4px ${s.padding}px 28px`, textAlign: block.align, fontFamily: s.fontFamily }}>
-          <span className="inline-flex flex-wrap gap-2 align-top">
+        <div style={{ padding: `4px ${s.padding}px 12px`, textAlign: full ? "center" : block.align, fontFamily: s.fontFamily }}>
+          <span className={cn(full ? "flex flex-col gap-2" : "inline-flex flex-wrap gap-2 align-top")}>
             {getButtonItems(block).map((button, index) => (
               <span
                 key={`${button.label}-${index}`}
-                className="inline-block"
+                className={cn("inline-block", full && "block w-full text-center")}
                 style={{
                   ...getButtonColors(button.variant, s),
                   border:
@@ -412,6 +478,7 @@ export function CanvasBlockPreview({
           </span>
         </div>
       );
+    }
 
     case "divider":
       return (
@@ -482,12 +549,29 @@ export function CanvasBlockPreview({
         </div>
       );
 
-    case "rawHtml":
-      return (
+    case "rawHtml": {
+      if (editable) {
+        return (
+          <EditableHtmlBlock
+            block={block}
+            settings={s}
+            textColor={textColor}
+            onUpdateBlock={onUpdateBlock!}
+          />
+        );
+      }
+      return block.html.trim() ? (
+        <div
+          className="px-4 py-3 text-sm"
+          style={{ color: textColor, fontFamily: s.fontFamily }}
+          dangerouslySetInnerHTML={previewHtml(block.html)}
+        />
+      ) : (
         <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
           <HugeiconsIcon icon={CodeIcon} strokeWidth={1.75} className="size-4" />
           {block.label || "Raw HTML block"}
         </div>
       );
+    }
   }
 }

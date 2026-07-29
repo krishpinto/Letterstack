@@ -19,6 +19,12 @@
       "skillPath": "skills/migrate-ai-sdk-v6-to-v7/SKILL.md",
       "computedHash": "92a68769c5a82e6bd35cb8fe13537a80f6341742306d6a23c52afb6c1f7b5ab9"
     },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",

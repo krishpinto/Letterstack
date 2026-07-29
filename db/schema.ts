@@ -37,6 +37,11 @@ export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   type: text("type").notNull().default("business"),
+  // Beta send cap tracking: total marketing emails (campaigns + automations)
+  // ever sent from this org. Incremented atomically at the point of send —
+  // see tryReserveSendQuota in db/organizations.ts. Transactional emails
+  // (password resets, invites) don't count against this.
+  emailsSentCount: integer("emails_sent_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -74,6 +79,25 @@ export const organizationMembers = pgTable(
     ),
   ],
 );
+
+// Pending invites to join an organization. tokenHash is the sha256 of the
+// raw token mailed to the invitee — same pattern as passwordResets, so a
+// leaked table can't be replayed into a membership.
+export const organizationInvites = pgTable("organization_invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  invitedByUserId: uuid("invited_by_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const recipients = pgTable(
   "recipients",
@@ -214,6 +238,52 @@ export const emailTemplates = pgTable("email_templates", {
   // Unguessable token backing the public share link (/templates/shared/<token>).
   // Null = not shared.
   shareToken: text("share_token").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Embeddable newsletter signup forms. Each form is a public subscribe widget an
+// org drops onto their own site (hosted page at /s/<publicKey>, or the injected
+// script at /embed/<publicKey>). publicKey is the unguessable, revocable id that
+// appears in those URLs — regenerating it kills every old embed at once.
+//
+// Signups are single opt-in: a valid submission is added to `recipients`
+// immediately (no confirmation email). subscriberCount is a running tally of new
+// subscribers, for the dashboard — attribution beyond that isn't tracked.
+export const signupForms = pgTable("signup_forms", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  // Unguessable id in the embed/hosted URLs. Unique globally.
+  publicKey: text("public_key").notNull().unique(),
+  // Internal label shown only in the dashboard ("Website footer form").
+  name: text("name").notNull(),
+  headline: text("headline").notNull().default("Subscribe to our newsletter"),
+  description: text("description")
+    .notNull()
+    .default("Get our latest updates straight to your inbox."),
+  buttonLabel: text("button_label").notNull().default("Subscribe"),
+  successMessage: text("success_message")
+    .notNull()
+    .default("You're subscribed — thanks for joining!"),
+  // Hex accent for the button/link on the rendered widget.
+  accentColor: text("accent_color").notNull().default("#4f46e5"),
+  // Whether the widget asks for a name alongside the email.
+  collectName: boolean("collect_name").notNull().default(false),
+  // How the form appears on the host site. static: inline in the page.
+  // popup: modal overlay. animated: slides in with motion.
+  formType: text("form_type").notNull().default("static"),
+  // Widget presentation. layout: card | minimal | inline. theme: light | dark.
+  // cornerStyle: sharp | rounded | pill. Resolved to concrete styles at render.
+  layout: text("layout").notNull().default("card"),
+  theme: text("theme").notNull().default("light"),
+  cornerStyle: text("corner_style").notNull().default("rounded"),
+  // Running count of confirmed subscribers who came through this form.
+  subscriberCount: integer("subscriber_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

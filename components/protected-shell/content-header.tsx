@@ -6,12 +6,10 @@ import {
   GlobeIcon,
   HomeIcon,
   LayoutTemplateIcon,
+  MailPlusIcon,
   PanelLeftIcon,
-  PanelRightIcon,
-  SearchIcon,
   SendIcon,
   SettingsIcon,
-  SlidersHorizontalIcon,
   UsersIcon,
   WorkflowIcon,
 } from "lucide-react";
@@ -29,6 +27,7 @@ const PAGE_METADATA: Record<string, { title: string; icon: React.ElementType }> 
   "/dashboard/contacts": { title: "Audience", icon: UsersIcon },
   "/dashboard/templates": { title: "Templates", icon: LayoutTemplateIcon },
   "/dashboard/automations": { title: "Automations", icon: WorkflowIcon },
+  "/dashboard/forms": { title: "Forms", icon: MailPlusIcon },
   "/dashboard/analytics": { title: "Analytics", icon: BarChart3Icon },
   "/dashboard/domains": { title: "Domains", icon: GlobeIcon },
   "/dashboard/settings": { title: "Settings", icon: SettingsIcon },
@@ -47,8 +46,6 @@ function getPageMeta(pathname: string) {
 type ContentHeaderProps = {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
-  onToggleRight: () => void;
-  rightOpen: boolean;
   actions?: React.ReactNode;
   className?: string;
 };
@@ -56,8 +53,6 @@ type ContentHeaderProps = {
 export function ContentHeader({
   onToggleSidebar,
   sidebarOpen,
-  onToggleRight,
-  rightOpen,
   actions,
   className,
 }: ContentHeaderProps) {
@@ -95,43 +90,8 @@ export function ContentHeader({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Right actions */}
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <SearchIcon className="size-3.5" />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="xs"
-          className="gap-1 text-muted-foreground hover:text-foreground"
-        >
-          <SlidersHorizontalIcon className="size-3" />
-          Filters
-        </Button>
-
-        {/* Page-level CTAs slot */}
-        {actions}
-
-        {/* Right sidebar toggle */}
-        <Separator orientation="vertical" className="mx-0.5 h-3.5" />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={cn(
-            "shrink-0 text-muted-foreground hover:text-foreground transition-colors",
-            rightOpen && "text-foreground bg-muted",
-          )}
-          onClick={onToggleRight}
-          aria-label={rightOpen ? "Close filters panel" : "Open filters panel"}
-        >
-          <PanelRightIcon className="size-3.5" />
-        </Button>
-      </div>
+      {/* Page-level CTAs slot */}
+      {actions && <div className="flex items-center gap-1">{actions}</div>}
     </div>
   );
 }
