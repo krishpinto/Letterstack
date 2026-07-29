@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { HtmlCodeField } from "./html-code-field";
 import {
   createColumn,
   updateBlock,
@@ -789,8 +790,20 @@ function RawHtmlBlockFields({
         <Input id="raw-label" value={block.label} onChange={(e) => onChange((b) => ({ ...b, label: e.target.value }) as RawHtmlBlock)} />
       </Field>
       <Field>
-        <FieldLabel htmlFor="raw-html">HTML</FieldLabel>
-        <Textarea id="raw-html" rows={7} value={block.html} onChange={(e) => onChange((b) => ({ ...b, html: e.target.value }) as RawHtmlBlock)} />
+        <FieldLabel>HTML</FieldLabel>
+        <HtmlCodeField
+          value={block.html}
+          onCommit={({ html, text }) =>
+            // text is derived from the markup so the plain-text part of the
+            // email never falls out of sync with what's rendered.
+            onChange((b) => ({ ...b, html, text }) as RawHtmlBlock)
+          }
+        />
+        <FieldDescription>
+          Goes inside the email&apos;s table cell, so paste content rather than a
+          whole page — a full document is trimmed to its &lt;body&gt;. Use tables
+          and inline styles; flexbox and grid don&apos;t render in Outlook.
+        </FieldDescription>
       </Field>
     </>
   );

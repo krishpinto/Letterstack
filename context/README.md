@@ -30,6 +30,8 @@ or `dashboard theming` quickly.
 - `user-flow.md`: intended product flow and route map.
 - `campaign-flow-plan.md`: planned campaign list/create/editor flow.
 - `mail-system.md`: canonical current send/event/unsubscribe file map.
+- `gmail-sending-plan.md`: proposed Gmail-mailbox sending + Senders module (not built).
+- `agentic-editor-plan.md`: proposed AI agent panel in the editor (not built).
 - `chat-log.md`: running thread breadcrumbs for compaction recovery.
 - `send-analytics.md`: sending, suppression, SES events, bounce/complaint logic.
 - `ui-theming.md`: theme/layout rules for hero, marketing, and dashboard.

@@ -1,4 +1,14 @@
-import { jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import type { EmailDocument } from "@/lib/email/document";
 
 export const users = pgTable("users", {
@@ -205,5 +215,49 @@ export const emailTemplates = pgTable("email_templates", {
   // Null = not shared.
   shareToken: text("share_token").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Append-only ledger of every model call the agent makes. This is both the
+// billing record and the rate limiter: the daily, per-user and per-minute
+// quota gates are all COUNT queries over this table. That's deliberate — at
+// ~20 requests/minute Postgres is comfortably fast enough, and it avoids a
+// second piece of infrastructure that can be down independently of the app.
+// Failed calls are recorded too, because a failed call still consumed a
+// request against the provider's daily ceiling.
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptTokens: integer("prompt_tokens").notNull().default(0),
+    completionTokens: integer("completion_tokens").notNull().default(0),
+    totalTokens: integer("total_tokens").notNull().default(0),
+    // No FK: campaigns can be deleted while their usage history stays valid.
+    campaignId: uuid("campaign_id"),
+    ok: boolean("ok").notNull().default(true),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("ai_usage_created_at_idx").on(table.createdAt),
+    index("ai_usage_user_created_at_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+export const aiBudgets = pgTable("ai_budgets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  monthlyTokenLimit: integer("monthly_token_limit").notNull().default(200_000),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -25,6 +25,7 @@
     "@spell": "https://spell.sh/r/{name}.json",
     "@reui": "https://reui.io/r/{style}/{name}.json",
     "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json",
-    "@evilcharts": "https://evilcharts.com/r/{name}.json"
+    "@evilcharts": "https://evilcharts.com/r/{name}.json",
+    "@kokonutui": "https://kokonutui.com/r/{name}.json"
   }
 }

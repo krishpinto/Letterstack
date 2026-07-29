@@ -121,12 +121,23 @@ export function EditorShell({
   onExit,
   onSaveAsTemplate,
   mode = "campaign",
+  renderAssistant,
 }: {
   initialDocument?: EmailDocument
   onSave?: (doc: EmailDocument) => Promise<void>
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
+  /**
+   * Optional docked panel on the right, given the live document and the same
+   * updater every other surface writes through. A render prop rather than a
+   * built-in so /studio can host the agent without this file growing again,
+   * and so /editor stays byte-identical in behaviour.
+   */
+  renderAssistant?: (api: {
+    document: EmailDocument
+    updateDocument: (updater: (current: EmailDocument) => EmailDocument) => void
+  }) => React.ReactNode
 } = {}) {
   const router = useRouter()
   const [document, setDocument] =
@@ -556,6 +567,10 @@ export function EditorShell({
                   }}
                 />
               </CanvasProvider>
+
+              {/* Docked, not floating: the assistant is a workspace of its own,
+                  and the canvas should reflow rather than be covered. */}
+              {renderAssistant?.({ document, updateDocument })}
 
               {inspectorOpen && (
                 <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-3xl border bg-card shadow-2xl">
