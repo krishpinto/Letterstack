@@ -69,6 +69,48 @@ const STYLE_FIELDS = new Set([
 const FROZEN_FIELDS = new Set(["id", "type", "blocks", "columns", "links"]);
 
 /**
+ * Optional fields that `createBlock` doesn't seed.
+ *
+ * A plain `key in block` test rejects these, because the property genuinely
+ * isn't there until something sets it — which would mean the agent could never
+ * add a link to an image, or set a background on a block that has never had
+ * one. Every BaseBlock style field is in this position, so without this list
+ * setBlockStyle would be unable to style anything at all.
+ */
+const BASE_OPTIONAL_FIELDS = [
+  "backgroundColor",
+  "textColor",
+  "paddingTop",
+  "paddingBottom",
+];
+
+const OPTIONAL_FIELDS_BY_TYPE: Partial<Record<EmailBlock["type"], string[]>> = {
+  image: ["href"],
+  logo: ["href"],
+  button: ["fullWidth", "secondaryLabel", "secondaryHref", "secondaryVariant"],
+  text: ["eyebrow"],
+  columns: ["columnBackgroundColor"],
+};
+
+function fieldExistsOnBlock(target: EmailBlock, key: string): boolean {
+  if (key in target) return true;
+  if (BASE_OPTIONAL_FIELDS.includes(key)) return true;
+  return (OPTIONAL_FIELDS_BY_TYPE[target.type] ?? []).includes(key);
+}
+
+/** Every field a given tool may set on this block, for error messages. */
+function settableFields(target: EmailBlock, styling: boolean): string[] {
+  const all = new Set([
+    ...Object.keys(target),
+    ...BASE_OPTIONAL_FIELDS,
+    ...(OPTIONAL_FIELDS_BY_TYPE[target.type] ?? []),
+  ]);
+  return [...all].filter(
+    (key) => !FROZEN_FIELDS.has(key) && STYLE_FIELDS.has(key) === styling,
+  );
+}
+
+/**
  * Models reliably write prose but unreliably remember that these fields are
  * HTML. Wrapping bare text keeps the canvas and compiler from rendering a
  * stray unwrapped string.
@@ -116,6 +158,14 @@ const colorValue = (value: unknown): FieldCheck =>
 const boolValue = (value: unknown): FieldCheck =>
   typeof value === "boolean" ? pass(value) : failField("must be true or false");
 
+/**
+ * Explicit for optional fields that may be absent from the block: without a
+ * check, the "keep the existing type" fallback has no existing type to compare
+ * against and would wave anything through.
+ */
+const textValue = (value: unknown): FieldCheck =>
+  typeof value === "string" ? pass(value) : failField("must be text");
+
 const FIELD_CHECKS: Record<string, (value: unknown) => FieldCheck> = {
   align: enumOf("left", "center", "right"),
   level: boundedNumber(1, 3),
@@ -128,6 +178,11 @@ const FIELD_CHECKS: Record<string, (value: unknown) => FieldCheck> = {
   mobile: enumOf("stack", "stack-reverse", "row"),
   showCta: boolValue,
   showImage: boolValue,
+  fullWidth: boolValue,
+  href: textValue,
+  secondaryHref: textValue,
+  secondaryLabel: textValue,
+  eyebrow: textValue,
   width: boundedNumber(1, 1000),
   height: boundedNumber(0, 400),
   gap: boundedNumber(0, 64),
@@ -179,7 +234,7 @@ function mergeFields(
       problems.push(`${key}: ${rejection}`);
       continue;
     }
-    if (!(key in target)) {
+    if (!fieldExistsOnBlock(target, key)) {
       problems.push(`${key}: not a field on a ${target.type} block`);
       continue;
     }
@@ -414,9 +469,7 @@ export function applyAgentTool(
       );
 
       if (Object.keys(allowed).length === 0) {
-        const usable = Object.keys(target).filter(
-          (k) => !FROZEN_FIELDS.has(k) && STYLE_FIELDS.has(k) === styling,
-        );
+        const usable = settableFields(target, styling);
         return fail(
           document,
           `Nothing applied. ${problems.join("; ")}. Fields this tool can set on a ${target.type}: ${usable.join(", ") || "none"}.`,
