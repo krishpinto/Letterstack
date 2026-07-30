@@ -8,6 +8,7 @@ import {
   DatabaseIcon,
   MailIcon,
   RefreshCwIcon,
+  SparklesIcon,
   UsersIcon,
   ZapIcon,
 } from "lucide-react";
@@ -78,6 +79,23 @@ type InfraPayload = {
     campaignsSent: number;
     suppressed: number;
     automations: number;
+  }>;
+  gemini: Block<{
+    models: Array<{
+      model: string;
+      calls: number;
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    }>;
+    monthCalls: number;
+    monthTokens: number;
+    avgTokensPerCall: number;
+    failuresThisMonth: number;
+    requestsToday: number;
+    dailyRequestLimit: number;
+    requestsLastMinute: number;
+    rpmLimit: number;
   }>;
 };
 
@@ -559,6 +577,98 @@ export default function AdminInfraPage() {
             )}
           </BlockCard>
         </div>
+
+        {/* Gemini / AI assistant usage */}
+        <BlockCard
+          title="Gemini — this month"
+          icon={SparklesIcon}
+          block={data.gemini}
+        >
+          {data.gemini.ok && (
+            <div className="flex flex-col gap-4">
+              {/* The gates that actually bind on a free tier are request
+                  counts, not tokens — so they lead. */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-xs text-muted-foreground">Requests today</p>
+                  <LimitBar
+                    used={data.gemini.data.requestsToday}
+                    limit={data.gemini.data.dailyRequestLimit}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    Requests in the last minute
+                  </p>
+                  <LimitBar
+                    used={data.gemini.data.requestsLastMinute}
+                    limit={data.gemini.data.rpmLimit}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {[
+                  {
+                    label: "Tokens",
+                    value: data.gemini.data.monthTokens.toLocaleString(),
+                  },
+                  {
+                    label: "Calls",
+                    value: data.gemini.data.monthCalls.toLocaleString(),
+                  },
+                  {
+                    label: "Avg / call",
+                    value: data.gemini.data.avgTokensPerCall.toLocaleString(),
+                    // Rising average means conversation context is growing
+                    // faster than history trimming is cutting it back.
+                    sub: "context health",
+                  },
+                  {
+                    label: "Failed",
+                    value: data.gemini.data.failuresThisMonth.toLocaleString(),
+                  },
+                ].map((stat) => (
+                  <div key={stat.label}>
+                    <p className="text-lg font-semibold tabular-nums">{stat.value}</p>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                    {stat.sub && (
+                      <p className="text-[10px] text-muted-foreground/70">{stat.sub}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {data.gemini.data.models.length > 0 ? (
+                <div className="flex flex-col gap-1.5 border-t pt-3">
+                  {data.gemini.data.models.map((model) => (
+                    <div
+                      key={model.model}
+                      className="flex items-baseline justify-between gap-3 text-xs"
+                    >
+                      <span className="truncate font-medium">{model.model}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {model.totalTokens.toLocaleString()} tokens ·{" "}
+                        {model.calls.toLocaleString()}{" "}
+                        {model.calls === 1 ? "call" : "calls"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="border-t pt-3 text-xs text-muted-foreground">
+                  No assistant usage yet this month.
+                </p>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                Free-tier limits are per Google account and reset daily at
+                midnight UTC. Tokens are shown for cost projection; the daily
+                request cap is what stops the assistant.
+              </p>
+            </div>
+          )}
+        </BlockCard>
 
         {/* Platform stats */}
         <BlockCard title="Platform" icon={UsersIcon} block={data.platform}>
