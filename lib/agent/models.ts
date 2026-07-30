@@ -20,6 +20,33 @@ export type AgentModel = {
   provider: "google";
   /** Accepts image attachments in chat. */
   vision: boolean;
+  /**
+   * Free-tier ceilings, per model.
+   *
+   * Google meters each model separately, so exhausting one leaves the others
+   * usable — which is exactly why the quota gates key on model rather than
+   * counting every call against one shared pool.
+   *
+   * These are researched published figures, not values the API reports back.
+   * Google revises them without notice and varies them by region and account
+   * age, so treat them as our own conservative ceiling: the provider's 429 is
+   * the real authority, and the send path surfaces it when it disagrees.
+   */
+  dailyRequestLimit: number;
+  rpmLimit: number;
+  /**
+   * Daily token ceiling — the limit that actually bites here.
+   *
+   * Observed: 3.6 Flash was refused by Google after 19 requests but ~142k
+   * tokens in a day, i.e. nowhere near any published request cap. Agent turns
+   * carry a document summary and conversation history, so they are token-heavy
+   * and cheap in request count, which makes tokens/day the binding constraint
+   * and a requests-only view actively misleading.
+   *
+   * Estimated from that observation, not published — tune via env once you
+   * have watched a few more days.
+   */
+  dailyTokenLimit: number;
 };
 
 export const AGENT_MODELS: AgentModel[] = [
@@ -29,6 +56,10 @@ export const AGENT_MODELS: AgentModel[] = [
     hint: "Best balance — the default",
     provider: "google",
     vision: true,
+    dailyRequestLimit: Number(process.env.NEXT_PUBLIC_AI_RPD_36_FLASH ?? 1500),
+    rpmLimit: 10,
+    // Google refused this model at ~142k tokens in a day.
+    dailyTokenLimit: Number(process.env.NEXT_PUBLIC_AI_TPD_36_FLASH ?? 150_000),
   },
   {
     id: "gemini-3.5-flash",
@@ -36,15 +67,25 @@ export const AGENT_MODELS: AgentModel[] = [
     hint: "Previous generation, very capable",
     provider: "google",
     vision: true,
+    dailyRequestLimit: Number(process.env.NEXT_PUBLIC_AI_RPD_35_FLASH ?? 1500),
+    rpmLimit: 10,
+    dailyTokenLimit: Number(process.env.NEXT_PUBLIC_AI_TPD_35_FLASH ?? 250_000),
   },
   {
     id: "gemini-3.5-flash-lite",
     label: "Gemini 3.5 Flash Lite",
-    hint: "Fastest, highest daily allowance",
+    hint: "Fastest, use when Flash is exhausted",
     provider: "google",
     vision: true,
+    dailyRequestLimit: Number(process.env.NEXT_PUBLIC_AI_RPD_35_LITE ?? 1000),
+    rpmLimit: 15,
+    dailyTokenLimit: Number(process.env.NEXT_PUBLIC_AI_TPD_35_LITE ?? 250_000),
   },
 ];
+
+export function findModel(id: string): AgentModel | undefined {
+  return AGENT_MODELS.find((model) => model.id === id);
+}
 
 export const DEFAULT_AGENT_MODEL = AGENT_MODELS[0].id;
 

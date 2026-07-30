@@ -24,7 +24,12 @@ import { google } from "@ai-sdk/google";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { agentTools } from "@/lib/agent/tools";
 import { AGENT_SYSTEM_PROMPT } from "@/lib/agent/context";
-import { MAX_AGENT_STEPS, resolveModelId } from "@/lib/agent/models";
+import {
+  AGENT_MODELS,
+  findModel,
+  MAX_AGENT_STEPS,
+  resolveModelId,
+} from "@/lib/agent/models";
 import { checkAgentBudget, recordAgentUsage } from "@/lib/agent/budget";
 
 export const runtime = "nodejs";
@@ -102,10 +107,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const verdict = await checkAgentBudget(userId);
+  const modelId = resolveModelId(typeof body?.model === "string" ? body.model : undefined);
+
+  // Keyed on model: Google meters each one separately, so exhausting Flash
+  // must not lock the user out of Flash Lite.
+  const verdict = await checkAgentBudget(userId, modelId);
   if (!verdict.ok) return refusal(verdict.reason);
 
-  const modelId = resolveModelId(typeof body?.model === "string" ? body.model : undefined);
   // Rebuilt by the client each turn from the live document, so it reflects
   // edits made moments ago rather than whatever was true when the chat started.
   const documentContext = typeof body?.context === "string" ? body.context : "";
@@ -138,7 +146,7 @@ export async function POST(request: Request) {
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,
-        onError: (error) => (error instanceof Error ? error.message : "The assistant failed."),
+        onError: (error) => providerMessage(error, modelId),
       }),
     });
   } catch (err) {
@@ -154,6 +162,34 @@ export async function POST(request: Request) {
       error: err instanceof Error ? err.message : "Unknown error",
     });
     console.error("POST /api/agent/chat failed", err);
-    return bad(502, "The assistant is unavailable right now. Please try again.");
+    return refusal(providerMessage(err, modelId));
   }
+}
+
+/**
+ * Translate a provider failure into something the user can act on.
+ *
+ * Our own quota gates use researched published limits, but Google's are the
+ * real ones and they move — so the provider can refuse a model we still
+ * believe has headroom. When that happens the useful response is not "an error
+ * occurred", it's which model to switch to.
+ */
+function providerMessage(error: unknown, modelId: string): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const model = findModel(modelId);
+  const exhausted =
+    /quota|rate limit|429|RESOURCE_EXHAUSTED/i.test(raw);
+
+  if (exhausted) {
+    const alternatives = AGENT_MODELS.filter((m) => m.id !== modelId)
+      .map((m) => m.label)
+      .join(" or ");
+    return `${model?.label ?? modelId} has hit its limit at Google. Switch to ${alternatives} from the model picker, or try again after midnight UTC.`;
+  }
+
+  if (/not found|not supported|unsupported|invalid model/i.test(raw)) {
+    return `${model?.label ?? modelId} isn't available on this API key. Pick a different model.`;
+  }
+
+  return raw || "The assistant failed.";
 }

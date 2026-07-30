@@ -82,20 +82,23 @@ type InfraPayload = {
   }>;
   gemini: Block<{
     models: Array<{
-      model: string;
-      calls: number;
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
+      id: string;
+      label: string;
+      requestsToday: number;
+      dailyRequestLimit: number;
+      tokensToday: number;
+      dailyTokenLimit: number;
+      requestsLastMinute: number;
+      rpmLimit: number;
+      monthCalls: number;
+      monthTokens: number;
+      exhausted: boolean;
+      exhaustedBy: "requests" | "tokens" | null;
     }>;
     monthCalls: number;
     monthTokens: number;
     avgTokensPerCall: number;
     failuresThisMonth: number;
-    requestsToday: number;
-    dailyRequestLimit: number;
-    requestsLastMinute: number;
-    rpmLimit: number;
   }>;
 };
 
@@ -586,28 +589,52 @@ export default function AdminInfraPage() {
         >
           {data.gemini.ok && (
             <div className="flex flex-col gap-4">
-              {/* The gates that actually bind on a free tier are request
-                  counts, not tokens — so they lead. */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs text-muted-foreground">Requests today</p>
-                  <LimitBar
-                    used={data.gemini.data.requestsToday}
-                    limit={data.gemini.data.dailyRequestLimit}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs text-muted-foreground">
-                    Requests in the last minute
-                  </p>
-                  <LimitBar
-                    used={data.gemini.data.requestsLastMinute}
-                    limit={data.gemini.data.rpmLimit}
-                  />
-                </div>
+              {/* Per model, because Google meters each one separately — when
+                  the assistant stops, the question is which model ran out and
+                  which still has room. */}
+              <div className="flex flex-col gap-4">
+                {data.gemini.data.models.map((model) => (
+                  <div key={model.id} className="flex flex-col gap-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        {model.label}
+                        {model.exhausted && (
+                          <Badge variant="destructive" className="text-[10px]">
+                            Out of {model.exhaustedBy}
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {model.requestsLastMinute}/{model.rpmLimit} per min
+                      </span>
+                    </div>
+                    {/* Tokens first: on an agent workload it's the ceiling that
+                        actually runs out, while request count stays near zero. */}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[11px] text-muted-foreground">
+                          Tokens today
+                        </p>
+                        <LimitBar
+                          used={model.tokensToday}
+                          limit={model.dailyTokenLimit}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[11px] text-muted-foreground">
+                          Requests today
+                        </p>
+                        <LimitBar
+                          used={model.requestsToday}
+                          limit={model.dailyRequestLimit}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 border-t pt-3 sm:grid-cols-4">
                 {[
                   {
                     label: "Tokens",
@@ -639,32 +666,14 @@ export default function AdminInfraPage() {
                 ))}
               </div>
 
-              {data.gemini.data.models.length > 0 ? (
-                <div className="flex flex-col gap-1.5 border-t pt-3">
-                  {data.gemini.data.models.map((model) => (
-                    <div
-                      key={model.model}
-                      className="flex items-baseline justify-between gap-3 text-xs"
-                    >
-                      <span className="truncate font-medium">{model.model}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {model.totalTokens.toLocaleString()} tokens ·{" "}
-                        {model.calls.toLocaleString()}{" "}
-                        {model.calls === 1 ? "call" : "calls"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="border-t pt-3 text-xs text-muted-foreground">
-                  No assistant usage yet this month.
-                </p>
-              )}
-
               <p className="text-xs text-muted-foreground">
-                Free-tier limits are per Google account and reset daily at
-                midnight UTC. Tokens are shown for cost projection; the daily
-                request cap is what stops the assistant.
+                Quotas are per model and reset at midnight UTC, so an exhausted
+                model doesn&apos;t block the others — switch in the
+                assistant&apos;s model picker. Token ceilings are estimates
+                calibrated from observed refusals (3.6 Flash was cut off around
+                142k tokens in a day, at only 19 requests), not published
+                figures. Google&apos;s own 429 is the real authority; tune the
+                estimates as you watch more days.
               </p>
             </div>
           )}

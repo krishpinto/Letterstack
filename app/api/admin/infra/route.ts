@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { GetAccountCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { UTApi } from "uploadthing/server";
-import { and, count, eq, gte, sql, sum } from "drizzle-orm";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -16,10 +16,7 @@ import {
   users,
 } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import {
-  GLOBAL_DAILY_REQUEST_LIMIT,
-  GLOBAL_RPM_LIMIT,
-} from "@/lib/agent/budget";
+import { modelQuotas } from "@/lib/agent/budget";
 
 export const runtime = "nodejs";
 
@@ -120,55 +117,27 @@ async function neonUsage() {
 }
 
 /**
- * Gemini spend for the current calendar month, plus the gates that actually
- * bind.
+ * Gemini quota, per model.
  *
- * The binding constraint on a free tier is *requests per day*, not tokens —
- * tokens are only interesting for cost projection and for spotting a runaway
- * context. Both are shown because they fail differently: hitting the daily
- * request cap stops everyone until midnight UTC, while token growth is the
- * slow leak that makes each turn more expensive than the last.
+ * Google meters each model separately, so a single combined number hides the
+ * thing you actually need to know when the assistant stops: *which* model ran
+ * out, and which one still has room. Tokens are reported alongside for cost
+ * projection, but requests-per-day is what stops the assistant working.
  */
 async function geminiUsage() {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const dayStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const minuteAgo = new Date(Date.now() - 60_000);
 
-  const [byModel, [today], [lastMinute], [failures]] = await Promise.all([
-    db
-      .select({
-        model: aiUsage.model,
-        calls: count(),
-        promptTokens: sum(aiUsage.promptTokens),
-        completionTokens: sum(aiUsage.completionTokens),
-        totalTokens: sum(aiUsage.totalTokens),
-      })
-      .from(aiUsage)
-      .where(gte(aiUsage.createdAt, monthStart))
-      .groupBy(aiUsage.model),
-    db.select({ n: count() }).from(aiUsage).where(gte(aiUsage.createdAt, dayStart)),
-    db.select({ n: count() }).from(aiUsage).where(gte(aiUsage.createdAt, minuteAgo)),
+  const [models, [failures]] = await Promise.all([
+    modelQuotas(),
     db
       .select({ n: count() })
       .from(aiUsage)
       .where(and(gte(aiUsage.createdAt, monthStart), eq(aiUsage.ok, false))),
   ]);
 
-  const models = byModel
-    .map((row) => ({
-      model: row.model,
-      calls: Number(row.calls ?? 0),
-      promptTokens: Number(row.promptTokens ?? 0),
-      completionTokens: Number(row.completionTokens ?? 0),
-      totalTokens: Number(row.totalTokens ?? 0),
-    }))
-    .sort((a, b) => b.totalTokens - a.totalTokens);
-
-  const monthCalls = models.reduce((sum, m) => sum + m.calls, 0);
-  const monthTokens = models.reduce((sum, m) => sum + m.totalTokens, 0);
+  const monthCalls = models.reduce((sum, m) => sum + m.monthCalls, 0);
+  const monthTokens = models.reduce((sum, m) => sum + m.monthTokens, 0);
 
   return {
     models,
@@ -177,10 +146,6 @@ async function geminiUsage() {
     // Average cost of a call is the early-warning signal for context bloat.
     avgTokensPerCall: monthCalls > 0 ? Math.round(monthTokens / monthCalls) : 0,
     failuresThisMonth: Number(failures?.n ?? 0),
-    requestsToday: Number(today?.n ?? 0),
-    dailyRequestLimit: GLOBAL_DAILY_REQUEST_LIMIT,
-    requestsLastMinute: Number(lastMinute?.n ?? 0),
-    rpmLimit: GLOBAL_RPM_LIMIT,
   };
 }
 

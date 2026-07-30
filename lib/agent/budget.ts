@@ -13,24 +13,7 @@ import { and, count, eq, gte, sql, sum } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { aiBudgets, aiUsage } from "@/db/schema";
-
-/**
- * Daily ceiling across all users. Deliberately below the provider's actual free
- * limit so a burst near midnight can't push us into hard 429s — and so the
- * whole allowance isn't spent by the agent panel alone.
- */
-export const GLOBAL_DAILY_REQUEST_LIMIT = Number(
-  process.env.AI_DAILY_REQUEST_LIMIT ?? 1_200,
-);
-
-/**
- * Rolling per-minute ceiling. Providers cap somewhere around 10–30 RPM.
- *
- * This must stay comfortably above MAX_AGENT_STEPS, or a single multi-step turn
- * eats most of the minute and the user's very next message is refused. At the
- * old value of 10 against a step ceiling of 8 that was close to guaranteed.
- */
-export const GLOBAL_RPM_LIMIT = Number(process.env.AI_RPM_LIMIT ?? 20);
+import { AGENT_MODELS, findModel } from "./models";
 
 /**
  * Applied to users with no ai_budgets row.
@@ -50,12 +33,26 @@ export type BudgetVerdict =
   | { ok: true; tokensUsed: number; tokenLimit: number; requestsToday: number }
   | { ok: false; reason: string; retryAfterSeconds?: number };
 
-async function countSince(since: Date): Promise<number> {
+/** Requests for one model since a point in time. */
+async function countSince(since: Date, model?: string): Promise<number> {
   const [row] = await db
     .select({ value: count() })
     .from(aiUsage)
-    .where(gte(aiUsage.createdAt, since));
+    .where(
+      model
+        ? and(gte(aiUsage.createdAt, since), eq(aiUsage.model, model))
+        : gte(aiUsage.createdAt, since),
+    );
   return row?.value ?? 0;
+}
+
+/** Tokens spent on one model since a point in time. */
+async function tokensSince(since: Date, model: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sum(aiUsage.totalTokens) })
+    .from(aiUsage)
+    .where(and(gte(aiUsage.createdAt, since), eq(aiUsage.model, model)));
+  return Number(row?.total ?? 0);
 }
 
 function startOfUtcDay(): Date {
@@ -91,22 +88,50 @@ async function tokensUsedThisMonth(userId: string): Promise<number> {
  * a quota refusal should say what happened and when it clears, never fail
  * silently or pretend the model errored.
  */
-export async function checkAgentBudget(userId: string): Promise<BudgetVerdict> {
-  const perMinute = await countSince(new Date(Date.now() - 60_000));
-  if (perMinute >= GLOBAL_RPM_LIMIT) {
+export async function checkAgentBudget(
+  userId: string,
+  modelId: string,
+): Promise<BudgetVerdict> {
+  const model = findModel(modelId);
+  const rpmLimit = model?.rpmLimit ?? 10;
+  const dailyLimit = model?.dailyRequestLimit ?? 1000;
+
+  const perMinute = await countSince(new Date(Date.now() - 60_000), modelId);
+  if (perMinute >= rpmLimit) {
     return {
       ok: false,
-      reason: "The assistant is handling a lot of requests right now. Try again in a few seconds.",
+      reason: `${model?.label ?? modelId} is being called too quickly. Give it a few seconds, or switch model.`,
       retryAfterSeconds: 15,
     };
   }
 
-  const requestsToday = await countSince(startOfUtcDay());
-  if (requestsToday >= GLOBAL_DAILY_REQUEST_LIMIT) {
+  // Each model has its own allowance, so naming an alternative is genuinely
+  // actionable rather than a consolation.
+  const alternatives = AGENT_MODELS.filter((m) => m.id !== modelId)
+    .map((m) => m.label)
+    .join(" or ");
+
+  const dayStart = startOfUtcDay();
+  const [requestsToday, tokensToday] = await Promise.all([
+    countSince(dayStart, modelId),
+    tokensSince(dayStart, modelId),
+  ]);
+
+  if (requestsToday >= dailyLimit) {
     return {
       ok: false,
-      reason:
-        "The assistant has reached its daily limit for everyone on this workspace. It resets at midnight UTC.",
+      reason: `${model?.label ?? modelId} has used its daily request quota (${dailyLimit}). It resets at midnight UTC — until then, switch to ${alternatives} from the model picker.`,
+    };
+  }
+
+  // Tokens, not requests, are what actually exhaust an agent workload: turns
+  // carry document context and history, so they burn tokens fast while barely
+  // denting the request count.
+  const tokenLimitToday = model?.dailyTokenLimit ?? 250_000;
+  if (tokensToday >= tokenLimitToday) {
+    return {
+      ok: false,
+      reason: `${model?.label ?? modelId} has used its daily token allowance (${tokensToday.toLocaleString()} of ~${tokenLimitToday.toLocaleString()}). It resets at midnight UTC — until then, switch to ${alternatives} from the model picker.`,
     };
   }
 
@@ -166,26 +191,91 @@ export async function recordAgentUsage(input: RecordUsageInput): Promise<void> {
   }
 }
 
+export type ModelQuota = {
+  id: string;
+  label: string;
+  requestsToday: number;
+  dailyRequestLimit: number;
+  tokensToday: number;
+  dailyTokenLimit: number;
+  requestsLastMinute: number;
+  rpmLimit: number;
+  /** Calendar-month totals, for cost projection rather than throttling. */
+  monthCalls: number;
+  monthTokens: number;
+  exhausted: boolean;
+  /** Which ceiling ran out, so the UI doesn't have to re-derive it. */
+  exhaustedBy: "requests" | "tokens" | null;
+};
+
+/**
+ * Per-model quota for the admin monitor.
+ *
+ * Every model is listed even with zero usage — an empty row is the useful
+ * answer to "what can I switch to?" when the model you were using runs out.
+ */
+export async function modelQuotas(): Promise<ModelQuota[]> {
+  const dayStart = startOfUtcDay();
+  const monthStart = startOfUtcMonth();
+  const minuteAgo = new Date(Date.now() - 60_000);
+
+  const monthRows = await db
+    .select({
+      model: aiUsage.model,
+      calls: count(),
+      tokens: sum(aiUsage.totalTokens),
+    })
+    .from(aiUsage)
+    .where(gte(aiUsage.createdAt, monthStart))
+    .groupBy(aiUsage.model);
+
+  const monthBy = new Map(
+    monthRows.map((row) => [
+      row.model,
+      { calls: Number(row.calls ?? 0), tokens: Number(row.tokens ?? 0) },
+    ]),
+  );
+
+  return Promise.all(
+    AGENT_MODELS.map(async (model) => {
+      const [requestsToday, requestsLastMinute, tokensToday] = await Promise.all([
+        countSince(dayStart, model.id),
+        countSince(minuteAgo, model.id),
+        tokensSince(dayStart, model.id),
+      ]);
+      const month = monthBy.get(model.id);
+      const outOfRequests = requestsToday >= model.dailyRequestLimit;
+      const outOfTokens = tokensToday >= model.dailyTokenLimit;
+      return {
+        id: model.id,
+        label: model.label,
+        requestsToday,
+        dailyRequestLimit: model.dailyRequestLimit,
+        tokensToday,
+        dailyTokenLimit: model.dailyTokenLimit,
+        requestsLastMinute,
+        rpmLimit: model.rpmLimit,
+        monthCalls: month?.calls ?? 0,
+        monthTokens: month?.tokens ?? 0,
+        exhausted: outOfRequests || outOfTokens,
+        exhaustedBy: outOfRequests ? ("requests" as const) : outOfTokens ? ("tokens" as const) : null,
+      };
+    }),
+  );
+}
+
 export type BudgetSnapshot = {
   tokensUsed: number;
   tokenLimit: number;
-  requestsToday: number;
-  dailyRequestLimit: number;
 };
 
 /** Powers the budget meter in the agent panel. */
 export async function agentBudgetSnapshot(userId: string): Promise<BudgetSnapshot> {
-  const [tokenLimit, tokensUsed, requestsToday] = await Promise.all([
+  const [tokenLimit, tokensUsed] = await Promise.all([
     monthlyTokenLimitFor(userId),
     tokensUsedThisMonth(userId),
-    countSince(startOfUtcDay()),
   ]);
-  return {
-    tokensUsed,
-    tokenLimit,
-    requestsToday,
-    dailyRequestLimit: GLOBAL_DAILY_REQUEST_LIMIT,
-  };
+  return { tokensUsed, tokenLimit };
 }
 
 // Kept for callers that want a raw expression rather than the helpers above.
