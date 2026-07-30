@@ -15,7 +15,9 @@
 import * as React from "react";
 import {
   AlertCircleIcon,
+  BrainIcon,
   CheckIcon,
+  ChevronDownIcon,
   Loader2Icon,
   SparklesIcon,
   UndoIcon,
@@ -44,29 +46,128 @@ const TOOL_LABELS: Record<string, string> = {
   setSubject: "Setting the subject",
 };
 
-type ToolState = string;
+type ToolPart = Record<string, unknown>;
 
-function ToolRow({ name, state }: { name: string; state: ToolState }) {
+/**
+ * The concrete thing a step touched, pulled from the tool's own arguments —
+ * "Editing" alone doesn't tell you which block moved, which is the only detail
+ * that matters when you're watching an email rebuild itself.
+ */
+function toolDetail(name: string, input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const args = input as Record<string, unknown>;
+
+  const patchKeys = (value: unknown) =>
+    value && typeof value === "object" ? Object.keys(value).join(", ") : null;
+
+  switch (name) {
+    case "addBlock":
+      return typeof args.type === "string" ? args.type : null;
+    case "updateBlock":
+    case "setBlockStyle":
+      return patchKeys(args.patch);
+    case "setDocumentSettings":
+      return patchKeys(args.patch);
+    case "setCustomHtml":
+      return typeof args.label === "string" && args.label ? args.label : "custom HTML";
+    case "setSubject":
+      return typeof args.subject === "string" ? args.subject : "preview text";
+    default:
+      return typeof args.id === "string" ? args.id : null;
+  }
+}
+
+function StepRow({ part }: { part: ToolPart }) {
+  const name = String(part.type ?? "").replace(/^tool-/, "");
+  const state = String(part.state ?? "");
   const done = state === "output-available";
   const failed = state === "output-error" || state === "output-denied";
+  const detail = toolDetail(name, part.input);
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs",
-        failed
-          ? "border-destructive/30 bg-destructive/5 text-destructive"
-          : "border-border bg-muted/40 text-muted-foreground",
+    <div className="flex items-start gap-2 py-1 text-xs">
+      <span className="mt-0.5 shrink-0">
+        {failed ? (
+          <AlertCircleIcon className="size-3 text-destructive" />
+        ) : done ? (
+          <CheckIcon className="size-3 text-emerald-600" />
+        ) : (
+          <Loader2Icon className="size-3 animate-spin text-muted-foreground" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn("font-medium", failed ? "text-destructive" : "text-foreground/80")}>
+          {TOOL_LABELS[name] ?? name}
+        </span>
+        {detail && <span className="text-muted-foreground"> · {detail}</span>}
+        {failed && typeof part.errorText === "string" && (
+          <span className="mt-0.5 block text-[11px] text-destructive/80">{part.errorText}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Collapsible record of the steps taken for one message.
+ *
+ * Open while running so the work is visible, folded once finished so the
+ * transcript stays readable — the summary line is what you want afterwards,
+ * the detail is there when something looks wrong.
+ */
+function ChainOfThought({ parts, running }: { parts: ToolPart[]; running: boolean }) {
+  const [openOverride, setOpenOverride] = React.useState<boolean | null>(null);
+  const open = openOverride ?? running;
+  const failed = parts.filter(
+    (p) => p.state === "output-error" || p.state === "output-denied",
+  ).length;
+
+  const summary = running
+    ? "Working…"
+    : `${parts.length} ${parts.length === 1 ? "step" : "steps"}${failed ? `, ${failed} failed` : ""}`;
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/30">
+      <button
+        type="button"
+        onClick={() => setOpenOverride(!open)}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs"
+      >
+        <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-medium">Chain of thought</span>
+        <span className="text-muted-foreground">{summary}</span>
+        <ChevronDownIcon
+          className={cn(
+            "ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open && (
+        <div className="border-t border-border/60 px-2.5 py-1">
+          {parts.map((part, i) => (
+            <StepRow key={String(part.toolCallId ?? i)} part={part} />
+          ))}
+        </div>
       )}
-    >
-      {failed ? (
-        <AlertCircleIcon className="size-3 shrink-0" />
-      ) : done ? (
-        <CheckIcon className="size-3 shrink-0 text-emerald-600" />
-      ) : (
-        <Loader2Icon className="size-3 shrink-0 animate-spin" />
-      )}
-      <span className="truncate">{TOOL_LABELS[name] ?? name}</span>
+    </div>
+  );
+}
+
+/** Placeholder while the model is still deciding what to do. */
+function ThinkingBubble() {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="flex gap-1">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50"
+            style={{ animationDelay: `${i * 140}ms` }}
+          />
+        ))}
+      </span>
+      Thinking…
     </div>
   );
 }
@@ -77,7 +178,7 @@ type MessageLike = {
   parts?: Array<Record<string, unknown>>;
 };
 
-function Message({ message }: { message: MessageLike }) {
+function Message({ message, running }: { message: MessageLike; running: boolean }) {
   const isUser = message.role === "user";
   const parts = message.parts ?? [];
 
@@ -101,20 +202,17 @@ function Message({ message }: { message: MessageLike }) {
 
   if (!text && tools.length === 0) return null;
 
+  // Steps still in flight keep the group open; a finished turn folds itself up.
+  const stepsRunning =
+    running && tools.some((p) => p.state !== "output-available" && p.state !== "output-error");
+
   return (
-    <div className="flex flex-col gap-1.5">
-      {tools.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {tools.map((part, i) => (
-            <ToolRow
-              key={String(part.toolCallId ?? i)}
-              name={String(part.type).replace(/^tool-/, "")}
-              state={String(part.state ?? "")}
-            />
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      {tools.length > 0 && <ChainOfThought parts={tools} running={stepsRunning} />}
       {text && <p className="text-sm leading-relaxed text-foreground">{text}</p>}
+      {/* The model finished its tools but hasn't written its summary yet —
+          without this the panel looks frozen at exactly the moment it isn't. */}
+      {running && !text && tools.length > 0 && !stepsRunning && <ThinkingBubble />}
     </div>
   );
 }
@@ -216,9 +314,13 @@ export function AgentPanel({
               </div>
             </div>
           ) : (
-            agent.messages.map((message) => (
+            agent.messages.map((message, index) => (
               <div key={message.id} className="flex flex-col gap-1.5">
-                <Message message={message as unknown as MessageLike} />
+                <Message
+                  message={message as unknown as MessageLike}
+                  // Only the final message can still be in progress.
+                  running={agent.busy && index === agent.messages.length - 1}
+                />
                 {/* Revert sits on the message that caused the change, so undo is
                     where the user is already looking. */}
                 {agent.canRevert && agent.revertMessageId === message.id && (
@@ -234,6 +336,13 @@ export function AgentPanel({
               </div>
             ))
           )}
+
+          {/* Sent, but nothing has streamed back yet. Without this the panel
+              sits completely still after you hit enter. */}
+          {agent.busy &&
+            agent.messages[agent.messages.length - 1]?.role === "user" && (
+              <ThinkingBubble />
+            )}
 
           {notes.map((note) => (
             <p key={note.id} className="text-xs text-muted-foreground">

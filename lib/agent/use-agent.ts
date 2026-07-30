@@ -28,6 +28,35 @@ import { applyAgentTool, isAgentToolName } from "./tools";
 import { buildAgentContext } from "./context";
 import { DEFAULT_AGENT_MODEL, MAX_AGENT_STEPS } from "./models";
 
+/**
+ * How many completed user turns of history to resend.
+ *
+ * Every request carries the whole conversation, so without a cap the cost of a
+ * turn grows with the length of the chat — measured at ~3.6k tokens on the
+ * first call climbing past 11.9k by the seventeenth, which burns a monthly
+ * budget in an afternoon. Older turns are also the least useful context here:
+ * `buildAgentContext` re-derives the document state fresh on every request, so
+ * stale tool results describe an email that has since changed.
+ */
+const HISTORY_TURNS = 3;
+
+/**
+ * Trim to the last few turns, cutting only at user-message boundaries.
+ *
+ * Slicing at an arbitrary index can orphan a tool call from its result, which
+ * providers reject outright, so the cut always lands on a user message — the
+ * one place the transcript is guaranteed to be between tool sequences.
+ */
+function trimHistory<T extends { role: string }>(messages: T[]): T[] {
+  const userIndexes = messages.reduce<number[]>((acc, message, index) => {
+    if (message.role === "user") acc.push(index);
+    return acc;
+  }, []);
+
+  if (userIndexes.length <= HISTORY_TURNS) return messages;
+  return messages.slice(userIndexes[userIndexes.length - HISTORY_TURNS]);
+}
+
 export type AgentTurn = {
   /** Document as it was before this turn — restored by revert(). */
   snapshot: EmailDocument;
@@ -70,7 +99,7 @@ export function useAgent({ document, onUpdateDocument, campaignId }: UseAgentOpt
         // has already changed, and the model must see the current state.
         prepareSendMessagesRequest: ({ messages }) => ({
           body: {
-            messages,
+            messages: trimHistory(messages),
             model,
             campaignId,
             context: buildAgentContext({

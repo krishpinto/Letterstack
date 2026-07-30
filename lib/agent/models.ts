@@ -44,13 +44,6 @@ export const AGENT_MODELS: AgentModel[] = [
     provider: "google",
     vision: true,
   },
-  {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
-    hint: "Older, use if newer models misbehave",
-    provider: "google",
-    vision: true,
-  },
 ];
 
 export const DEFAULT_AGENT_MODEL = AGENT_MODELS[0].id;
@@ -69,5 +62,10 @@ export function resolveModelId(requested: string | undefined): string {
  * day's free-tier allowance on a single request. Enforced server-side by
  * counting assistant turns in the submitted history, not just in the client
  * loop, so a modified client cannot raise it.
+ *
+ * Must stay below GLOBAL_RPM_LIMIT or one turn starves the next. At 8 a real
+ * request — add a block, write its HTML, then fix up a few others — could run
+ * out of steps before writing its closing summary, which looked from the panel
+ * like the assistant had simply stopped.
  */
-export const MAX_AGENT_STEPS = 8;
+export const MAX_AGENT_STEPS = Number(process.env.AI_MAX_STEPS ?? 12);

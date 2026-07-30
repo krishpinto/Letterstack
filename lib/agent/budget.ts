@@ -23,11 +23,28 @@ export const GLOBAL_DAILY_REQUEST_LIMIT = Number(
   process.env.AI_DAILY_REQUEST_LIMIT ?? 1_200,
 );
 
-/** Rolling per-minute ceiling. Providers cap somewhere around 10–30 RPM. */
-export const GLOBAL_RPM_LIMIT = Number(process.env.AI_RPM_LIMIT ?? 10);
+/**
+ * Rolling per-minute ceiling. Providers cap somewhere around 10–30 RPM.
+ *
+ * This must stay comfortably above MAX_AGENT_STEPS, or a single multi-step turn
+ * eats most of the minute and the user's very next message is refused. At the
+ * old value of 10 against a step ceiling of 8 that was close to guaranteed.
+ */
+export const GLOBAL_RPM_LIMIT = Number(process.env.AI_RPM_LIMIT ?? 20);
 
-/** Applied to users with no ai_budgets row. */
-export const DEFAULT_MONTHLY_TOKEN_LIMIT = 200_000;
+/**
+ * Applied to users with no ai_budgets row.
+ *
+ * One agent turn costs several model calls, and each carries the conversation
+ * plus a document summary — so real turns land in the thousands of tokens, not
+ * the hundreds. The original 200k ceiling was consumed 65% of the way in
+ * seventeen calls of ordinary use, which reads to the user as the assistant
+ * mysteriously dying. This is sized so the daily request gates bind first,
+ * since those are what actually protect the shared provider quota.
+ */
+export const DEFAULT_MONTHLY_TOKEN_LIMIT = Number(
+  process.env.AI_MONTHLY_TOKEN_LIMIT ?? 5_000_000,
+);
 
 export type BudgetVerdict =
   | { ok: true; tokensUsed: number; tokenLimit: number; requestsToday: number }

@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import {
   convertToModelMessages,
+  createUIMessageStream,
   createUIMessageStreamResponse,
   streamText,
   toUIMessageStream,
@@ -52,6 +53,32 @@ function bad(status: number, error: string) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+/**
+ * Turn a refusal into a normal assistant message rather than an HTTP error.
+ *
+ * The client is reading a UI message stream; a JSON error body just surfaces as
+ * "an error occurred" with no explanation, which is exactly how a quota stop
+ * ends up looking like the assistant silently died. Streaming the reason back
+ * as assistant text means the user reads *why* it stopped, in the conversation,
+ * where they're already looking.
+ *
+ * Deliberately not written to ai_usage: no provider call happened, and that
+ * table is the source of truth for the rate-limit gates — recording refusals
+ * there would make refusals compound into more refusals.
+ */
+function refusal(message: string) {
+  return createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      execute({ writer }) {
+        const id = "refusal";
+        writer.write({ type: "text-start", id });
+        writer.write({ type: "text-delta", id, delta: message });
+        writer.write({ type: "text-end", id });
+      },
+    }),
+  });
+}
+
 export async function POST(request: Request) {
   const userId = await currentUserId();
   if (!userId) return bad(401, "Unauthorized");
@@ -70,24 +97,13 @@ export async function POST(request: Request) {
   }
 
   if (stepsInCurrentTurn(messages) >= MAX_AGENT_STEPS) {
-    return bad(
-      429,
-      `The assistant used its ${MAX_AGENT_STEPS} steps on this request without finishing. Try asking for a smaller change.`,
+    return refusal(
+      `I used all ${MAX_AGENT_STEPS} of my steps on that request without finishing. Try asking for a smaller change, or tell me which part to do first.`,
     );
   }
 
   const verdict = await checkAgentBudget(userId);
-  if (!verdict.ok) {
-    return NextResponse.json(
-      { ok: false, error: verdict.reason },
-      {
-        status: 429,
-        headers: verdict.retryAfterSeconds
-          ? { "Retry-After": String(verdict.retryAfterSeconds) }
-          : undefined,
-      },
-    );
-  }
+  if (!verdict.ok) return refusal(verdict.reason);
 
   const modelId = resolveModelId(typeof body?.model === "string" ? body.model : undefined);
   // Rebuilt by the client each turn from the live document, so it reflects
