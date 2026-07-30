@@ -43,6 +43,7 @@ import {
   useEditorToolbar,
 } from "@/components/editor/editor-toolbar-context"
 import {
+  BASE_BLOCKS,
   BLOCK_LABELS,
   CONTENT_BLOCKS,
 } from "@/components/editor/editor-types"
@@ -163,14 +164,17 @@ export function EditorShell({
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
   /**
-   * Optional docked panel on the right, given the live document and the same
-   * updater every other surface writes through. A render prop rather than a
-   * built-in so /studio can host the agent without this file growing again,
-   * and so /editor stays byte-identical in behaviour.
+   * Optional assistant, rendered as a tab in the left sidebar beside the block
+   * library. A render prop rather than a built-in so /studio can host the agent
+   * without this file growing again, and so /editor stays unchanged.
+   *
+   * It receives the canvas selection so the assistant can target whatever block
+   * the user is actually looking at.
    */
   renderAssistant?: (api: {
     document: EmailDocument
     updateDocument: (updater: (current: EmailDocument) => EmailDocument) => void
+    selectedBlockId: string
   }) => React.ReactNode
 } = {}) {
   const router = useRouter()
@@ -636,6 +640,11 @@ export function EditorShell({
                   setSelectedBlockId("")
                   setRightPanel("settings")
                 }}
+                assistant={renderAssistant?.({
+                  document,
+                  updateDocument,
+                  selectedBlockId,
+                })}
               />
               <SidebarInset className="min-h-0 overflow-hidden flex flex-col bg-background">
                 <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -661,11 +670,6 @@ export function EditorShell({
                 />
               </CanvasProvider>
               )}
-
-              {/* Docked, not floating: the assistant is a workspace of its own,
-                  and the canvas should reflow rather than be covered. Only in
-                  the editor view — the HTML and preview views are full-bleed. */}
-              {view === "editor" && renderAssistant?.({ document, updateDocument })}
 
               {view === "editor" && inspectorOpen && (
                 <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[328px] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl">
@@ -1122,20 +1126,53 @@ function EmailHtmlPane({
 function EditorLeftSidebar({
   onAddBlock,
   onOpenTheme,
+  assistant,
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
   onOpenTheme: () => void
   // onOpenSettings kept off the params while the Campaign settings button is
   // commented out below; re-add it here (and in the caller) to restore.
   onOpenSettings?: () => void
+  /** Rendered as a second tab when the host route provides one (/studio). */
+  assistant?: React.ReactNode
 }) {
+  const [tab, setTab] = React.useState<"blocks" | "assistant">("blocks")
+  // Without an assistant this is the plain block library, exactly as /editor
+  // has always been — no tab strip, no layout shift.
+  const showTabs = Boolean(assistant)
+  const activeTab = showTabs ? tab : "blocks"
+
   return (
     <Sidebar variant="inset" collapsible="offcanvas" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
+        {showTabs && (
+          <div className="flex shrink-0 gap-1 p-2 pb-0">
+            {(["blocks", "assistant"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTab(value)}
+                className={cn(
+                  "flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-colors",
+                  activeTab === value
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        )}
+
         <SidebarGroup className="min-h-0 flex-1 p-0">
-          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
-            <BlockLibrary onAddBlock={onAddBlock} />
-          </ScrollArea>
+          {activeTab === "assistant" ? (
+            assistant
+          ) : (
+            <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
+              <BlockLibrary onAddBlock={onAddBlock} />
+            </ScrollArea>
+          )}
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-t p-2">
@@ -1179,9 +1216,12 @@ function BlockLibrary({
 }) {
   const [searchQuery, setSearchQuery] = React.useState("")
 
+  // Base blocks only. Composites (text section, article card) are offered
+  // through the assistant's `/` menu instead, so the palette reads as a set of
+  // parts rather than a mix of parts and pre-built layouts.
   const editorNewBlocks = React.useMemo(
     () => [
-      ...CONTENT_BLOCKS,
+      ...BASE_BLOCKS,
       { type: "columns" as const, label: "Columns", icon: LayoutTwoColumnIcon },
     ],
     [],

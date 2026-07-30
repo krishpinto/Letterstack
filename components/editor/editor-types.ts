@@ -44,21 +44,39 @@ export const BLOCK_LABELS: Record<EmailBlock["type"], string> = {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const CONTENT_BLOCKS: Array<{ type: EmailBlock["type"]; label: string; icon: any }> = [
-  { type: "image",       label: "Image",     icon: Image01Icon },
-  { type: "heading",     label: "Heading",   icon: TextIcon },
-  { type: "paragraph",   label: "Paragraph", icon: TextAlignJustifyCenterIcon },
-  { type: "button",      label: "Button",    icon: Cursor01Icon },
-  { type: "divider",     label: "Divider",   icon: TextAlignJustifyCenterIcon },
-  { type: "spacer",      label: "Spacer",    icon: ExpandParagraphIcon },
-  { type: "video",       label: "Video",     icon: Video01Icon },
-  { type: "social",      label: "Social",    icon: Share01Icon },
-  { type: "logo",        label: "Logo",      icon: StarIcon },
-  { type: "text",        label: "Text+",     icon: News01Icon },
-  { type: "articleCard", label: "Article",   icon: LayoutTwoColumnIcon },
-  { type: "rawHtml",     label: "Code",      icon: CodeIcon },
-  { type: "footer",      label: "Footer",    icon: Add01Icon },
+type BlockEntry = { type: EmailBlock["type"]; label: string; icon: any };
+
+/**
+ * Primitives — one job each, no pre-filled composition. These are the only
+ * things the block library offers, so the palette stays a set of parts rather
+ * than a mix of parts and finished furniture.
+ */
+export const BASE_BLOCKS: BlockEntry[] = [
+  { type: "image",     label: "Image",     icon: Image01Icon },
+  { type: "heading",   label: "Heading",   icon: TextIcon },
+  { type: "paragraph", label: "Paragraph", icon: TextAlignJustifyCenterIcon },
+  { type: "button",    label: "Button",    icon: Cursor01Icon },
+  { type: "divider",   label: "Divider",   icon: TextAlignJustifyCenterIcon },
+  { type: "spacer",    label: "Spacer",    icon: ExpandParagraphIcon },
+  { type: "video",     label: "Video",     icon: Video01Icon },
+  { type: "social",    label: "Social",    icon: Share01Icon },
+  { type: "logo",      label: "Logo",      icon: StarIcon },
+  { type: "rawHtml",   label: "Code",      icon: CodeIcon },
+  { type: "footer",    label: "Footer",    icon: Add01Icon },
 ];
+
+/**
+ * Composites — several elements arranged together with placeholder copy. They
+ * are a starting layout rather than a primitive, so they live behind `/` in the
+ * assistant instead of sitting in the palette pretending to be a base block.
+ */
+export const TEMPLATE_BLOCKS: BlockEntry[] = [
+  { type: "text",        label: "Text section", icon: News01Icon },
+  { type: "articleCard", label: "Article card", icon: LayoutTwoColumnIcon },
+];
+
+/** Every insertable block. Used where the distinction doesn't matter. */
+export const CONTENT_BLOCKS: BlockEntry[] = [...BASE_BLOCKS, ...TEMPLATE_BLOCKS];
 
 export const COLUMN_LAYOUTS = [
   { label: "1",   widths: [1] },

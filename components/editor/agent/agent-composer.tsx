@@ -12,7 +12,6 @@
 //   /  runs a command — most of which are local and cost no model call at all
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -34,7 +33,7 @@ import {
   KEY_ENTER_COMMAND,
   type TextNode,
 } from "lexical";
-import { ArrowUp, ChevronDown, Sparkles, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Sparkles, Square, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -43,10 +42,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AGENT_COMMANDS, type AgentCommand } from "@/lib/agent/commands";
+import {
+  AGENT_COMMANDS,
+  COMMAND_GROUP_ORDER,
+  type AgentCommand,
+} from "@/lib/agent/commands";
 import { AGENT_MODELS } from "@/lib/agent/models";
 import { summarizeBlock } from "@/lib/agent/tools";
-import type { EmailBlock, EmailDocument } from "@/lib/email/document";
+import { findBlock, type EmailBlock, type EmailDocument } from "@/lib/email/document";
 import { cn } from "@/lib/utils";
 
 import { $createMentionNode, $isMentionNode, MentionNode } from "./mention-node";
@@ -71,11 +74,21 @@ class CommandOption extends MenuOption {
   }
 }
 
-/** Shared popover shell so both menus look and behave identically. */
+/**
+ * Shared popover shell so both menus look and behave identically.
+ *
+ * Positioned against the composer rather than the caret, and rendered inline
+ * instead of through the plugin's anchor element. The plugin's anchor is
+ * appended to document.body and sized from the caret rect — about 0px wide —
+ * so portalling a fixed-width menu into it overflowed the body and shifted the
+ * page, and the anchor carries no z-index so the menu sat under the editor
+ * chrome. Anchoring to the composer also just reads better in a narrow
+ * sidebar: the menu spans the input and opens upward into the conversation.
+ */
 function MenuShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="w-[290px] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
-      <div className="max-h-64 overflow-y-auto">{children}</div>
+    <div className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lg">
+      <div className="max-h-64 overflow-y-auto overscroll-contain">{children}</div>
     </div>
   );
 }
@@ -169,27 +182,24 @@ function MentionsPlugin({ document }: { document: EmailDocument }) {
       onQueryChange={setQuery}
       onSelectOption={onSelect}
       triggerFn={triggerFn}
-      menuRenderFn={(anchorRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
-        anchorRef.current && options.length
-          ? createPortal(
-              <MenuShell>
-                {options.map((option, i) => (
-                  <MenuRow
-                    key={option.blockId}
-                    active={selectedIndex === i}
-                    title={option.label}
-                    subtitle={`${option.blockType} · reference only`}
-                    onClick={() => {
-                      setHighlightedIndex(i);
-                      selectOptionAndCleanUp(option);
-                    }}
-                    onMouseEnter={() => setHighlightedIndex(i)}
-                  />
-                ))}
-              </MenuShell>,
-              anchorRef.current,
-            )
-          : null
+      menuRenderFn={(_anchorRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
+        options.length ? (
+          <MenuShell>
+            {options.map((option, i) => (
+              <MenuRow
+                key={option.blockId}
+                active={selectedIndex === i}
+                title={option.label}
+                subtitle={`${option.blockType} · reference only`}
+                onClick={() => {
+                  setHighlightedIndex(i);
+                  selectOptionAndCleanUp(option);
+                }}
+                onMouseEnter={() => setHighlightedIndex(i)}
+              />
+            ))}
+          </MenuShell>
+        ) : null
       }
     />
   );
@@ -206,9 +216,18 @@ function CommandsPlugin({ onRun }: { onRun: (command: AgentCommand) => void }) {
   const options = React.useMemo(() => {
     const needle = (query ?? "").toLowerCase();
     return AGENT_COMMANDS.filter(
-      (command) => !needle || command.label.toLowerCase().includes(needle),
+      (command) =>
+        !needle ||
+        command.label.toLowerCase().includes(needle) ||
+        command.group.toLowerCase().includes(needle),
     )
-      .slice(0, 8)
+      // Group order is the menu's information architecture: parts you insert,
+      // then look, then layout, then the ones that spend a model call.
+      .sort(
+        (a, b) =>
+          COMMAND_GROUP_ORDER.indexOf(a.group) - COMMAND_GROUP_ORDER.indexOf(b.group),
+      )
+      .slice(0, 10)
       .map((command) => new CommandOption(command));
   }, [query]);
 
@@ -230,37 +249,40 @@ function CommandsPlugin({ onRun }: { onRun: (command: AgentCommand) => void }) {
       onQueryChange={setQuery}
       onSelectOption={onSelect}
       triggerFn={triggerFn}
-      menuRenderFn={(anchorRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
-        anchorRef.current && options.length
-          ? createPortal(
-              <MenuShell>
-                {options.map((option, i) => (
-                  <MenuRow
-                    key={option.command.id}
-                    active={selectedIndex === i}
-                    title={option.command.label}
-                    subtitle={option.command.hint}
-                    badge={
-                      option.command.usesAi ? (
-                        // Makes the cost visible: everything without this badge
-                        // is free and instant.
-                        <span className="flex shrink-0 items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                          <Sparkles className="size-2.5" />
-                          AI
-                        </span>
-                      ) : null
-                    }
-                    onClick={() => {
-                      setHighlightedIndex(i);
-                      selectOptionAndCleanUp(option);
-                    }}
-                    onMouseEnter={() => setHighlightedIndex(i)}
-                  />
-                ))}
-              </MenuShell>,
-              anchorRef.current,
-            )
-          : null
+      menuRenderFn={(_anchorRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
+        options.length ? (
+          <MenuShell>
+            {options.map((option, i) => (
+              <React.Fragment key={option.command.id}>
+                {(i === 0 || options[i - 1].command.group !== option.command.group) && (
+                  <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                    {option.command.group}
+                  </div>
+                )}
+                <MenuRow
+                  active={selectedIndex === i}
+                  title={option.command.label}
+                  subtitle={option.command.hint}
+                  badge={
+                    option.command.usesAi ? (
+                      // Makes the cost visible: everything without this badge
+                      // is free and instant.
+                      <span className="flex shrink-0 items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                        <Sparkles className="size-2.5" />
+                        AI
+                      </span>
+                    ) : null
+                  }
+                  onClick={() => {
+                    setHighlightedIndex(i);
+                    selectOptionAndCleanUp(option);
+                  }}
+                  onMouseEnter={() => setHighlightedIndex(i)}
+                />
+              </React.Fragment>
+            ))}
+          </MenuShell>
+        ) : null
       }
     />
   );
@@ -377,15 +399,18 @@ export function AgentComposer({
   document,
   busy,
   model,
+  selectedBlockId,
   onModelChange,
   onSubmit,
   onRunCommand,
   onStop,
-  placeholder = "Ask for a change, @ a block, / for themes",
+  placeholder = "Ask for a change, @ a block, / for commands",
 }: {
   document: EmailDocument;
   busy: boolean;
   model: string;
+  /** Block currently selected on the canvas, auto-attached as context. */
+  selectedBlockId?: string;
   onModelChange: (model: string) => void;
   onSubmit: (value: ComposerSubmit) => void;
   onRunCommand: (command: AgentCommand) => void;
@@ -394,6 +419,30 @@ export function AgentComposer({
 }) {
   const [empty, setEmpty] = React.useState(true);
   const activeModel = AGENT_MODELS.find((m) => m.id === model) ?? AGENT_MODELS[0];
+
+  // Selecting a block on the canvas attaches it as context automatically, so
+  // "make this shorter" resolves to the block you're looking at without
+  // anyone typing an @ first.
+  //
+  // Shown as a pill above the input rather than injected as a chip inside it:
+  // a chip that rewrites itself every time the canvas selection changes would
+  // fight the user mid-sentence and move their caret. Dismissing is per-block,
+  // so re-selecting or picking a different block re-attaches.
+  const [dismissedId, setDismissedId] = React.useState<string | null>(null);
+  const attachedId =
+    selectedBlockId && selectedBlockId !== dismissedId ? selectedBlockId : null;
+  const attachedBlock = attachedId ? findBlock(document.blocks, attachedId) : undefined;
+  const attachedLabel = attachedBlock
+    ? summarizeBlock(attachedBlock, 34) || attachedBlock.type
+    : null;
+
+  function handleSubmit(value: ComposerSubmit) {
+    // Merge the auto-attached block in, without duplicating an explicit @.
+    const references = attachedId
+      ? [...new Set([...value.references, attachedId])]
+      : value.references;
+    onSubmit({ ...value, references });
+  }
 
   return (
     <LexicalComposer
@@ -404,7 +453,25 @@ export function AgentComposer({
         onError: (error) => console.error("Composer error", error),
       }}
     >
-      <div className="rounded-2xl bg-black/5 p-1.5 dark:bg-white/5">
+      {/* relative: both typeahead menus position against this box. */}
+      <div className="relative rounded-2xl bg-black/5 p-1.5 dark:bg-white/5">
+        {attachedLabel && (
+          <div className="flex items-center gap-1.5 px-1.5 pb-1 pt-1">
+            <span className="flex min-w-0 items-center gap-1 rounded-md bg-primary/12 py-0.5 pl-1.5 pr-1 text-[11px] font-medium text-primary">
+              <span className="truncate">@{attachedLabel}</span>
+              <button
+                type="button"
+                aria-label="Detach selected block"
+                onClick={() => setDismissedId(attachedId)}
+                className="shrink-0 rounded-sm p-0.5 hover:bg-primary/20"
+              >
+                <X className="size-2.5" />
+              </button>
+            </span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">selected</span>
+          </div>
+        )}
+
         <div className="relative px-2.5 py-2">
           <PlainTextPlugin
             contentEditable={
@@ -445,10 +512,10 @@ export function AgentComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <SendButton busy={busy} empty={empty} onSubmit={onSubmit} onStop={onStop} />
+          <SendButton busy={busy} empty={empty} onSubmit={handleSubmit} onStop={onStop} />
         </div>
 
-        <SubmitPlugin onSubmit={onSubmit} onEmptyChange={setEmpty} />
+        <SubmitPlugin onSubmit={handleSubmit} onEmptyChange={setEmpty} />
         <MentionsPlugin document={document} />
         <CommandsPlugin onRun={onRunCommand} />
         <HistoryPlugin />

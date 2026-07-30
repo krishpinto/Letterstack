@@ -22,9 +22,10 @@ import {
 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { AgentCommand } from "@/lib/agent/commands";
+import { resolveCommandPrompt, type AgentCommand } from "@/lib/agent/commands";
+import { summarizeBlock } from "@/lib/agent/tools";
 import { useAgent } from "@/lib/agent/use-agent";
-import { createId, type EmailDocument } from "@/lib/email/document";
+import { createId, findBlock, type EmailDocument } from "@/lib/email/document";
 import { cn } from "@/lib/utils";
 
 import { AgentComposer } from "./agent-composer";
@@ -127,10 +128,13 @@ const STARTERS = [
 export function AgentPanel({
   document,
   updateDocument,
+  selectedBlockId,
   campaignId,
 }: {
   document: EmailDocument;
   updateDocument: (updater: (current: EmailDocument) => EmailDocument) => void;
+  /** Canvas selection, auto-attached as context for the next message. */
+  selectedBlockId?: string;
   campaignId?: string;
 }) {
   const agent = useAgent({ document, onUpdateDocument: updateDocument, campaignId });
@@ -147,7 +151,18 @@ export function AgentPanel({
 
   function handleCommand(command: AgentCommand) {
     if (command.usesAi && command.prompt) {
-      agent.send(command.prompt);
+      // Writing commands target the selected block when there is one, so
+      // /rephrase doesn't quietly rewrite the entire email.
+      const block = selectedBlockId
+        ? findBlock(document.blocks, selectedBlockId)
+        : undefined;
+      const reference = block
+        ? `@${summarizeBlock(block, 34) || block.type}`
+        : null;
+      agent.send(
+        resolveCommandPrompt(command, reference),
+        block ? [block.id] : [],
+      );
       return;
     }
     if (!command.apply) return;
@@ -160,7 +175,9 @@ export function AgentPanel({
   const empty = agent.messages.length === 0 && notes.length === 0;
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col overflow-hidden border-l border-border bg-background">
+    // Fills whatever container it's given — it lives in the left sidebar, so
+    // width and borders belong to the sidebar, not to this component.
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex items-center gap-2">
           <SparklesIcon className="size-3.5 text-primary" />
@@ -240,12 +257,13 @@ export function AgentPanel({
           document={document}
           busy={agent.busy}
           model={agent.model}
+          selectedBlockId={selectedBlockId}
           onModelChange={agent.setModel}
           onStop={agent.stop}
           onRunCommand={handleCommand}
           onSubmit={({ text, references }) => agent.send(text, references)}
         />
       </div>
-    </aside>
+    </div>
   );
 }

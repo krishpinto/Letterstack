@@ -88,8 +88,12 @@ export default function StudioPage() {
       initialDocument={initialDoc}
       onSaveAsTemplate={handleSaveAsTemplate}
       onExit={() => router.push("/dashboard/templates")}
-      renderAssistant={({ document, updateDocument }) => (
-        <AgentPanel document={document} updateDocument={updateDocument} />
+      renderAssistant={({ document, updateDocument, selectedBlockId }) => (
+        <AgentPanel
+          document={document}
+          updateDocument={updateDocument}
+          selectedBlockId={selectedBlockId}
+        />
       )}
     />
   );
