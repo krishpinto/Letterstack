@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { PageLoader } from "@/components/bar-spinner";
+import { UsersPanel } from "@/components/admin/users-panel";
 import { type ChartConfig } from "@/components/evilcharts/ui/chart";
 import {
   EvilRadialChart,
@@ -678,6 +679,9 @@ export default function AdminInfraPage() {
             </div>
           )}
         </BlockCard>
+
+        {/* Early-access waitlist */}
+        <UsersPanel />
 
         {/* Platform stats */}
         <BlockCard title="Platform" icon={UsersIcon} block={data.platform}>

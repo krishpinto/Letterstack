@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationInvites, organizationMembers, organizations } from "./schema";
+import { approveViaInviteAccept } from "./access";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -128,6 +129,11 @@ export async function acceptOrganizationInvite(
     .update(organizationInvites)
     .set({ acceptedAt: new Date() })
     .where(eq(organizationInvites.id, invite.id));
+
+  // Only an already-approved org can send an invite, so a teammate accepting
+  // one is joining a vetted workspace — they shouldn't be stuck on the
+  // early-access waitlist behind the same gate as a stranger.
+  await approveViaInviteAccept(userId);
 
   return { ok: true, organizationId: invite.organizationId };
 }

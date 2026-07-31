@@ -4,7 +4,7 @@ This folder is a small searchable knowledge pack for Codex and
 codebase-memory-mcp. It summarizes the parts of the system that are expensive
 to rediscover from code every turn.
 
-Last reconciled with the working tree: **2026-06-23**.
+Last reconciled with the working tree: **2026-07-31**.
 
 ## Source Of Truth
 
@@ -32,6 +32,8 @@ or `dashboard theming` quickly.
 - `mail-system.md`: canonical current send/event/unsubscribe file map.
 - `gmail-sending-plan.md`: proposed Gmail-mailbox sending + Senders module (not built).
 - `agentic-editor-plan.md`: proposed AI agent panel in the editor (not built).
+- `early-access-plan.md`: waitlist/approval gate ahead of public beta
+  marketing — built, gated centrally in `proxy.ts` (see below).
 - `chat-log.md`: running thread breadcrumbs for compaction recovery.
 - `send-analytics.md`: sending, suppression, SES events, bounce/complaint logic.
 - `ui-theming.md`: theme/layout rules for hero, marketing, and dashboard.

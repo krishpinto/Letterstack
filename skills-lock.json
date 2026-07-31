@@ -13,17 +13,23 @@
       "skillPath": "skills/email-sdk/SKILL.md",
       "computedHash": "397a20b6a4b505ceb9f359a7069593d2aebb43db34e2be93b99ccc8a98279e76"
     },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
     "migrate-ai-sdk-v6-to-v7": {
       "source": "vercel/ai",
       "sourceType": "github",
       "skillPath": "skills/migrate-ai-sdk-v6-to-v7/SKILL.md",
       "computedHash": "92a68769c5a82e6bd35cb8fe13537a80f6341742306d6a23c52afb6c1f7b5ab9"
     },
-    "frontend-design": {
-      "source": "anthropics/skills",
+    "nextauth-authentication": {
+      "source": "mindrally/skills",
       "sourceType": "github",
-      "skillPath": "skills/frontend-design/SKILL.md",
-      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+      "skillPath": "nextauth-authentication/SKILL.md",
+      "computedHash": "71be099a628217df877d48b9423468097e6706df5a382f4ab6cb28b0e7212343"
     },
     "shadcn": {
       "source": "shadcn/ui",
