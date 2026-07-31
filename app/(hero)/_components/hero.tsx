@@ -194,7 +194,7 @@ export function Hero() {
         <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <Button size="lg" asChild>
             <Link href="/signup">
-              Get started free
+              Join waitlist
               <ArrowRightIcon data-icon="inline-end" />
             </Link>
           </Button>
