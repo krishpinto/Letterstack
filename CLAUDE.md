@@ -2,8 +2,9 @@
 
 > Root constitution. Keep this file lean. Detail for a module belongs in that
 > module's own CLAUDE.md once the module has real code (see "Context file
-> policy" at the bottom). This project starts from an empty repo — nothing
-> in this file refers to pre-existing code.
+> policy" at the bottom), or in `context/` for cross-cutting plans. This file
+> describes a live, running product — check `context/` and the code itself
+> before trusting a stale line here.
 
 ---
 
@@ -14,58 +15,77 @@ Block-based canvas editor → email-safe HTML → sent via Amazon SES from the
 client's own domain. Positioning: real responsive HTML, no Gmail clipping,
 no image-flattening, SES pricing, no lock-in.
 
-**We are not building "a better Mailchimp."** We are building the right tool
-for a CIBA-shaped user: sends ~3,000 emails once a month, currently exporting
-flat Canva images because their existing editor is unusable.
+**We are not building "a better Mailchimp."** We started by building the
+right tool for a CIBA-shaped user: sends ~3,000 emails once a month, was
+exporting flat Canva images because their existing editor was unusable. CIBA
+is now a live beta user sending real campaigns through LetterStack.
 
-**Out of scope entirely:** lead-gen scraping, multi-tenant SaaS features
-(per-client domains, billing, self-serve onboarding) until a second paying
-client exists.
+**Out of scope entirely:** lead-gen scraping (never planned, not revisited),
+billing/payments, per-client custom domains.
+
+**In scope now, gated:** public self-serve signup exists, but access beyond
+signup is gated behind an early-access waitlist with admin approval — see
+`context/early-access-plan.md`. This replaces the old "no self-serve until a
+second paying client" rule: the second (and third, and Nth) client is now
+meant to come through the waitlist, not through hand-onboarding.
 
 ---
 
 ## North Star Milestone
 
-**One real CIBA campaign sent through LetterStack.**
-Every task is sequenced backwards from this. If a task doesn't serve the next
-unfinished phase, it doesn't get built yet.
+**Public beta: waitlist-gated signup live, CIBA-shaped orgs auto-approved,
+a first cohort of beta users approved and sending real campaigns.**
+
+The original north star — one real CIBA campaign sent through LetterStack —
+is done. Every task is now sequenced backwards from getting a small, curated
+set of additional real orgs onto the platform without opening the doors
+wide open. If a task doesn't serve that, it doesn't get built yet.
 
 ---
 
 ## Phase Tracker (update as milestones complete)
 
-### Phase 0 — Setup ⬜
-- [ ] SES production access request submitted (24–48hr lead time, blocks all send testing — Day 1, non-negotiable)
-- [ ] Repo scaffolded to module layout below (Next.js 15, TypeScript, Tailwind, shadcn/ui)
-- [ ] Neon Postgres provisioned, Drizzle configured, first migration
+### Phase 0 — Setup ✅
+- [x] Repo scaffolded (Next.js, TypeScript, Tailwind, shadcn/ui)
+- [x] Neon Postgres provisioned, Drizzle configured, migrations ongoing
+- [x] SES sending live (CIBA sends real campaigns through it)
 
-### Phase 1 — Editor core + send path (target: before July 1) ⬜
-- [ ] `EmailDocument` schema in `lib/email/document.ts` — block types incl. Article Card (CIBA's layout requires it)
-- [ ] Compiler in `lib/email/compiler.ts` — blocks → email-safe table HTML + plain text
-- [ ] Canvas editor: block list, selection, inspector panel, global settings sheet, live iframe preview (desktop + mobile)
-- [ ] Backend minimum: campaigns, recipients, email_events, suppressed_emails tables
-- [ ] Auth: single hardcoded login (NextAuth full setup is Phase 3+)
-- [ ] Trigger endpoint → QStash fan-out → batched workers
-- [ ] Idempotency: per-recipient sent flag (see Send Rules)
-- [ ] SES configuration set + SNS → webhook endpoint (delivery/bounce/complaint/open/click)
-- [ ] Suppression list wired into send path
-- [ ] Test: 100+ emails to seed addresses through the full pipeline
+### Phase 1 — Editor core + send path ✅
+- [x] `EmailDocument` schema + compiler (`lib/email/`)
+- [x] Canvas editor: block list, selection, inspector panel, global settings,
+      live preview
+- [x] Backend: campaigns, recipients, email_events, suppressed_emails tables
+- [x] Auth: full NextAuth (credentials + Google OAuth), organizations,
+      organization_members, invites — well beyond the original "hardcoded
+      login" placeholder
+- [x] Trigger endpoint → QStash fan-out → batched workers, idempotent sends
+- [x] SES configuration set + SNS → webhook endpoint, suppression wired in
 
-### Phase 2 — First real send (July, weekends only) ⬜
-- [ ] Import wizard: upload → column mapping → validation → confirm (SheetJS + PapaParse)
-- [ ] Campaign status view (queued / sending / sent / failed counts)
-- [ ] Pre-send validation: empty list check, unsubscribe link present, HTML < ~100KB (Gmail clipping)
-- [ ] **CIBA's monthly newsletter sent through LetterStack** ← the milestone
+### Phase 2 — First real send ✅
+- [x] Import wizard (SheetJS + PapaParse)
+- [x] Campaign status view
+- [x] Pre-send validation
+- [x] **CIBA sending real campaigns through LetterStack** ← milestone achieved
 
-### Phase 3 — Harden + polish (August) ⬜
-- [ ] Fix whatever the real send exposed
-- [ ] Analytics dashboard (reads email_events — delivered/bounced/opened/clicked per campaign)
-- [ ] dnd-kit drag-and-drop block reordering
-- [ ] Inline text editing in canvas blocks (TipTap, scoped per-block — see Editor Rules)
-- [ ] Vercel Blob image uploads
+### Phase 3 — Harden + polish (ongoing)
+- [x] Analytics (SES events → `email_events` → dashboard)
+- [x] Image uploads (UploadThing, not Vercel Blob — see Tech Stack)
+- [x] Agentic AI editor panel (Lexical + AI SDK + Gemini, block-scoped tools,
+      per-model quota metering) — went further than the original "inline
+      TipTap editing" plan
+- [ ] dnd-kit drag-and-drop block reordering (still arrow-button only)
+- [ ] Fix whatever the next real sends expose
 
-### Phase 4 — September
-- [ ] Live demo ready: real product + "my platform sends CIBA's monthly newsletter"
+### Phase 4 — Public beta / waitlist launch (current focus) ⬜
+- [x] `users.access_status` column + admin approval flow (design + as-built:
+      `context/early-access-plan.md`)
+- [x] `/early-access` holding page for pending/rejected accounts
+- [x] Admin users list + approve/reject actions in `/admin`
+- [x] Application-received + approved transactional emails
+- [x] Migration `0006_early_access.sql` applied to the real Neon DB —
+      existing accounts (including CIBA's) confirmed backfilled to `approved`
+- [ ] Marketing push publishing the "beta, one client, applying now" story
+      — content lives outside this repo, not planned here
 
 ---
 
@@ -181,8 +201,8 @@ cheap if ever genuinely needed.
 | Queue | Upstash QStash |
 | Email | Amazon SES via AWS SDK v3 (SESv2), ap-south-1 (fallback: Resend) |
 | Files/parsing | SheetJS (xlsx), PapaParse (csv) |
-| Image CDN | Vercel Blob (Phase 3) |
-| Auth | Hardcoded login now → NextAuth v5 later |
+| Image CDN | UploadThing |
+| Auth | NextAuth: credentials (bcrypt) + Google OAuth |
 | Hosting | Vercel |
 
 ---

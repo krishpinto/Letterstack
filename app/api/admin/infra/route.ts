@@ -16,21 +16,13 @@ import {
   users,
 } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { isAdmin } from "@/lib/admin";
 import { modelQuotas } from "@/lib/agent/budget";
 
 export const runtime = "nodejs";
 
 // Founder-only infra monitor. Access = signed in AND email in ADMIN_EMAILS
 // (comma-separated env var, set in .env.local and Vercel).
-
-function isAdmin(email: string | null | undefined) {
-  if (!email) return false;
-  const allowed = (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return allowed.includes(email.toLowerCase());
-}
 
 async function sesAccount() {
   const client = new SESv2Client({ region: process.env.AWS_REGION });

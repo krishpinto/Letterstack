@@ -18,6 +18,20 @@ export const users = pgTable("users", {
   // Null for OAuth-only accounts (Google sign-in, no password set).
   passwordHash: text("password_hash"),
   sendingSlug: text("sending_slug"),
+  // Early-access gate: 'pending' | 'approved' | 'rejected'. New signups
+  // default to pending; existing accounts were backfilled to approved in
+  // migration 0006 so nothing regressed for current users. Checked in
+  // proxy.ts before /dashboard, /editor, and /onboarding.
+  accessStatus: text("access_status").notNull().default("pending"),
+  accessDecidedAt: timestamp("access_decided_at"),
+  accessDecidedByUserId: uuid("access_decided_by_user_id"),
+  // Set the first time the /early-access page sends the "you're on the
+  // list" email, so a pending user who reloads that page doesn't get a
+  // second copy. Sending from there (rather than from signup/Google
+  // sign-in) keeps the AWS SDK out of proxy.ts's edge bundle — lib/auth.ts
+  // is shared with the edge middleware, but /early-access is a normal
+  // Node.js server component.
+  waitlistAppliedEmailSentAt: timestamp("waitlist_applied_email_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

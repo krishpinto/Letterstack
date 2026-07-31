@@ -11,6 +11,33 @@ signup/login
 -> dashboard
 ```
 
+**Early-access gate** (`context/early-access-plan.md`): `users.access_status`
+is checked centrally in `proxy.ts` (Next.js's middleware, renamed from
+`middleware.ts` as of Next.js 16). `/early-access` is the front door during
+the invite-only beta — reachable with no session, doubling as the "apply"
+landing page for anonymous visitors and the pending/rejected status page
+for signed-in non-approved accounts —
+
+```text
+anonymous "/" -> /early-access ("Apply for early access" + signup/login CTAs)
+signup/login
+-> pending?  -> /early-access (status page, no dashboard/editor/onboarding/"/" access)
+-> approved? -> onboarding (if no org yet) -> dashboard, "/", everything opens
+```
+
+`/` sends every non-approved visitor — anonymous included — to
+`/early-access`; there is no marketing site to browse during the beta.
+`/dashboard`, `/editor`, `/onboarding`, `/admin` are unaffected by that
+specific redirect: an anonymous request to one of those still goes to
+`/login` as a plain deep link would, not to `/early-access`. Existing
+accounts (including CIBA's) were backfilled to `approved` in migration
+`0006_early_access.sql`, so nothing changed for anyone already using
+LetterStack. New signups default to `pending` until an admin approves them
+from `/admin` (`components/admin/users-panel.tsx`,
+`app/api/admin/users/route.ts`). Teammates invited into an already-approved
+org are auto-approved on invite accept (`db/invites.ts`,
+`acceptOrganizationInvite`) — only fresh, unaffiliated signups actually wait.
+
 Onboarding creates an organization with:
 
 - organization name
@@ -88,7 +115,8 @@ can open campaigns from any organization they belong to.
 
 ## Important Routes
 
-- `/`: light hero page.
+- `/`: light hero page. Gated — see the early-access section above; only
+  `approved` sessions reach it.
 - `/login`, `/signup`, `/onboarding`: auth and setup.
 - `/dashboard`: organization-scoped dashboard.
 - `/dashboard/audience`: organization Audience list and CSV/Excel import.
