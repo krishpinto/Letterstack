@@ -41,15 +41,42 @@ function ClaimPill({ label, on }: { label: string; on: boolean }) {
   );
 }
 
+// A precise, evenly-spaced dotted rounded-rect. Native `border-dotted`
+// can't have its dot spacing tuned and clumps into a solid blob at rounded
+// corners — an SVG stroke gives exact control over dot size/gap and stays
+// clean around the radius at any box size.
+function DottedFrame() {
+  return (
+    <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden>
+      <rect
+        x="1"
+        y="1"
+        width="calc(100% - 2px)"
+        height="calc(100% - 2px)"
+        rx="23"
+        ry="23"
+        fill="none"
+        stroke="#B8B8BE"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeDasharray="0.5 5"
+      />
+    </svg>
+  );
+}
+
 function EdgeMark({ icon: Icon, side }: { icon: typeof MailIcon; side: "top" | "bottom" }) {
   return (
     <div
       className={cn(
-        "absolute left-1/2 z-10 flex size-10 -translate-x-1/2 items-center justify-center rounded-full border border-[#E4E4E7] bg-white shadow-xs",
+        "absolute left-1/2 z-10 flex -translate-x-1/2 items-center justify-center",
         side === "top" ? "top-0 -translate-y-1/2" : "bottom-0 translate-y-1/2",
       )}
     >
-      <Icon className="size-4 text-[#717171]" />
+      {/* Breaks the dotted line only where the icon sits — everywhere else
+          along the frame stays a continuous, unbroken run of dots. */}
+      <span className="absolute -inset-1.5 rounded-full bg-white" aria-hidden />
+      <Icon strokeWidth={1.5} className="relative size-9 text-[#0A0A0A]" />
     </div>
   );
 }
@@ -62,7 +89,8 @@ export function TrustSection() {
   return (
     <section id="contact" className="scroll-mt-24 py-24 sm:py-28">
       <div className="mx-auto max-w-screen-xl px-6 lg:px-10">
-        <div className="relative rounded-3xl border-2 border-dotted border-[#C7C7CC] px-6 py-16 sm:px-10 sm:py-20">
+        <div className="relative rounded-3xl px-6 py-16 sm:px-10 sm:py-20">
+          <DottedFrame />
           <EdgeMark icon={MailIcon} side="top" />
 
           <div className="flex flex-col items-center gap-8 text-center">
@@ -73,7 +101,7 @@ export function TrustSection() {
               Real email,
             </h2>
 
-            <div className="relative -mx-6 w-[calc(100%+3rem)] overflow-hidden py-1 sm:-mx-10 sm:w-[calc(100%+5rem)]">
+            <div className="relative w-full py-1">
               <Marquee pauseOnHover className="[--duration:70s] [--gap:0.75rem]">
                 {CLAIMS.map((claim) => (
                   <ClaimPill key={claim.label} {...claim} />
