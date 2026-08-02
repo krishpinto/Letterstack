@@ -3,9 +3,7 @@ import { Features } from "./_components/features";
 import { ReplaceSection } from "./_components/replace";
 import { FounderTestimonials } from "./_components/founder-testimonials";
 import { PipelineSection } from "./_components/pipeline";
-import { Stats } from "./_components/stats";
-import { Testimonials } from "./_components/testimonials";
-import { CtaSection } from "./_components/cta";
+import { TrustSection } from "./_components/trust-marquee";
 import { Footer } from "./_components/footer";
 
 export default function Home() {
@@ -16,9 +14,7 @@ export default function Home() {
       <ReplaceSection />
       <PipelineSection />
       <FounderTestimonials />
-      <Stats />
-      <Testimonials />
-      <CtaSection />
+      <TrustSection />
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
       <Footer />

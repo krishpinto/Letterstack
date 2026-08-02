@@ -26,6 +26,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { PageLoader } from "@/components/bar-spinner";
 import { UsersPanel } from "@/components/admin/users-panel";
+import { SenderStatsPanel } from "@/components/admin/sender-stats-panel";
 import { type ChartConfig } from "@/components/evilcharts/ui/chart";
 import {
   EvilRadialChart,
@@ -682,6 +683,9 @@ export default function AdminInfraPage() {
 
         {/* Early-access waitlist */}
         <UsersPanel />
+
+        {/* Per-user sending activity — who's actually sending, CIBA vs everyone else */}
+        <SenderStatsPanel />
 
         {/* Platform stats */}
         <BlockCard title="Platform" icon={UsersIcon} block={data.platform}>
