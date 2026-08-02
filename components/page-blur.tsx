@@ -23,10 +23,15 @@ export function PageBlur({
   /** Scroll distance (px) before blur becomes fully visible */
   threshold?: number;
   /**
-   * CSS selector for a leading section (e.g. the hero) over which the bottom
-   * blur should stay hidden. The bottom blur reappears once that section's
-   * bottom edge scrolls above the viewport bottom — i.e. once the next
-   * section reaches the blur band. Pages without a matching element are
+   * CSS selector for a leading section (e.g. the hero) over which BOTH blurs
+   * should stay hidden — the section owns its own edges, so neither band
+   * should overlay it. Both reappear once the section has fully scrolled
+   * out of view (its bottom edge passes the TOP of the viewport), not
+   * merely once the next section starts peeking in at the bottom — a
+   * section taller than one viewport (e.g. a multi-part hero) would
+   * otherwise re-reveal the blur while still deep inside it, since "next
+   * section visible at the bottom edge" can happen long before the section
+   * itself is actually done. Pages without a matching element are
    * unaffected.
    */
   hideBottomUntilSelector?: string;
@@ -49,7 +54,7 @@ export function PageBlur({
       let overLeadingSection = false;
       if (hideBottomUntilSelector) {
         const el = document.querySelector(hideBottomUntilSelector);
-        if (el) overLeadingSection = el.getBoundingClientRect().bottom > clientHeight;
+        if (el) overLeadingSection = el.getBoundingClientRect().bottom > 0;
       }
 
       setScrollState({
@@ -68,6 +73,7 @@ export function PageBlur({
     };
   }, [threshold, hideBottomUntilSelector]);
 
+  const hideTop = scrollState.atTop || scrollState.overLeadingSection;
   const hideBottom = scrollState.atBottom || scrollState.overLeadingSection;
 
   return (
@@ -79,7 +85,7 @@ export function PageBlur({
         blurAmount={blurAmount}
         backgroundColor={backgroundColor}
         className={`fixed z-40 transition-opacity duration-300 ${
-          scrollState.atTop ? "opacity-0" : "opacity-100"
+          hideTop ? "opacity-0" : "opacity-100"
         }`}
       />
 
