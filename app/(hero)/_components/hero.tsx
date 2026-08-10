@@ -31,7 +31,28 @@ export function Hero() {
             "linear-gradient(to top, #6C5ED1 0%, #26106E 100%)",
         }}
       >
-        <div className="relative flex flex-col items-center gap-5">
+        {/* Cloud texture — the puffy mass is at the top of the source PNG,
+            wisps trailing off toward transparent at the bottom. The PNG's
+            own fade isn't enough on its own though: background-size cover
+            crops it to fill this div, and the div's own bottom edge was
+            landing mid-cloud, producing a hard rectangular cutoff. The mask
+            fades the whole layer to nothing before it reaches that edge, so
+            it dissolves into the gradient instead of getting clipped. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-64 opacity-80 sm:h-80 lg:h-96"
+          style={{
+            backgroundImage: "url('/clouds.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "top center",
+            backgroundRepeat: "no-repeat",
+            maskImage: "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
+            WebkitMaskImage:
+              "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col items-center gap-5">
           <h1
             className="max-w-6xl text-5xl font-bold leading-[0.98] tracking-tight text-white drop-shadow-sm sm:text-6xl lg:text-7xl"
             style={{ fontFamily: "var(--font-bricolage, var(--font-inter))" }}
