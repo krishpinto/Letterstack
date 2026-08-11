@@ -8,10 +8,10 @@ import { ProgressiveBlur } from "@/components/progressive-blur";
 // Two stacked halves sharing one hero image that straddles the seam
 // between them, not a single flat section.
 //
-// Half 1 — 2-stop gradient (purple at bottom, dark indigo at top),
-//   headline/CTA.
-// Half 2 — the meadow image (herobg1.png) anchored to the bottom, plus a
-//   second copy of the same image at 16% opacity sitting behind it and
+// Half 1 — hero-top.png (purple sky/clouds photo), headline/CTA.
+// Half 2 — hero-bottom.png as the base (sky-into-meadow photo), with the
+//   meadow image (herobg1.png) anchored to the bottom on top of it, plus a
+//   second copy of that same image at 16% opacity sitting behind it and
 //   nudged up, for a layered/echoed depth effect.
 
 const BULLETS = [
@@ -23,38 +23,24 @@ const BULLETS = [
 export function Hero() {
   return (
     <section data-hero-section className="relative overflow-hidden">
-      {/* ── Half 1: gradient ─────────────────────────────────────────── */}
+      {/* ── Half 1: sky photo ────────────────────────────────────────── */}
+      {/* bg-cover below lg: on a narrow-but-tall viewport (most phones),
+          min-h-[75vh] can exceed this image scaled to 100% width, and
+          100%-auto (no cover) would leave a blank gap under it instead of
+          filling the box. cover guarantees full coverage on any aspect
+          ratio, so it's the safe default. Only from lg: up — where the
+          section is reliably wider than it is tall — do we switch to the
+          exact-100%-width sizing that keeps this in scale with
+          hero-bottom.png below (see that comment for why that matters);
+          both halves switch at the same breakpoint so they're never scaled
+          differently from each other. */}
       <div
-        className="relative flex min-h-[75vh] flex-col items-center justify-center overflow-hidden px-6 pb-56 pt-28 text-center lg:pb-64 lg:pt-32"
-        style={{
-          backgroundImage:
-            "linear-gradient(to top, #6C5ED1 0%, #26106E 100%)",
-        }}
+        className="relative flex min-h-[75vh] flex-col items-center justify-center overflow-hidden bg-cover bg-bottom bg-no-repeat px-6 pb-28 pt-28 text-center lg:bg-[length:100%_auto] lg:pb-32 lg:pt-32"
+        style={{ backgroundImage: "url('/hero-top.png')" }}
       >
-        {/* Cloud texture — the puffy mass is at the top of the source PNG,
-            wisps trailing off toward transparent at the bottom. The PNG's
-            own fade isn't enough on its own though: background-size cover
-            crops it to fill this div, and the div's own bottom edge was
-            landing mid-cloud, producing a hard rectangular cutoff. The mask
-            fades the whole layer to nothing before it reaches that edge, so
-            it dissolves into the gradient instead of getting clipped. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-64 opacity-80 sm:h-80 lg:h-96"
-          style={{
-            backgroundImage: "url('/clouds.png')",
-            backgroundSize: "cover",
-            backgroundPosition: "top center",
-            backgroundRepeat: "no-repeat",
-            maskImage: "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
-            WebkitMaskImage:
-              "linear-gradient(to bottom, black 0%, black 55%, transparent 100%)",
-          }}
-        />
-
         <div className="relative z-10 flex flex-col items-center gap-5">
           <h1
-            className="max-w-6xl text-5xl font-bold leading-[0.98] tracking-tight text-white drop-shadow-sm sm:text-6xl lg:text-7xl"
+            className="max-w-6xl text-2xl font-bold leading-[1.05] tracking-tight text-white drop-shadow-sm sm:text-4xl sm:leading-[1] md:text-5xl lg:text-6xl lg:leading-[0.98] xl:text-7xl"
             style={{ fontFamily: "var(--font-bricolage, var(--font-inter))" }}
           >
             Mass email.
@@ -102,11 +88,8 @@ export function Hero() {
           through everywhere else. */}
       <div className="relative">
         <div
-          className="absolute inset-0 overflow-hidden"
-          style={{
-            backgroundImage:
-              "linear-gradient(to bottom, #6C5ED1 0%, #6C5ED1 30%, #C47FEF 55%, #C47FEF 100%)",
-          }}
+          className="absolute inset-0 overflow-hidden bg-cover bg-top bg-no-repeat lg:bg-[length:100%_auto]"
+          style={{ backgroundImage: "url('/hero-bottom.png')" }}
         >
           <div
             aria-hidden="true"
@@ -119,6 +102,23 @@ export function Hero() {
             }}
           />
         </div>
+
+        {/* Fog on the distant scenery, not the near mountain — sits behind
+            both the screenshot (z-10) and the front hill layer (z-20), so
+            it only shows through where those are transparent (the sky
+            above the front ridge), hazing what's actually far away instead
+            of the closest, most-in-focus layer. Normal blend with a muted
+            tone from the gradient's own palette, not screen — screen only
+            lightens toward white, which read as a pale, out-of-place wash
+            rather than atmospheric haze. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-2/3"
+          style={{
+            background:
+              "linear-gradient(to bottom, transparent 0%, rgba(108,94,209,0.55) 55%, rgba(38,16,110,0.75) 100%)",
+          }}
+        />
 
         {/* Hero image container — currently just image-hero.png; swap for
             other images later without touching the layering above/below.
@@ -133,19 +133,24 @@ export function Hero() {
             alt="LetterStack editor"
             width={800}
             height={409}
-            className="relative w-full -translate-y-[28%] rounded-xl border border-black/10 shadow-2xl"
+            className="relative w-full -translate-y-[18%] rounded-xl border border-black/10 shadow-2xl"
           />
         </div>
 
+        {/* Zoomed in slightly (115% instead of exactly cover's 100%) rather
+            than translated, so the ridge sits a bit higher in frame while
+            staying bottom-anchored — a translate previously opened a gap at
+            the container's bottom edge (the image moved up and away from
+            it), which is what exposed the screenshot's raw bottom edge
+            below instead of it staying tucked behind the hills. Plain
+            bg-cover below lg: for the same gap-safety reason as the two
+            backgrounds above — a fixed 115% zoom has no cover-style
+            fallback, so on a narrow/tall viewport it can undershoot the
+            container just like plain 100% auto could. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-20"
-          style={{
-            backgroundImage: "url('/herobg1.png')",
-            backgroundSize: "cover",
-            backgroundPosition: "center bottom",
-            backgroundRepeat: "no-repeat",
-          }}
+          className="pointer-events-none absolute inset-0 z-20 bg-cover bg-bottom bg-no-repeat lg:bg-[length:115%_auto]"
+          style={{ backgroundImage: "url('/herobg1.png')" }}
         />
 
         {/* Solid (unblurred) fade into the page background, so this
