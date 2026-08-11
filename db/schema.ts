@@ -32,6 +32,10 @@ export const users = pgTable("users", {
   // is shared with the edge middleware, but /early-access is a normal
   // Node.js server component.
   waitlistAppliedEmailSentAt: timestamp("waitlist_applied_email_sent_at"),
+  // Set when this person dismisses the "you've got Pro free for 2 months"
+  // announcement. Per-user rather than per-org so a second teammate still
+  // gets told, and so dismissing it never hides it from someone else.
+  planNoticeSeenAt: timestamp("plan_notice_seen_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -56,6 +60,11 @@ export const organizations = pgTable("organizations", {
   // see tryReserveSendQuota in db/organizations.ts. Transactional emails
   // (password resets, invites) don't count against this.
   emailsSentCount: integer("emails_sent_count").notNull().default(0),
+  // Start of the window emailsSentCount counts within. Plans are monthly, so
+  // the counter rolls over when the calendar month does — see
+  // tryReserveSendQuota, which resets it in the same atomic statement that
+  // reserves, so a rollover can't race a concurrent send.
+  emailsSentPeriodStart: timestamp("emails_sent_period_start"),
   // Paid tier. Defaults to "free" for every existing org, so nothing about
   // current behaviour changes until a payment settles. Nothing is gated on
   // this yet — it drives the Pro badge, and it's the hook real entitlements
@@ -64,6 +73,12 @@ export const organizations = pgTable("organizations", {
   // When the paid period runs out. Null = no paid period. Renewal is manual
   // today: each purchase pushes this forward.
   planExpiresAt: timestamp("plan_expires_at"),
+  // How this org came to be on `plan`: 'trial' (granted free, never paid) or
+  // 'paid' (a payment settled). Both read as "pro" for entitlements — the
+  // distinction is what the UI says and whether running out is a lapsed
+  // trial ("your trial ended") or a lapsed subscription ("renew"). A paid
+  // purchase during a trial overwrites this, so paying converts cleanly.
+  planSource: text("plan_source").notNull().default("none"), // none | trial | paid
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -26,6 +26,29 @@ export async function getUserProfile(userId: string) {
   return row ?? null;
 }
 
+/** Has this person already been shown the free-Pro-trial announcement? */
+export async function hasSeenPlanNotice(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ seenAt: users.planNoticeSeenAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return Boolean(row?.seenAt);
+}
+
+/**
+ * Record that the announcement was dismissed. Written once and never
+ * cleared — re-announcing something someone already acknowledged reads as a
+ * bug, not a reminder. The trial-ending warning is a separate, recurring
+ * surface precisely so this one can stay a single event.
+ */
+export async function markPlanNoticeSeen(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ planNoticeSeenAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
 export async function updateUserName(userId: string, name: string) {
   const [row] = await db
     .update(users)
