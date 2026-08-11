@@ -86,6 +86,33 @@ export const organizations = pgTable("organizations", {
 // verifiedAt is set once SES confirms DKIM + MAIL FROM; only verified domains
 // may appear in a campaign's From address. Unique globally: one org owns a
 // domain at a time.
+// Who has already had a free Pro period.
+//
+// Without this, the free period is just "make another account" away: sign up,
+// send for two months, abandon the workspace, repeat. One row per identity
+// that can claim one — the owning user, their organisation's email domain,
+// and any sending domain they verify — so a second claim under any of those
+// is recognised as the same people coming back.
+//
+// A row is never deleted by the app. Clearing one by hand is the deliberate
+// way to re-grant a free period to someone who deserves a second look.
+export const trialGrants = pgTable(
+  "trial_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** 'user' | 'email_domain' | 'sending_domain' */
+    kind: text("kind").notNull(),
+    /** The user id, or the lowercased domain. */
+    value: text("value").notNull(),
+    /** The organization that first claimed it. Kept for support questions. */
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [unique("trial_grants_kind_value_unq").on(t.kind, t.value)],
+);
+
 export const sendingDomains = pgTable("sending_domains", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id")
