@@ -9,7 +9,6 @@
 
 import { NextResponse } from "next/server";
 
-import { isAdmin } from "@/lib/admin";
 import { auth } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -37,9 +36,12 @@ function describe(name: string) {
 }
 
 export async function GET() {
+  // Any signed-in user, deliberately not admin-gated: this exists to explain
+  // a misconfiguration, so it must not depend on ADMIN_EMAILS being right.
+  // It reports shape only and never returns a secret.
   const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const keyId = process.env.RAZORPAY_KEY_ID ?? "";

@@ -30,10 +30,10 @@ export const PAYMENT_ITEMS = {
     currency: "INR",
     label: "Pro — 1 month",
     description: "LetterStack Pro (1 month)",
-    // Still founder-only. Beta workspaces carry on exactly as they do now:
-    // they never see a buy button, and nothing they can do reaches this.
-    // Flip to false to open it up once pricing is actually decided.
-    adminOnly: true,
+    // Open to any signed-in workspace. Nothing is gated on the plan yet, so
+    // buying it changes only the Pro mark — no existing behaviour or cap
+    // moves for anyone who doesn't buy.
+    adminOnly: false,
     grantsPlan: "pro",
     planDays: 30,
   },

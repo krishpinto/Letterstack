@@ -97,42 +97,39 @@ export function BillingPanel({
         </p>
       </div>
 
+      {/* Open to every workspace. Nothing is gated on the plan yet, so this
+          adds an option without changing anything for anyone who ignores it. */}
+      <div className="flex flex-col gap-2 rounded-lg border border-border p-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex flex-col">
+            <span className="text-sm font-medium">
+              {plan === "pro" ? "Pro — active" : "Pro"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {plan === "pro" && planExpiresAt
+                ? `Expires ${new Date(planExpiresAt).toLocaleDateString()} — renew any time to add 30 days`
+                : "₹5 for 30 days. Adds the Pro mark to your avatar."}
+            </span>
+          </span>
+          {plan === "pro" && (
+            <Badge className="h-5 shrink-0 bg-amber-400/15 px-2 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+              Pro
+            </Badge>
+          )}
+        </div>
+        <RazorpayCheckoutButton
+          item="pro_monthly"
+          label={plan === "pro" ? "Extend Pro (₹5)" : "Get Pro (₹5)"}
+          prefill={profile}
+          onPaid={() => router.refresh()}
+        />
+      </div>
+
       {showCheckout ? (
-        <div className="flex flex-col gap-4 rounded-lg border border-border px-4 py-4">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Payments (internal)</p>
-            <p className="text-xs text-muted-foreground">
-              Razorpay checkout in test mode. Only visible to founder accounts —
-              beta workspaces still see nothing to configure.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 rounded-md bg-muted/40 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex flex-col">
-                <span className="text-sm font-medium">
-                  {plan === "pro" ? "Pro — active" : "Pro"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {plan === "pro" && planExpiresAt
-                    ? `Renews manually — expires ${new Date(planExpiresAt).toLocaleDateString()}`
-                    : "₹5 for 30 days. Adds the Pro mark to your avatar."}
-                </span>
-              </span>
-              {plan === "pro" && (
-                <Badge className="h-5 shrink-0 bg-amber-400/15 px-2 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                  Pro
-                </Badge>
-              )}
-            </div>
-            <RazorpayCheckoutButton
-              item="pro_monthly"
-              label={plan === "pro" ? "Extend Pro (₹5)" : "Get Pro (₹5)"}
-              prefill={profile}
-              onPaid={() => router.refresh()}
-            />
-          </div>
-
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border px-4 py-4">
+          <p className="text-xs text-muted-foreground">
+            Founder-only: ₹1 payment for exercising the rail end to end.
+          </p>
           <RazorpayCheckoutButton
             item="internal_test"
             label="Test payment (₹1)"

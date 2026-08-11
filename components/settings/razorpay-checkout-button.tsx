@@ -80,7 +80,13 @@ export function RazorpayCheckoutButton({
         throw new Error(order?.error ?? "Could not start checkout.");
       }
 
-      const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+      // Same paste-hygiene strip as the server key: a quoted or newline-
+      // padded value here fails inside Razorpay's widget instead of ours,
+      // which is much harder to read as a config problem.
+      const keyId = (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? "")
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .trim();
       if (!keyId) throw new Error("Payments are not configured on this environment.");
       if (!window.Razorpay) throw new Error("Razorpay checkout failed to load");
 

@@ -10,9 +10,19 @@ import Razorpay from "razorpay";
 /** Razorpay rejects anything under 1 rupee. */
 export const MIN_AMOUNT_PAISE = 100;
 
+/**
+ * Env values pasted into a hosting dashboard routinely arrive with a
+ * trailing newline or wrapped in quotes. Both look correct in the UI and
+ * both make the credential wrong, so they're stripped here rather than
+ * being left to fail as an unexplained 401 at request time.
+ */
+function cleanEnv(name: string): string {
+  return (process.env[name] ?? "").trim().replace(/^["']|["']$/g, "").trim();
+}
+
 function credentials() {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const keyId = cleanEnv("RAZORPAY_KEY_ID");
+  const keySecret = cleanEnv("RAZORPAY_KEY_SECRET");
   if (!keyId || !keySecret) {
     throw new Error(
       "RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set to take payments.",
@@ -70,7 +80,7 @@ export function isValidWebhookSignature(
   rawBody: string,
   signature: string,
 ): boolean {
-  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  const secret = cleanEnv("RAZORPAY_WEBHOOK_SECRET");
   if (!secret) {
     throw new Error("RAZORPAY_WEBHOOK_SECRET must be set to accept webhooks.");
   }
