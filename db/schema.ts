@@ -56,6 +56,14 @@ export const organizations = pgTable("organizations", {
   // see tryReserveSendQuota in db/organizations.ts. Transactional emails
   // (password resets, invites) don't count against this.
   emailsSentCount: integer("emails_sent_count").notNull().default(0),
+  // Paid tier. Defaults to "free" for every existing org, so nothing about
+  // current behaviour changes until a payment settles. Nothing is gated on
+  // this yet — it drives the Pro badge, and it's the hook real entitlements
+  // (higher caps, etc.) attach to once pricing is decided.
+  plan: text("plan").notNull().default("free"), // free | pro
+  // When the paid period runs out. Null = no paid period. Renewal is manual
+  // today: each purchase pushes this forward.
+  planExpiresAt: timestamp("plan_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -71,6 +79,33 @@ export const sendingDomains = pgTable("sending_domains", {
   domain: text("domain").notNull().unique(),
   verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Razorpay order/payment lifecycle. One row per checkout attempt — created
+// at "pay now" time (status "created"), updated to "paid"/"failed" only
+// after the signature verifies server-side. No plan/pricing model exists
+// yet, so this doesn't gate anything; it's purely a durable record that a
+// payment happened, for the founder to reconcile manually until a real
+// plan structure lands.
+export const payments = pgTable("payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  razorpayOrderId: text("razorpay_order_id").notNull().unique(),
+  razorpayPaymentId: text("razorpay_payment_id"),
+  // Catalog key this order was for. Recorded at creation so settlement knows
+  // what was bought without trusting anything the client says at that point.
+  item: text("item").notNull().default("internal_test"),
+  amount: integer("amount").notNull(), // paise
+  currency: text("currency").notNull().default("INR"),
+  receipt: text("receipt").notNull(),
+  status: text("status").notNull().default("created"), // created | paid | failed
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  paidAt: timestamp("paid_at"),
 });
 
 export const organizationMembers = pgTable(

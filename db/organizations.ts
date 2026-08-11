@@ -66,8 +66,57 @@ function organizationSelect() {
     memberCount: sql<number>`(select count(*)::int from organization_members om where om.organization_id = organizations.id)`.as(
       "member_count",
     ),
+    plan: organizations.plan,
+    planExpiresAt: organizations.planExpiresAt,
     createdAt: organizations.createdAt,
   };
+}
+
+/**
+ * The plan actually in force right now. Stored `plan` alone isn't enough —
+ * a paid period that has run out should read as free everywhere without
+ * needing a cron job to sweep expired rows.
+ */
+export function activePlan(org: {
+  plan?: string | null;
+  planExpiresAt?: Date | string | null;
+}): "free" | "pro" {
+  if (org.plan !== "pro") return "free";
+  if (!org.planExpiresAt) return "pro";
+  const expires = new Date(org.planExpiresAt);
+  return expires.getTime() > Date.now() ? "pro" : "free";
+}
+
+/**
+ * Start or extend a paid period. Extends from whichever is later — the
+ * current expiry or now — so buying again mid-period adds to the remaining
+ * time instead of throwing it away.
+ */
+export async function activatePlanForOrganization(
+  organizationId: string,
+  plan: string,
+  days: number,
+) {
+  const [current] = await db
+    .select({ planExpiresAt: organizations.planExpiresAt, plan: organizations.plan })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+
+  const now = Date.now();
+  const currentExpiry =
+    current && activePlan(current) !== "free" && current.planExpiresAt
+      ? new Date(current.planExpiresAt).getTime()
+      : now;
+  const base = Math.max(now, currentExpiry);
+  const expiresAt = new Date(base + days * 24 * 60 * 60 * 1000);
+
+  const [row] = await db
+    .update(organizations)
+    .set({ plan, planExpiresAt: expiresAt })
+    .where(eq(organizations.id, organizationId))
+    .returning({ plan: organizations.plan, planExpiresAt: organizations.planExpiresAt });
+  return row ?? null;
 }
 
 export async function getDefaultOrganizationForUser(userId: string) {

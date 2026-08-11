@@ -73,6 +73,7 @@ export function SettingsShell({
   currentUserId,
   otherWorkspaceCount,
   billing,
+  isAdmin = false,
 }: {
   profile: Profile;
   organization: Organization;
@@ -80,7 +81,13 @@ export function SettingsShell({
   pendingInvites: PendingInvite[];
   currentUserId: string;
   otherWorkspaceCount: number;
-  billing: { sends: { used: number; limit: number }; domains: { used: number; limit: number } };
+  billing: {
+    sends: { used: number; limit: number };
+    domains: { used: number; limit: number };
+    plan?: "free" | "pro";
+    planExpiresAt?: string | null;
+  };
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -165,7 +172,14 @@ export function SettingsShell({
             />
           )}
           {activeSection === "billing" && (
-            <BillingPanel sends={billing.sends} domains={billing.domains} />
+            <BillingPanel
+              sends={billing.sends}
+              domains={billing.domains}
+              showCheckout={isAdmin}
+              profile={{ name: profile.name, email: profile.email }}
+              plan={billing.plan}
+              planExpiresAt={billing.planExpiresAt}
+            />
           )}
           {!["account", "organization", "billing"].includes(activeSection) && (
             <PlaceholderPanel label={active.label} />

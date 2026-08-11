@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
+  activePlan,
   getActiveOrganizationForUser,
   listOrganizationsForUser,
 } from "@/db/organizations";
@@ -49,6 +50,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       }))}
       userName={session.user?.name ?? "User"}
       userEmail={session.user?.email ?? ""}
+      plan={activePlan(organization)}
     >
       {children}
     </ProtectedShell>

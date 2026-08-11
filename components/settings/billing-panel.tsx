@@ -1,7 +1,11 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import { MessageCircleIcon, MailIcon, GlobeIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { RazorpayCheckoutButton } from "@/components/settings/razorpay-checkout-button";
 
 function UsageRow({
   icon: Icon,
@@ -35,10 +39,21 @@ function UsageRow({
 export function BillingPanel({
   sends,
   domains,
+  showCheckout = false,
+  profile,
+  plan = "free",
+  planExpiresAt,
 }: {
   sends: { used: number; limit: number };
   domains: { used: number; limit: number };
+  /** Founder-only until there's a real plan to sell. */
+  showCheckout?: boolean;
+  profile?: { name?: string | null; email?: string | null };
+  plan?: "free" | "pro";
+  planExpiresAt?: string | Date | null;
 }) {
+  const router = useRouter();
+
   return (
     <div className="flex max-w-lg flex-col gap-6">
       <div className="flex items-center gap-2">
@@ -81,6 +96,50 @@ export function BillingPanel({
           We'll post pricing here once beta wraps up. No card on file, nothing to configure.
         </p>
       </div>
+
+      {showCheckout ? (
+        <div className="flex flex-col gap-4 rounded-lg border border-border px-4 py-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Payments (internal)</p>
+            <p className="text-xs text-muted-foreground">
+              Razorpay checkout in test mode. Only visible to founder accounts —
+              beta workspaces still see nothing to configure.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-md bg-muted/40 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex flex-col">
+                <span className="text-sm font-medium">
+                  {plan === "pro" ? "Pro — active" : "Pro"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {plan === "pro" && planExpiresAt
+                    ? `Renews manually — expires ${new Date(planExpiresAt).toLocaleDateString()}`
+                    : "₹5 for 30 days. Adds the Pro mark to your avatar."}
+                </span>
+              </span>
+              {plan === "pro" && (
+                <Badge className="h-5 shrink-0 bg-amber-400/15 px-2 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                  Pro
+                </Badge>
+              )}
+            </div>
+            <RazorpayCheckoutButton
+              item="pro_monthly"
+              label={plan === "pro" ? "Extend Pro (₹5)" : "Get Pro (₹5)"}
+              prefill={profile}
+              onPaid={() => router.refresh()}
+            />
+          </div>
+
+          <RazorpayCheckoutButton
+            item="internal_test"
+            label="Test payment (₹1)"
+            prefill={profile}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

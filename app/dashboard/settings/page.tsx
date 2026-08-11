@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { getUserProfile } from "@/db/users";
 import {
+  activePlan,
   getOrganizationForUser,
   getSendUsage,
   listOrganizationMembers,
@@ -11,6 +12,7 @@ import {
 import { listPendingInvitesForOrganization } from "@/db/invites";
 import { listSendingDomains, SENDING_DOMAIN_LIMIT } from "@/db/sending-domains";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
+import { isAdmin } from "@/lib/admin";
 import { SettingsShell } from "@/components/settings/settings-shell";
 
 export default async function SettingsPage() {
@@ -54,7 +56,10 @@ export default async function SettingsPage() {
         billing={{
           sends: sendUsage,
           domains: { used: domains.length, limit: SENDING_DOMAIN_LIMIT },
+          plan: activePlan(organization),
+          planExpiresAt: organization.planExpiresAt?.toISOString() ?? null,
         }}
+        isAdmin={isAdmin(profile.email)}
       />
     </Suspense>
   );

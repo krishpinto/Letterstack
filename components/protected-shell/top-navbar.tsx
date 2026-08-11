@@ -56,6 +56,7 @@ type TopNavbarProps = {
   organizations: NavbarOrganization[];
   userName: string;
   userEmail: string;
+  plan?: "free" | "pro";
 };
 
 export function TopNavbar({
@@ -63,6 +64,7 @@ export function TopNavbar({
   organizations,
   userName,
   userEmail,
+  plan = "free",
 }: TopNavbarProps) {
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -304,12 +306,24 @@ export function TopNavbar({
         {/* User avatar */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="ml-1 flex size-7 cursor-pointer items-center justify-center rounded-full outline-none ring-2 ring-transparent focus-visible:ring-ring transition-shadow hover:ring-border">
+            <button className="relative ml-1 flex size-7 cursor-pointer items-center justify-center rounded-full outline-none ring-2 ring-transparent focus-visible:ring-ring transition-shadow hover:ring-border">
               <Avatar className="size-7">
                 <AvatarFallback className="bg-primary text-[11px] font-bold text-primary-foreground">
                   {userInitial}
                 </AvatarFallback>
               </Avatar>
+              {/* Pro mark: a ring plus a corner pip, so it still reads on a
+                  28px avatar where a text badge would be unreadable. The
+                  ring sits outside the avatar so it never crops the
+                  initial. */}
+              {plan === "pro" && (
+                <>
+                  <span className="pointer-events-none absolute -inset-0.5 rounded-full ring-2 ring-amber-400" />
+                  <span className="pointer-events-none absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full bg-amber-400 ring-2 ring-background">
+                    <ZapIcon className="size-2 fill-amber-950 text-amber-950" />
+                  </span>
+                </>
+              )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64 p-1.5">
@@ -326,6 +340,12 @@ export function TopNavbar({
                   {userName}
                 </p>
                 <p className="text-xs text-muted-foreground">{userEmail}</p>
+                {plan === "pro" && (
+                  <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                    <ZapIcon className="size-2.5 fill-current" />
+                    Pro
+                  </span>
+                )}
               </div>
             </div>
 
