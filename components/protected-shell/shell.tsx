@@ -16,6 +16,7 @@ type ProtectedShellProps = {
   userName?: string;
   userEmail?: string;
   plan?: "free" | "pro";
+  planUntil?: string | null;
   headerActions?: ReactNode;
 };
 
@@ -26,6 +27,7 @@ export function ProtectedShell({
   userName = "User",
   userEmail = "",
   plan = "free",
+  planUntil = null,
   headerActions,
 }: ProtectedShellProps) {
   const [navOpen, setNavOpen] = useState(true);
@@ -54,6 +56,7 @@ export function ProtectedShell({
         userName={userName}
         userEmail={userEmail}
         plan={plan}
+        planUntil={planUntil}
       />
 
       {/* ── Body ── */}

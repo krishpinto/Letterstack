@@ -26,14 +26,35 @@ export const PAYMENT_ITEMS = {
     planDays: 0,
   },
   pro_monthly: {
-    amount: 500,
+    amount: 49_900,
     currency: "INR",
     label: "Pro — 1 month",
     description: "LetterStack Pro (1 month)",
-    // Open to any signed-in workspace. Nothing is gated on the plan yet, so
-    // buying it changes only the Pro mark — no existing behaviour or cap
-    // moves for anyone who doesn't buy.
     adminOnly: false,
+    grantsPlan: "pro",
+    planDays: 30,
+  },
+  // Ten months' price for twelve. Annual also runs on the one-time payment
+  // rail — no mandate, no Razorpay Subscriptions — which is why it's the
+  // option worth steering people toward until recurring billing exists.
+  pro_yearly: {
+    amount: 499_900,
+    currency: "INR",
+    label: "Pro — 12 months",
+    description: "LetterStack Pro (1 year)",
+    adminOnly: false,
+    grantsPlan: "pro",
+    planDays: 365,
+  },
+  // The ₹5 item the rail was first proven with. Kept, founder-only, so the
+  // live payment path can still be exercised end to end without spending
+  // ₹499 each time.
+  pro_smoke_test: {
+    amount: 500,
+    currency: "INR",
+    label: "Pro — smoke test",
+    description: "LetterStack Pro (test purchase)",
+    adminOnly: true,
     grantsPlan: "pro",
     planDays: 30,
   },

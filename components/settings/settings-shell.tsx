@@ -84,8 +84,12 @@ export function SettingsShell({
   billing: {
     sends: { used: number; limit: number };
     domains: { used: number; limit: number };
+    contacts: { used: number; limit: number };
     plan?: "free" | "pro";
     planExpiresAt?: string | null;
+    isTrial?: boolean;
+    trialEnded?: boolean;
+    daysLeft?: number | null;
   };
   isAdmin?: boolean;
 }) {
@@ -175,10 +179,14 @@ export function SettingsShell({
             <BillingPanel
               sends={billing.sends}
               domains={billing.domains}
+              contacts={billing.contacts}
               showCheckout={isAdmin}
               profile={{ name: profile.name, email: profile.email }}
               plan={billing.plan}
               planExpiresAt={billing.planExpiresAt}
+              isTrial={billing.isTrial}
+              trialEnded={billing.trialEnded}
+              daysLeft={billing.daysLeft}
             />
           )}
           {!["account", "organization", "billing"].includes(activeSection) && (

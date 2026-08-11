@@ -57,6 +57,8 @@ type TopNavbarProps = {
   userName: string;
   userEmail: string;
   plan?: "free" | "pro";
+  /** Pre-formatted expiry date, e.g. "10 October 2026". Null hides the line. */
+  planUntil?: string | null;
 };
 
 export function TopNavbar({
@@ -65,6 +67,7 @@ export function TopNavbar({
   userName,
   userEmail,
   plan = "free",
+  planUntil = null,
 }: TopNavbarProps) {
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -340,11 +343,22 @@ export function TopNavbar({
                   {userName}
                 </p>
                 <p className="text-xs text-muted-foreground">{userEmail}</p>
+                {/* Just "Pro" — the badge reads as the plan they're on, not as
+                    a countdown. How long it runs is the answer to clicking it,
+                    below, rather than a label worn permanently. */}
                 {plan === "pro" && (
                   <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
                     <ZapIcon className="size-2.5 fill-current" />
                     Pro
                   </span>
+                )}
+                {plan === "pro" && planUntil && (
+                  <Link
+                    href="/dashboard/settings?section=billing"
+                    className="mt-1 text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    Pro until {planUntil}
+                  </Link>
                 )}
               </div>
             </div>
