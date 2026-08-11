@@ -128,13 +128,56 @@ export function Hero() {
             headroom above it, which is what actually reveals more of the
             image instead of moving/resizing the hill itself. */}
         <div className="relative z-10 mx-auto max-w-6xl px-6 pb-56 sm:pb-72 lg:pb-96">
-          <Image
-            src="/image-hero.png"
-            alt="LetterStack editor"
-            width={800}
-            height={409}
-            className="relative w-full -translate-y-[18%] rounded-xl border border-black/10 shadow-2xl"
-          />
+          <div className="relative -translate-y-[18%]">
+            {/* A translucent wash painted over a still-crisp bordered,
+                shadowed rectangle doesn't blend it — the border and shadow
+                keep drawing a hard edge right through the wash. This masks
+                the screenshot's own pixels to fade out at all four edges
+                (a vignette), so the image itself dissolves into the fog
+                overlay and the scenery behind it instead of sitting on top
+                of it. No border/heavy shadow either, for the same reason —
+                both draw a crisp line the mask can't soften. */}
+            {/* Ellipse centered low (50% 25% instead of dead-center) so the
+                bottom edge sits further into the fade band than the top —
+                the previous centered version kept the bottom edge fully
+                inside the opaque zone no matter what, so nothing painted
+                over it ever read as "fading," just as a flat wash stopping
+                at a hard rectangle. Reused below on the fog overlay too, so
+                that wash fades in step with the image instead of being an
+                unmasked rectangle sitting on top of a masked one. */}
+            <Image
+              src="/image-hero.png"
+              alt="LetterStack editor"
+              width={800}
+              height={409}
+              className="relative w-full rounded-xl border-2 border-white/15 shadow-lg"
+              style={{
+                WebkitMaskImage:
+                  "radial-gradient(ellipse 78% 82% at 50% 25%, black 85%, transparent 100%)",
+                maskImage:
+                  "radial-gradient(ellipse 78% 82% at 50% 25%, black 85%, transparent 100%)",
+              }}
+            />
+
+            {/* Same mask as the image above, so this wash fades out with it
+                instead of showing as its own hard-edged rectangle — that
+                mismatch (masked image, unmasked overlay) was why the wash
+                read as a flat white panel instead of blending. Softer
+                lavender instead of near-white, and lower opacity, since the
+                near-white version was too stark against the dark UI. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-xl"
+              style={{
+                background:
+                  "radial-gradient(ellipse 78% 82% at 50% 50%, transparent 82%, rgba(108,94,209,0.4) 100%), linear-gradient(to top, rgba(196,180,240,0.28) 0%, transparent 40%), rgba(255,255,255,0.03)",
+                WebkitMaskImage:
+                  "radial-gradient(ellipse 78% 82% at 50% 25%, black 85%, transparent 100%)",
+                maskImage:
+                  "radial-gradient(ellipse 78% 82% at 50% 25%, black 85%, transparent 100%)",
+              }}
+            />
+          </div>
         </div>
 
         {/* Zoomed in slightly (115% instead of exactly cover's 100%) rather
