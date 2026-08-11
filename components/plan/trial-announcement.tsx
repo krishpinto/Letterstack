@@ -26,9 +26,12 @@ import {
 export function TrialAnnouncement({
   expiresAt,
   daysLeft,
+  trialDays,
 }: {
-  expiresAt: string;
-  daysLeft: number;
+  /** Null when the countdown hasn't started — nothing has been sent yet. */
+  expiresAt: string | null;
+  daysLeft: number | null;
+  trialDays: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -53,11 +56,13 @@ export function TrialAnnouncement({
     }
   }
 
-  const until = new Date(expiresAt).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const until = expiresAt
+    ? new Date(expiresAt).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && dismiss()}>
@@ -70,9 +75,22 @@ export function TrialAnnouncement({
             Your workspace is now on Pro
           </DialogTitle>
           <DialogDescription>
-            Every Pro feature is unlocked on your workspace through{" "}
-            <strong className="text-foreground">{until}</strong>, on us — nothing
-            to pay and no card needed. Nothing changes about how you work today.
+            {until ? (
+              <>
+                Every Pro feature is unlocked on your workspace through{" "}
+                <strong className="text-foreground">{until}</strong>, on us —
+                nothing to pay and no card needed. Nothing changes about how you
+                work today.
+              </>
+            ) : (
+              <>
+                Every Pro feature is unlocked on your workspace, on us — nothing
+                to pay and no card needed. Your{" "}
+                <strong className="text-foreground">{trialDays} days</strong>{" "}
+                start when you send your first campaign, so nothing runs down
+                while you&rsquo;re still setting up.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -94,8 +112,10 @@ export function TrialAnnouncement({
         </ul>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          We&rsquo;ll remind you here before it runs out, {daysLeft} days from
-          now. Everything you make stays yours either way.
+          {daysLeft !== null
+            ? `We'll remind you here before it runs out, ${daysLeft} days from now.`
+            : "We'll remind you here before it runs out."}{" "}
+          Everything you make stays yours either way.
         </p>
 
         <DialogFooter>

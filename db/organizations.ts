@@ -1,7 +1,8 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
+import { claimTrialKeys, hasClaimedTrial, trialKeysFor } from "./trial-grants";
 
 /** How long a new workspace gets Pro for free before it has to pay. */
 export const TRIAL_DAYS = 60;
@@ -188,6 +189,57 @@ export async function startTrialForOrganization(
 }
 
 /**
+ * Begin the free Pro countdown, measured from the org's first real send.
+ *
+ * A granted trial sits with a null expiry — active, but not yet counting —
+ * until the workspace actually sends something. Signing up and not using the
+ * product shouldn't quietly consume the free period, and someone who comes
+ * back a month later should still get the full two months.
+ *
+ * Called on every send; the guard makes all but the first a no-op. Both
+ * conditions matter: plan_source pins it to granted trials so a paid expiry
+ * can never be overwritten, and the null check makes it fire exactly once.
+ */
+export async function startTrialClockOnFirstSend(
+  organizationId: string,
+  days: number = TRIAL_DAYS,
+) {
+  const [row] = await db
+    .update(organizations)
+    .set({ planExpiresAt: new Date(Date.now() + days * 24 * 60 * 60 * 1000) })
+    .where(
+      and(
+        eq(organizations.id, organizationId),
+        eq(organizations.planSource, "trial"),
+        isNull(organizations.planExpiresAt),
+      ),
+    )
+    .returning({ planExpiresAt: organizations.planExpiresAt });
+  return row ?? null;
+}
+
+/**
+ * End a granted free period immediately, leaving the workspace on Free.
+ *
+ * Only ever touches a granted period — the plan_source guard means a paid
+ * plan can never be cut short by this, which matters because the caller is
+ * an abuse check and abuse checks get things wrong.
+ */
+export async function endTrialForOrganization(organizationId: string) {
+  const [row] = await db
+    .update(organizations)
+    .set({ planExpiresAt: new Date() })
+    .where(
+      and(
+        eq(organizations.id, organizationId),
+        eq(organizations.planSource, "trial"),
+      ),
+    )
+    .returning({ planExpiresAt: organizations.planExpiresAt });
+  return row ?? null;
+}
+
+/**
  * Start or extend a paid period. Extends from whichever is later — the
  * current expiry or now — so buying again mid-period adds to the remaining
  * time instead of throwing it away. Buying during a trial therefore stacks
@@ -293,12 +345,18 @@ export async function createOrganizationForUser(
   // the org is created, leaving a member-less orphan. Check the owner up front so
   // we never create something we can't finish.
   const [owner] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, email: users.email })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
   if (!owner) throw new OwnerNotFoundError();
+
+  // One free Pro period per set of people, not per workspace. A second
+  // workspace — or a second account on the same company domain — starts on
+  // Free rather than restarting the clock.
+  const trialKeys = trialKeysFor({ userId, email: owner.email });
+  const alreadyClaimed = await hasClaimedTrial(trialKeys);
 
   // Duplicate names among this user's workspaces get a numeric suffix
   // ("Acme" → "Acme 2") so the switcher never shows two identical entries.
@@ -319,12 +377,16 @@ export async function createOrganizationForUser(
     .values({
       name,
       type: input.type,
-      // Every new workspace opens on a free Pro trial. Set at insert rather
-      // than as a follow-up update so a workspace can never exist in a state
-      // where it was never granted one.
-      plan: "pro",
-      planSource: "trial",
-      planExpiresAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
+      // A first workspace opens on a free Pro period; a repeat one doesn't.
+      // Set at insert rather than as a follow-up update so a workspace can
+      // never exist in a state where it was never granted one.
+      //
+      // No expiry when granted: the countdown starts at the first send, not
+      // at signup — see startTrialClockOnFirstSend. A null expiry reads as
+      // "Pro, not yet counting" everywhere downstream.
+      plan: alreadyClaimed ? "free" : "pro",
+      planSource: alreadyClaimed ? "none" : "trial",
+      planExpiresAt: null,
     })
     .returning({
       id: organizations.id,
@@ -344,6 +406,13 @@ export async function createOrganizationForUser(
     // insert by hand rather than leaving an orphan behind.
     await db.delete(organizations).where(eq(organizations.id, organization.id));
     throw error;
+  }
+
+  // Claimed only once the workspace is fully built. Recording it before the
+  // membership insert would burn someone's free period on a creation that
+  // then rolled back.
+  if (!alreadyClaimed) {
+    await claimTrialKeys(trialKeys, organization.id);
   }
 
   return { ...organization, role: "owner", memberCount: 1 };

@@ -4,7 +4,11 @@ import {
   markCampaignRecipient,
   prepareCampaignAudience,
 } from "@/db/campaign-recipients";
-import { getSendUsage, tryReserveSendQuota } from "@/db/organizations";
+import {
+  getSendUsage,
+  startTrialClockOnFirstSend,
+  tryReserveSendQuota,
+} from "@/db/organizations";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import {
@@ -107,6 +111,11 @@ export async function startCampaign(campaignId: string) {
         `Upgrade in Settings → Billing, or send to a smaller group.`,
     );
   }
+
+  // First send starts the free Pro countdown. After the first, this is a
+  // no-op — the guard lives in the statement, so it costs one cheap UPDATE
+  // rather than a read to decide whether to write.
+  await startTrialClockOnFirstSend(campaign.organizationId);
 
   await markCampaignSending(campaignId);
 

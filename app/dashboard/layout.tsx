@@ -7,6 +7,7 @@ import {
   getActiveOrganizationForUser,
   listOrganizationsForUser,
   planState,
+  TRIAL_DAYS,
 } from "@/db/organizations";
 import { hasSeenPlanNotice } from "@/db/users";
 import { ACTIVE_ORGANIZATION_COOKIE } from "@/lib/active-organization";
@@ -38,9 +39,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
 
   const plan = planState(organization);
-  // Only announce a trial that's actually running. Someone who signs up after
-  // the trial has already lapsed shouldn't be congratulated on it.
-  const announceTrial = plan.isTrial && !seenPlanNotice && plan.expiresAt !== null;
+  // Announced whenever the free period is live, including before the clock
+  // has started — that's precisely when it's worth saying that sending is
+  // what starts it. Someone whose period already lapsed isn't congratulated.
+  const announceTrial = plan.isTrial && !seenPlanNotice;
 
   return (
     <ProtectedShell
@@ -79,10 +81,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         expiresAt={plan.expiresAt?.toISOString() ?? null}
       />
       {children}
-      {announceTrial && plan.expiresAt ? (
+      {announceTrial ? (
         <TrialAnnouncement
-          expiresAt={plan.expiresAt.toISOString()}
-          daysLeft={plan.daysLeft ?? 0}
+          expiresAt={plan.expiresAt?.toISOString() ?? null}
+          daysLeft={plan.daysLeft}
+          trialDays={TRIAL_DAYS}
         />
       ) : null}
     </ProtectedShell>
