@@ -4,7 +4,7 @@ import {
   markCampaignRecipient,
   prepareCampaignAudience,
 } from "@/db/campaign-recipients";
-import { BETA_EMAIL_SEND_CAP, tryReserveSendQuota } from "@/db/organizations";
+import { getSendUsage, tryReserveSendQuota } from "@/db/organizations";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import {
@@ -91,14 +91,20 @@ export async function startCampaign(campaignId: string) {
     throw new Error("Add at least one recipient before sending");
   }
 
-  // Beta-phase hard cap on total org send volume. All-or-nothing: reserve the
-  // whole batch up front so a campaign never gets cut off partway through
+  // The plan's monthly send allowance. All-or-nothing: reserve the whole
+  // batch up front so a campaign never gets cut off partway through
   // recipients arbitrarily. Reservation is atomic (a guarded UPDATE), so this
   // is also what stays correct if "Send now" and "Resume" race each other.
   const reserved = await tryReserveSendQuota(campaign.organizationId, audience.length);
   if (!reserved) {
+    // Read usage only on the refusal path, so the happy path stays one query.
+    // The message names the real numbers — "limit reached" alone leaves
+    // someone guessing which limit and by how much.
+    const usage = await getSendUsage(campaign.organizationId);
+    const remaining = Math.max(0, usage.limit - usage.used);
     throw new Error(
-      `Sending this would exceed the beta cap of ${BETA_EMAIL_SEND_CAP.toLocaleString()} emails for this workspace. Check Settings → Billing for remaining quota.`,
+      `This send is ${audience.length.toLocaleString()} emails but only ${remaining.toLocaleString()} of your ${usage.limit.toLocaleString()} monthly emails are left. ` +
+        `Upgrade in Settings → Billing, or send to a smaller group.`,
     );
   }
 

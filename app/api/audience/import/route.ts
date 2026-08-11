@@ -7,6 +7,7 @@ import { listSuppressedSetForOrganization } from "@/db/suppression";
 import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { validateEmails } from "@/lib/import/validation";
+import { checkContactHeadroom } from "@/lib/plans/guards";
 
 export const runtime = "nodejs";
 
@@ -74,6 +75,30 @@ export async function POST(request: Request) {
     toInsert.push({ email, name });
     if (result.flags.includes("role")) roleFlagged++;
   });
+
+  // `toInsert` is already net of duplicates and suppressions, so this asks
+  // about the contacts that would genuinely be added. Refused whole rather
+  // than truncated: a half-imported list leaves someone guessing which
+  // people made it in, which is worse than importing nothing.
+  const headroom = await checkContactHeadroom(organizationId, toInsert.length);
+  if (!headroom.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          `This file adds ${toInsert.length.toLocaleString()} new contacts, but only ` +
+          `${headroom.remaining.toLocaleString()} of your ${headroom.limit.toLocaleString()} ` +
+          `contacts are still free. Nothing was imported. ` +
+          (headroom.plan === "pro"
+            ? "Contact us if you need a higher limit."
+            : "Upgrade to Starter in Settings → Billing for more."),
+        limit: headroom.limit,
+        used: headroom.used,
+        attempted: toInsert.length,
+      },
+      { status: 402 },
+    );
+  }
 
   const inserted = await addRecipientsBulk(organizationId, userId, toInsert);
 

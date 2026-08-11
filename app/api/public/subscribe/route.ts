@@ -14,6 +14,7 @@ import {
 } from "@/db/signup-forms";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { addRecipient } from "@/db/recipients";
+import { checkContactHeadroom } from "@/lib/plans/guards";
 
 export const runtime = "nodejs";
 
@@ -80,6 +81,18 @@ export async function POST(request: Request) {
   // adding so membership can't be probed.
   if (await isSuppressedForOrganization(form.organizationId, email)) {
     return json({ ok: true });
+  }
+
+  // A full audience stops new signups. The visitor is a member of the
+  // public, not the customer, so they get a neutral "not accepting signups"
+  // rather than the owner's billing state — which would both confuse them
+  // and advertise the org's plan to anyone who loads the form.
+  const headroom = await checkContactHeadroom(form.organizationId, 1);
+  if (!headroom.ok) {
+    return json(
+      { ok: false, error: "This list isn't accepting new signups right now." },
+      503,
+    );
   }
 
   // Add straight to the audience. onConflictDoNothing returns null when the

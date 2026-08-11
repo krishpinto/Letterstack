@@ -1,9 +1,28 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "./client";
-import { sendingDomains } from "./schema";
+import { organizations, sendingDomains } from "./schema";
+import { activePlan } from "./organizations";
+import { limitsFor, PLAN_LIMITS } from "@/lib/plans/limits";
 
-/** Per-organization cap on connected sending domains (beta-phase: flat 2, no plans/tiers yet). */
-export const SENDING_DOMAIN_LIMIT = 2;
+/**
+ * Fallback cap, used only when a caller has no plan context to hand. Real
+ * enforcement reads the org's tier — see sendingDomainLimitFor. Kept equal to
+ * the Pro allowance so an unplanned caller can never be stricter than the
+ * tier the org is actually paying for.
+ */
+export const SENDING_DOMAIN_LIMIT = PLAN_LIMITS.pro.domains;
+
+/** How many domains this org's current tier allows. */
+export async function sendingDomainLimitFor(
+  organizationId: string,
+): Promise<number> {
+  const [org] = await db
+    .select({ plan: organizations.plan, planExpiresAt: organizations.planExpiresAt })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  return limitsFor(activePlan(org ?? {})).domains;
+}
 
 export async function listSendingDomains(organizationId: string) {
   return db
@@ -28,8 +47,11 @@ export async function listVerifiedSendingDomains(
 export async function addSendingDomain(organizationId: string, domain: string) {
   const existing = await listSendingDomains(organizationId);
   const already = existing.find((row) => row.domain === domain);
+  // Re-adding a domain already connected is a no-op, so it stays allowed even
+  // at the limit — otherwise an org sitting exactly on its cap could never
+  // re-run verification on a domain it already owns.
   if (already) return already;
-  if (existing.length >= SENDING_DOMAIN_LIMIT) return null;
+  if (existing.length >= (await sendingDomainLimitFor(organizationId))) return null;
 
   const [row] = await db
     .insert(sendingDomains)

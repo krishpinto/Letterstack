@@ -3,10 +3,12 @@ import {
   addRecipient,
   deleteRecipient,
   listRecipientsForOrganization,
+  recipientExists,
   updateRecipient,
 } from "@/db/recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { enqueueAutomationsForEvent } from "@/lib/automations/run";
+import { checkContactHeadroom } from "@/lib/plans/guards";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -66,6 +68,19 @@ export async function POST(request: Request) {
         { ok: false, error: "That email is suppressed for this organization" },
         { status: 400 },
       );
+    }
+
+    // Checked before the insert, and only for a genuinely new contact — a
+    // re-add of someone already on the list doesn't grow the audience, so it
+    // shouldn't be refused for want of headroom.
+    if (!(await recipientExists(organizationId, email))) {
+      const headroom = await checkContactHeadroom(organizationId, 1);
+      if (!headroom.ok) {
+        return NextResponse.json(
+          { ok: false, error: headroom.message, limit: headroom.limit, used: headroom.used },
+          { status: 402 },
+        );
+      }
     }
 
     const recipient = await addRecipient(organizationId, userId, { email, name });
