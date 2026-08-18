@@ -20,6 +20,12 @@ export type PlanLimits = {
   emailsPerMonth: number;
   /** Verified sending domains. */
   domains: number;
+  /**
+   * Workspaces one person may own. Capped because every workspace carries
+   * its own allowances — without a ceiling, ten Free workspaces add up to
+   * more monthly sending than the paid tier they'd otherwise buy.
+   */
+  workspaces: number;
 };
 
 export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
@@ -28,6 +34,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     contacts: 500,
     emailsPerMonth: 2_000,
     domains: 1,
+    workspaces: 1,
   },
   // "pro" is the Starter tier on the pricing page. A second paid tier would
   // be added here as its own key rather than by widening these numbers.
@@ -36,6 +43,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     contacts: 3_000,
     emailsPerMonth: 15_000,
     domains: 2,
+    workspaces: 3,
   },
 };
 
@@ -49,7 +57,7 @@ export function limitsFor(plan: PlanKey | string): PlanLimits {
  * which limit and what to do about it.
  */
 export function limitMessage(
-  what: "contacts" | "emails" | "domains",
+  what: "contacts" | "emails" | "domains" | "workspaces",
   plan: PlanKey | string,
   attempted?: number,
 ): string {
@@ -68,5 +76,10 @@ export function limitMessage(
       return `${limits.label} plans include ${limits.emailsPerMonth.toLocaleString()} emails a month, and this send would go past that. ${upgrade}`;
     case "domains":
       return `${limits.label} plans include ${limits.domains} sending domain${limits.domains === 1 ? "" : "s"}. ${upgrade}`;
+    case "workspaces":
+      return (
+        `${limits.label} plans include ${limits.workspaces} workspace${limits.workspaces === 1 ? "" : "s"}. ` +
+        `Your existing workspaces aren't affected — you just can't add another. ${upgrade}`
+      );
   }
 }

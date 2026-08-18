@@ -6,7 +6,9 @@ import {
   listOrganizationsForUser,
   normalizeOrganizationType,
   OwnerNotFoundError,
+  WorkspaceLimitError,
 } from "@/db/organizations";
+import { limitMessage } from "@/lib/plans/limits";
 import {
   ACTIVE_ORGANIZATION_COOKIE,
   ACTIVE_ORGANIZATION_COOKIE_MAX_AGE,
@@ -77,6 +79,18 @@ export async function POST(request: NextRequest) {
       organization.id,
     );
   } catch (error) {
+    if (error instanceof WorkspaceLimitError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: limitMessage("workspaces", error.plan),
+          owned: error.owned,
+          limit: error.allowance,
+        },
+        { status: 402 },
+      );
+    }
+
     if (error instanceof OwnerNotFoundError) {
       return NextResponse.json(
         {

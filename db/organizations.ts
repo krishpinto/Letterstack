@@ -28,6 +28,18 @@ export class OwnerNotFoundError extends Error {
   }
 }
 
+/** Thrown when someone already owns as many workspaces as their plan allows. */
+export class WorkspaceLimitError extends Error {
+  constructor(
+    public owned: number,
+    public allowance: number,
+    public plan: string,
+  ) {
+    super(`Already owns ${owned} of ${allowance} allowed workspaces`);
+    this.name = "WorkspaceLimitError";
+  }
+}
+
 export function normalizeOrganizationType(value: unknown): OrganizationType {
   return value === "personal" ? "personal" : "business";
 }
@@ -358,13 +370,27 @@ export async function createOrganizationForUser(
   const trialKeys = trialKeysFor({ userId, email: owner.email });
   const alreadyClaimed = await hasClaimedTrial(trialKeys);
 
+  const existing = await listOrganizationsForUser(userId);
+
+  // Workspaces are capped per person, because each one carries its own
+  // allowances — ten Free workspaces would add up to more monthly sending
+  // than the paid tier they'd otherwise have to buy.
+  //
+  // The allowance follows the best plan they hold: someone paying for Pro on
+  // one workspace gets the Pro allowance across all of them. Enforced only on
+  // creating a new one, so anybody already over the line keeps everything
+  // they have — the same grandfathering rule as contacts.
+  const bestPlan: PlanKey = existing.some((org) => activePlan(org) === "pro")
+    ? "pro"
+    : "free";
+  const allowance = PLAN_LIMITS[bestPlan].workspaces;
+  if (existing.length >= allowance) {
+    throw new WorkspaceLimitError(existing.length, allowance, bestPlan);
+  }
+
   // Duplicate names among this user's workspaces get a numeric suffix
   // ("Acme" → "Acme 2") so the switcher never shows two identical entries.
-  const taken = new Set(
-    (await listOrganizationsForUser(userId)).map((org) =>
-      org.name.trim().toLowerCase(),
-    ),
-  );
+  const taken = new Set(existing.map((org) => org.name.trim().toLowerCase()));
   let name = input.name;
   if (taken.has(name.toLowerCase())) {
     let suffix = 2;
