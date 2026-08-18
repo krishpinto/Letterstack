@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
@@ -137,8 +137,8 @@ export const EXPIRY_WARNING_DAYS = 14;
 
 export type PlanState = {
   plan: PlanKey;
-  /** How they got here. 'trial' never paid; 'paid' settled an order. */
-  source: "none" | "trial" | "paid";
+  /** How they got here. 'trial' never paid; 'paid' settled an order; 'granted' is an admin perk. */
+  source: "none" | "trial" | "paid" | "granted";
   expiresAt: Date | null;
   /** Whole days remaining, rounded up. Null when nothing is counting down. */
   daysLeft: number | null;
@@ -163,6 +163,13 @@ export function planState(org: {
   const source = (org.planSource ?? "none") as PlanState["source"];
   const expiresAt = org.planExpiresAt ? new Date(org.planExpiresAt) : null;
 
+  // 'granted' (an admin perk) reads exactly like a trial everywhere in the
+  // UI — "this period is on us", not "renew" — so it's folded into the same
+  // isTrial/trialEnded flags rather than every banner/panel needing its own
+  // third branch. planSource itself still keeps them distinct in the data,
+  // for the admin panel and for telling perks apart from real revenue.
+  const unpaid = source === "trial" || source === "granted";
+
   const daysLeft =
     expiresAt && plan === "pro"
       ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000))
@@ -173,9 +180,9 @@ export function planState(org: {
     source,
     expiresAt,
     daysLeft,
-    isTrial: source === "trial" && plan === "pro",
+    isTrial: unpaid && plan === "pro",
     isExpiringSoon: daysLeft !== null && daysLeft <= EXPIRY_WARNING_DAYS,
-    trialEnded: source === "trial" && plan === "free",
+    trialEnded: unpaid && plan === "free",
   };
 }
 
@@ -285,6 +292,109 @@ export async function activatePlanForOrganization(
     .where(eq(organizations.id, organizationId))
     .returning({ plan: organizations.plan, planExpiresAt: organizations.planExpiresAt });
   return row ?? null;
+}
+
+/**
+ * Admin perk: grant a free Pro period of arbitrary length, with no payment
+ * involved. Same extend-from-later-of-now-or-current-expiry mechanics as
+ * activatePlanForOrganization, so granting more time to an org already on
+ * Pro adds to what's left rather than throwing it away — an admin topping
+ * up a trial keeps the trial's own remaining days too.
+ *
+ * planSource becomes 'granted' rather than 'paid', which keeps this
+ * visible/auditable as a perk instead of blending into real revenue, while
+ * still reading as "on us" (not "renew") everywhere in the UI — see the
+ * 'granted' handling in planState().
+ */
+export async function grantAdminPlan(organizationId: string, days: number) {
+  const [current] = await db
+    .select({ planExpiresAt: organizations.planExpiresAt, plan: organizations.plan })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+
+  if (!current) return null;
+
+  const now = Date.now();
+  const currentExpiry =
+    activePlan(current) !== "free" && current.planExpiresAt
+      ? new Date(current.planExpiresAt).getTime()
+      : now;
+  const base = Math.max(now, currentExpiry);
+  const expiresAt = new Date(base + days * 24 * 60 * 60 * 1000);
+
+  const [row] = await db
+    .update(organizations)
+    .set({ plan: "pro", planExpiresAt: expiresAt, planSource: "granted" })
+    .where(eq(organizations.id, organizationId))
+    .returning({
+      plan: organizations.plan,
+      planExpiresAt: organizations.planExpiresAt,
+      planSource: organizations.planSource,
+    });
+  return row ?? null;
+}
+
+/**
+ * Every organization with its plan state and owner, for the admin
+ * subscriptions panel. Two queries merged in JS rather than one join with
+ * GROUP BY — same shape as listSenderStats/listUsersForAdmin — since the
+ * owner lookup is a small, separate fan-out, not a per-row aggregate.
+ */
+export async function listOrganizationsForAdmin() {
+  const orgs = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      type: organizations.type,
+      plan: organizations.plan,
+      planExpiresAt: organizations.planExpiresAt,
+      planSource: organizations.planSource,
+      createdAt: organizations.createdAt,
+      memberCount: sql<number>`(select count(*)::int from organization_members om where om.organization_id = organizations.id)`,
+    })
+    .from(organizations)
+    .orderBy(desc(organizations.createdAt));
+
+  if (orgs.length === 0) return [];
+
+  const owners = await db
+    .select({
+      organizationId: organizationMembers.organizationId,
+      name: users.name,
+      email: users.email,
+    })
+    .from(organizationMembers)
+    .innerJoin(users, eq(organizationMembers.userId, users.id))
+    .where(
+      and(
+        inArray(
+          organizationMembers.organizationId,
+          orgs.map((org) => org.id),
+        ),
+        eq(organizationMembers.role, "owner"),
+      ),
+    );
+
+  const ownerByOrg = new Map(owners.map((owner) => [owner.organizationId, owner]));
+
+  return orgs.map((org) => {
+    const owner = ownerByOrg.get(org.id);
+    const state = planState(org);
+    return {
+      id: org.id,
+      name: org.name,
+      type: org.type,
+      ownerName: owner?.name ?? null,
+      ownerEmail: owner?.email ?? null,
+      memberCount: Number(org.memberCount),
+      plan: state.plan,
+      planSource: state.source,
+      planExpiresAt: state.expiresAt,
+      daysLeft: state.daysLeft,
+      createdAt: org.createdAt,
+    };
+  });
 }
 
 export async function getDefaultOrganizationForUser(userId: string) {
