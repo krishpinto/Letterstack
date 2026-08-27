@@ -23,23 +23,27 @@ is now a live beta user sending real campaigns through LetterStack.
 **Out of scope entirely:** lead-gen scraping (never planned, not revisited),
 billing/payments, per-client custom domains.
 
-**In scope now, gated:** public self-serve signup exists, but access beyond
-signup is gated behind an early-access waitlist with admin approval — see
-`context/early-access-plan.md`. This replaces the old "no self-serve until a
-second paying client" rule: the second (and third, and Nth) client is now
-meant to come through the waitlist, not through hand-onboarding.
+**In scope now:** public self-serve signup, open. Signing up or logging in
+puts you straight into the product — there is no waitlist and no approval
+step. The early-access gate that used to sit here was removed; its columns
+survive unused in `users` (see `db/schema.ts`) because dropping them needed
+a migration the removal didn't otherwise require.
+
+**Plans:** every new workspace starts on Free. Pro comes from paying for it
+(`lib/payments/settle.ts`) or from a deliberate admin grant in the `/admin`
+subscriptions panel. Nothing hands out a free Pro period at signup.
 
 ---
 
 ## North Star Milestone
 
-**Public beta: waitlist-gated signup live, CIBA-shaped orgs auto-approved,
-a first cohort of beta users approved and sending real campaigns.**
+**Public beta: open signup live, a first cohort of real orgs signing
+themselves up and sending real campaigns.**
 
 The original north star — one real CIBA campaign sent through LetterStack —
-is done. Every task is now sequenced backwards from getting a small, curated
-set of additional real orgs onto the platform without opening the doors
-wide open. If a task doesn't serve that, it doesn't get built yet.
+is done. Every task is now sequenced backwards from getting additional real
+orgs onto the platform and sending. If a task doesn't serve that, it doesn't
+get built yet.
 
 ---
 
@@ -76,16 +80,16 @@ wide open. If a task doesn't serve that, it doesn't get built yet.
 - [ ] dnd-kit drag-and-drop block reordering (still arrow-button only)
 - [ ] Fix whatever the next real sends expose
 
-### Phase 4 — Public beta / waitlist launch (current focus) ⬜
-- [x] `users.access_status` column + admin approval flow (design + as-built:
-      `context/early-access-plan.md`)
-- [x] `/early-access` holding page for pending/rejected accounts
-- [x] Admin users list + approve/reject actions in `/admin`
-- [x] Application-received + approved transactional emails
-- [x] Migration `0006_early_access.sql` applied to the real Neon DB —
-      existing accounts (including CIBA's) confirmed backfilled to `approved`
-- [ ] Marketing push publishing the "beta, one client, applying now" story
-      — content lives outside this repo, not planned here
+### Phase 4 — Public beta / open signup (current focus) ⬜
+- [x] Early-access waitlist built, then removed — signup now grants access
+      outright. The gate, its holding page, its admin approve/reject panel
+      and its two transactional emails are all gone; `users.access_status`
+      and friends remain as unused columns.
+- [x] Free Pro period at signup removed — new workspaces start on Free, and
+      the trial-grant ledger that policed one-free-period-per-person went
+      with it. Pro is paid or admin-granted only.
+- [ ] Marketing push publishing the beta story — content lives outside this
+      repo, not planned here
 
 ---
 

@@ -2,7 +2,6 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
-import { claimTrialKeys, hasClaimedTrial, trialKeysFor } from "./trial-grants";
 
 /** How long a new workspace gets Pro for free before it has to pay. */
 export const TRIAL_DAYS = 60;
@@ -474,12 +473,6 @@ export async function createOrganizationForUser(
 
   if (!owner) throw new OwnerNotFoundError();
 
-  // One free Pro period per set of people, not per workspace. A second
-  // workspace — or a second account on the same company domain — starts on
-  // Free rather than restarting the clock.
-  const trialKeys = trialKeysFor({ userId, email: owner.email });
-  const alreadyClaimed = await hasClaimedTrial(trialKeys);
-
   const existing = await listOrganizationsForUser(userId);
 
   // Workspaces are capped per person, because each one carries its own
@@ -513,15 +506,11 @@ export async function createOrganizationForUser(
     .values({
       name,
       type: input.type,
-      // A first workspace opens on a free Pro period; a repeat one doesn't.
-      // Set at insert rather than as a follow-up update so a workspace can
-      // never exist in a state where it was never granted one.
-      //
-      // No expiry when granted: the countdown starts at the first send, not
-      // at signup — see startTrialClockOnFirstSend. A null expiry reads as
-      // "Pro, not yet counting" everywhere downstream.
-      plan: alreadyClaimed ? "free" : "pro",
-      planSource: alreadyClaimed ? "none" : "trial",
+      // Every new workspace starts on Free. Pro is only ever reached by
+      // paying for it (lib/payments/settle.ts) or by an explicit admin grant
+      // from the subscriptions panel — never handed out at signup.
+      plan: "free",
+      planSource: "none",
       planExpiresAt: null,
     })
     .returning({
@@ -542,13 +531,6 @@ export async function createOrganizationForUser(
     // insert by hand rather than leaving an orphan behind.
     await db.delete(organizations).where(eq(organizations.id, organization.id));
     throw error;
-  }
-
-  // Claimed only once the workspace is fully built. Recording it before the
-  // membership insert would burn someone's free period on a creation that
-  // then rolled back.
-  if (!alreadyClaimed) {
-    await claimTrialKeys(trialKeys, organization.id);
   }
 
   return { ...organization, role: "owner", memberCount: 1 };

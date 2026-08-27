@@ -1,8 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "./client";
 import { organizations, sendingDomains } from "./schema";
-import { activePlan, endTrialForOrganization } from "./organizations";
-import { claimSendingDomain } from "./trial-grants";
+import { activePlan } from "./organizations";
 import { limitsFor, PLAN_LIMITS } from "@/lib/plans/limits";
 
 /**
@@ -91,20 +90,4 @@ export async function setSendingDomainVerified(
       ),
     );
 
-  if (!verified) return;
-
-  // A verified domain is the one identity that can't be faked — it takes
-  // control of the domain's DNS. If another workspace already had its free
-  // period against this domain, this is the same people back under a new
-  // account, and this workspace doesn't get a second one.
-  //
-  // Deliberately narrow: it ends a *granted* period only, and only on the
-  // org doing the verifying. It never touches a paid plan, never touches the
-  // original org, and never blocks the verification itself — someone
-  // legitimately moving a domain between their own workspaces keeps sending,
-  // they simply don't get another free run.
-  const { claimedByOther } = await claimSendingDomain(domain, organizationId);
-  if (claimedByOther) {
-    await endTrialForOrganization(organizationId);
-  }
 }
