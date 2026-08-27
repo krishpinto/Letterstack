@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { ClockIcon, MailIcon, MenuIcon } from "lucide-react";
+import { MenuIcon } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { RichButton } from "@/components/rich-button";
@@ -15,7 +15,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import type { AccessStatus } from "@/db/access";
 
 // Every item points at a section of the landing page itself — the marketing
 // subpages are gone, so the nav scrolls instead of navigating.
@@ -26,36 +25,14 @@ const NAV_ITEMS = [
   { href: "/#contact", label: "Contact" },
 ] as const;
 
-type NavbarProps = {
-  /**
-   * Signed-in user's early-access status. Undefined/null means either
-   * anonymous or "not known here" (e.g. a page that doesn't compute it) —
-   * both fall back to the normal signed-in behavior (Dashboard link), so
-   * only an explicit 'pending'/'rejected' changes anything.
-   */
-  accessStatus?: AccessStatus | null;
-};
-
 // Fixed dark pill regardless of the page's forced theme — this bar is
 // deliberately always #1a1a1a, not `bg-background`, so every child below
 // uses hardcoded light-on-dark colors instead of theme tokens (which would
 // resolve to light-theme values here and disappear against the dark bg).
 
-/** Small pill shown instead of the Dashboard link for a non-approved account. */
-function WaitingBadge({ accessStatus }: { accessStatus: "pending" | "rejected" }) {
-  const Icon = accessStatus === "pending" ? ClockIcon : MailIcon;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 select-none">
-      <Icon className="size-3.5" />
-      {accessStatus === "pending" ? "Waiting for approval" : "Access not available"}
-    </span>
-  );
-}
-
-export function Navbar({ accessStatus }: NavbarProps) {
+export function Navbar() {
   const { status } = useSession();
   const isSignedIn = status === "authenticated";
-  const waiting = isSignedIn && (accessStatus === "pending" || accessStatus === "rejected");
 
   return (
     // Above the page blur (z-40) but below z-50 takeovers, so the contact
@@ -70,9 +47,8 @@ export function Navbar({ accessStatus }: NavbarProps) {
           left/center/right layout regardless of how wide Brand or the
           actions group are. */}
       {/* max-w-4xl — measured the actual content (brand + 4 links + the
-          widest actions combo, Sign out + the "Waiting for approval"
-          badge) at ~793px minimum with no wrapping, so this still has
-          ~100px of margin. max-w-3xl (768px) was the one that broke:
+          widest actions combo) at ~793px minimum with no wrapping, so this
+          still has ~100px of margin. max-w-3xl (768px) was the one that broke:
           below its true minimum, which forced the grid to squeeze the
           center column until "How it works" wrapped and the brand name
           truncated. whitespace-nowrap on the links stays on as a second
@@ -117,18 +93,14 @@ export function Navbar({ accessStatus }: NavbarProps) {
                 <Link href="/login">Log in</Link>
               </Button>
             )}
-            {waiting ? (
-              <WaitingBadge accessStatus={accessStatus as "pending" | "rejected"} />
-            ) : (
-              <RichButton color="primary" size="sm" asChild>
-                <Link href={isSignedIn ? "/dashboard" : "/signup"}>
-                  {isSignedIn ? "Dashboard" : "Join waitlist"}
-                </Link>
-              </RichButton>
-            )}
+            <RichButton color="primary" size="sm" asChild>
+              <Link href={isSignedIn ? "/dashboard" : "/signup"}>
+                {isSignedIn ? "Dashboard" : "Get started"}
+              </Link>
+            </RichButton>
           </div>
 
-          <MobileNav isSignedIn={isSignedIn} accessStatus={accessStatus} />
+          <MobileNav isSignedIn={isSignedIn} />
         </div>
       </nav>
     </header>
@@ -151,9 +123,7 @@ function Brand() {
   );
 }
 
-function MobileNav({ isSignedIn, accessStatus }: { isSignedIn: boolean } & NavbarProps) {
-  const waiting = isSignedIn && (accessStatus === "pending" || accessStatus === "rejected");
-
+function MobileNav({ isSignedIn }: { isSignedIn: boolean }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -197,26 +167,13 @@ function MobileNav({ isSignedIn, accessStatus }: { isSignedIn: boolean } & Navba
                 </Button>
               </SheetClose>
             )}
-            {waiting ? (
-              <div className="flex justify-center">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground select-none">
-                  {accessStatus === "pending" ? (
-                    <ClockIcon className="size-3.5" />
-                  ) : (
-                    <MailIcon className="size-3.5" />
-                  )}
-                  {accessStatus === "pending" ? "Waiting for approval" : "Access not available"}
-                </span>
-              </div>
-            ) : (
-              <SheetClose asChild>
-                <RichButton color="primary" size="sm" asChild>
-                  <Link href={isSignedIn ? "/dashboard" : "/signup"}>
-                    {isSignedIn ? "Dashboard" : "Join waitlist"}
-                  </Link>
-                </RichButton>
-              </SheetClose>
-            )}
+            <SheetClose asChild>
+              <RichButton color="primary" size="sm" asChild>
+                <Link href={isSignedIn ? "/dashboard" : "/signup"}>
+                  {isSignedIn ? "Dashboard" : "Get started"}
+                </Link>
+              </RichButton>
+            </SheetClose>
             {isSignedIn && (
               <SheetClose asChild>
                 <Button

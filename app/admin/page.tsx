@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { PageLoader } from "@/components/bar-spinner";
-import { UsersPanel } from "@/components/admin/users-panel";
 import { SenderStatsPanel } from "@/components/admin/sender-stats-panel";
 import { SubscriptionsPanel } from "@/components/admin/subscriptions-panel";
 import { type ChartConfig } from "@/components/evilcharts/ui/chart";
@@ -681,9 +680,6 @@ export default function AdminInfraPage() {
             </div>
           )}
         </BlockCard>
-
-        {/* Early-access waitlist */}
-        <UsersPanel />
 
         {/* Per-user sending activity — who's actually sending, CIBA vs everyone else */}
         <SenderStatsPanel />

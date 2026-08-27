@@ -130,7 +130,7 @@ export function TrustSection() {
               background="#5D5FEF"
               className="mt-2 gap-1.5 px-8 py-3 text-sm font-semibold"
             >
-              Join the waitlist
+              Get started
               <ArrowRightIcon className="size-4" />
             </ShimmerButton>
           </div>

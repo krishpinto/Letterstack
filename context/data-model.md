@@ -8,13 +8,12 @@ library and a frozen audience snapshot per campaign.
 `users`
 - Login identity.
 - Owns auth details and account-level sending slug.
-- Early-access gate (`context/early-access-plan.md`, migration
-  `0006_early_access.sql`): `access_status` (`pending`/`approved`/`rejected`,
-  default `pending`; every row that existed before the migration was
-  backfilled to `approved`), `access_decided_at`, `access_decided_by_user_id`,
-  and `waitlist_applied_email_sent_at` (guards the "you're on the list"
-  email against being sent twice — see `app/(auth)/early-access/page.tsx`).
-  Checked in `proxy.ts`, not in a page layout — see `user-flow.md`.
+- Dead early-access columns: `access_status`, `access_decided_at`,
+  `access_decided_by_user_id`, `waitlist_applied_email_sent_at`. The waitlist
+  was removed and nothing reads any of them; they stayed behind because
+  dropping them needed a migration the removal didn't otherwise require.
+  `access_status` still defaults to `pending` at the database level, which
+  now means nothing.
 
 `organizations`
 - Workspace/account created during onboarding or from the dashboard sidebar.

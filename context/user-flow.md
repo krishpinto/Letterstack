@@ -11,32 +11,17 @@ signup/login
 -> dashboard
 ```
 
-**Early-access gate** (`context/early-access-plan.md`): `users.access_status`
-is checked centrally in `proxy.ts` (Next.js's middleware, renamed from
-`middleware.ts` as of Next.js 16). `/early-access` is the front door during
-the invite-only beta — reachable with no session, doubling as the "apply"
-landing page for anonymous visitors and the pending/rejected status page
-for signed-in non-approved accounts —
+**No access gate.** Signing up or logging in puts you straight into the
+product. `proxy.ts` (Next.js's middleware, renamed from `middleware.ts` as of
+Next.js 16) checks one thing on `/dashboard`, `/editor` and `/onboarding` —
+that there is a session — and sends anonymous requests to `/login` with a
+`callbackUrl`. `/admin` is narrower still: its ADMIN_EMAILS allowlist is
+enforced inside its own API routes, not in the proxy. `/` is not matched at
+all and is public.
 
-```text
-anonymous "/" -> /early-access ("Apply for early access" + signup/login CTAs)
-signup/login
--> pending?  -> /early-access (status page, no dashboard/editor/onboarding/"/" access)
--> approved? -> onboarding (if no org yet) -> dashboard, "/", everything opens
-```
-
-`/` sends every non-approved visitor — anonymous included — to
-`/early-access`; there is no marketing site to browse during the beta.
-`/dashboard`, `/editor`, `/onboarding`, `/admin` are unaffected by that
-specific redirect: an anonymous request to one of those still goes to
-`/login` as a plain deep link would, not to `/early-access`. Existing
-accounts (including CIBA's) were backfilled to `approved` in migration
-`0006_early_access.sql`, so nothing changed for anyone already using
-LetterStack. New signups default to `pending` until an admin approves them
-from `/admin` (`components/admin/users-panel.tsx`,
-`app/api/admin/users/route.ts`). Teammates invited into an already-approved
-org are auto-approved on invite accept (`db/invites.ts`,
-`acceptOrganizationInvite`) — only fresh, unaffiliated signups actually wait.
+The early-access waitlist that used to sit here is gone, along with its
+holding page, its admin approve/reject panel and its two transactional
+emails. Only the unused `users` columns remain — see `data-model.md`.
 
 Onboarding creates an organization with:
 
@@ -115,8 +100,7 @@ can open campaigns from any organization they belong to.
 
 ## Important Routes
 
-- `/`: light hero page. Gated — see the early-access section above; only
-  `approved` sessions reach it.
+- `/`: light hero page. Public — no session required.
 - `/login`, `/signup`, `/onboarding`: auth and setup.
 - `/dashboard`: organization-scoped dashboard.
 - `/dashboard/audience`: organization Audience list and CSV/Excel import.

@@ -74,7 +74,7 @@ export function Hero() {
                 rectangle. */}
             <RichButton color="default" size="lg" className="mt-2 gap-2 rounded-full" asChild>
               <Link href="/signup">
-                Join waitlist
+                Get started
                 <ArrowRightIcon data-icon="inline-end" />
               </Link>
             </RichButton>
