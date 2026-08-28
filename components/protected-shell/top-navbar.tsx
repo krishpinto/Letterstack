@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  BellIcon,
   ChevronDownIcon,
   HelpCircleIcon,
   LogOutIcon,
@@ -28,7 +27,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
+import { type PlanNotice } from "@/lib/plans/notice";
 import { CreateWorkspaceScreen } from "./create-workspace-screen";
+import { NotificationsMenu } from "./notifications-menu";
 import { InviteMembersDialog } from "./invite-members-dialog";
 
 export type NavbarOrganization = {
@@ -60,6 +61,8 @@ type TopNavbarProps = {
   plan?: PlanKey;
   /** Pre-formatted expiry date, e.g. "10 October 2026". Null hides the line. */
   planUntil?: string | null;
+  /** Shown under the bell. Survives the top banner being dismissed. */
+  planNotice?: PlanNotice | null;
 };
 
 export function TopNavbar({
@@ -69,6 +72,7 @@ export function TopNavbar({
   userEmail,
   plan = "free",
   planUntil = null,
+  planNotice = null,
 }: TopNavbarProps) {
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -291,13 +295,7 @@ export function TopNavbar({
           </Link>
         </Button>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
-        >
-          <BellIcon className="size-4" />
-        </Button>
+        <NotificationsMenu notice={planNotice} />
 
         <Button
           variant="ghost"

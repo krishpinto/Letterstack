@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { MenuIcon } from "lucide-react";
 
@@ -8,6 +9,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { RichButton } from "@/components/rich-button";
 import { StartCtaLink } from "@/components/start-cta";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Sheet,
   SheetClose,
@@ -29,14 +31,50 @@ const NAV_ITEMS = [
   { href: "/#contact", label: "Contact" },
 ] as const;
 
-// Fixed dark pill regardless of the page's forced theme — this bar is
-// deliberately always #1a1a1a, not `bg-background`, so every child below
-// uses hardcoded light-on-dark colors instead of theme tokens (which would
-// resolve to light-theme values here and disappear against the dark bg).
+// Two palettes, picked by what is physically behind the bar.
+//
+// One palette cannot serve both. The landing page opens on a full-bleed
+// purple sky photo; every other marketing route is white from the first
+// pixel, with a white footer under it. A dark bar on /pricing was the only
+// dark element on an otherwise white page, and a translucent white bar over
+// the hero photo just soaked up the purple and read as a washed-out lavender
+// slab — worse than the dark one it replaced.
+//
+// So: dark over the photo, light over white. The routes below are the ones
+// whose FIRST SCREEN is a photo, which is the only thing that matters — the
+// bar is fixed to the top and never scrolls into the sections underneath.
+// This has to be maintained by hand for the same reason LIGHT_ROUTES in
+// app/providers.tsx does: usePathname cannot see the route group. If you add
+// a marketing page that opens on a full-bleed image, add it here.
+const PHOTO_HERO_ROUTES = new Set(["/"]);
+
+// Hardcoded colors rather than theme tokens, matching the footer, which is
+// also hardcoded — these two components bracket every marketing page and
+// have to agree exactly. The group is force-light anyway, so `bg-background`
+// would resolve light in both branches and the dark bar would vanish.
+const TONES = {
+  dark: {
+    bar: "border-white/10 bg-[#1a1a1a] text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
+    brand: "text-white",
+    link: "text-white/85 hover:text-white",
+    ghost: "text-white/80 hover:bg-white/10 hover:text-white",
+  },
+  light: {
+    // No backdrop-blur here: with nothing but flat white behind it there is
+    // nothing to blur, and the translucency is what ruined the dark-photo
+    // case. Opaque white + a hairline border is what reads as a pill.
+    bar: "border-[#0A0A0A]/10 bg-white text-[#0A0A0A] shadow-[0_4px_20px_rgba(10,10,10,0.08)]",
+    brand: "text-[#0A0A0A]",
+    link: "text-[#52525B] hover:text-[#0A0A0A]",
+    ghost: "text-[#52525B] hover:bg-[#0A0A0A]/5 hover:text-[#0A0A0A]",
+  },
+} as const;
 
 export function Navbar() {
   const { status } = useSession();
   const isSignedIn = status === "authenticated";
+  const pathname = usePathname();
+  const tone = PHOTO_HERO_ROUTES.has(pathname) ? TONES.dark : TONES.light;
 
   return (
     // Above the page blur (z-40) but below z-50 takeovers, so the contact
@@ -58,15 +96,23 @@ export function Navbar() {
           before. 5xl (1024px) restores the margin the 4-link bar had.
           whitespace-nowrap on the links stays on as a second line of
           defense regardless. */}
-      <nav className="mx-auto grid max-w-5xl grid-cols-[auto_1fr_auto] items-center gap-6 rounded-xl border border-white/10 bg-[#1a1a1a] px-2 py-1.5 text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
-        <Brand />
+      <nav
+        className={cn(
+          "mx-auto grid max-w-5xl grid-cols-[auto_1fr_auto] items-center gap-6 rounded-xl border px-2 py-1.5",
+          tone.bar,
+        )}
+      >
+        <Brand className={tone.brand} />
 
         <div className="hidden items-center justify-center gap-6 md:flex">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="text-[13px] font-medium whitespace-nowrap text-white/85 transition-colors hover:text-white"
+              className={cn(
+                "text-[13px] font-medium whitespace-nowrap transition-colors",
+                tone.link,
+              )}
             >
               {item.label}
             </Link>
@@ -83,7 +129,7 @@ export function Navbar() {
             {isSignedIn && (
               <Button
                 variant="ghost"
-                className="text-white/80 hover:bg-white/10 hover:text-white"
+                className={tone.ghost}
                 onClick={() => signOut({ callbackUrl: "/" })}
               >
                 Sign out
@@ -92,7 +138,7 @@ export function Navbar() {
             {!isSignedIn && (
               <Button
                 variant="ghost"
-                className="text-white/80 hover:bg-white/10 hover:text-white"
+                className={tone.ghost}
                 asChild
               >
                 <Link href="/login">Log in</Link>
@@ -103,14 +149,14 @@ export function Navbar() {
             </RichButton>
           </div>
 
-          <MobileNav isSignedIn={isSignedIn} />
+          <MobileNav isSignedIn={isSignedIn} triggerClassName={tone.ghost} />
         </div>
       </nav>
     </header>
   );
 }
 
-function Brand() {
+function Brand({ className }: { className?: string }) {
   return (
     // No min-w-0/truncate: "Letterstack" is a fixed short string that
     // should never need clipping — min-w-0 on a grid item lets it shrink
@@ -119,21 +165,34 @@ function Brand() {
     // column got squeezed.
     <Link href="/" className="flex shrink-0 items-center gap-2.5">
       <BrandLogo className="size-9 shrink-0" aria-hidden />
-      <span className="whitespace-nowrap text-lg font-semibold tracking-normal text-white">
+      <span
+        className={cn(
+          "whitespace-nowrap text-lg font-semibold tracking-normal",
+          className,
+        )}
+      >
         Letterstack
       </span>
     </Link>
   );
 }
 
-function MobileNav({ isSignedIn }: { isSignedIn: boolean }) {
+function MobileNav({
+  isSignedIn,
+  triggerClassName,
+}: {
+  isSignedIn: boolean;
+  triggerClassName?: string;
+}) {
   return (
     <Sheet>
       <SheetTrigger asChild>
+        {/* Only the trigger takes the bar's tone — the sheet itself is a
+            separate surface on theme tokens, which are light either way. */}
         <Button
           variant="ghost"
           size="icon"
-          className="text-white/80 hover:bg-white/10 hover:text-white md:hidden"
+          className={cn("md:hidden", triggerClassName)}
           aria-label="Open navigation"
         >
           <MenuIcon />
