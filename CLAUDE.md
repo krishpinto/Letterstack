@@ -29,9 +29,20 @@ step. The early-access gate that used to sit here was removed; its columns
 survive unused in `users` (see `db/schema.ts`) because dropping them needed
 a migration the removal didn't otherwise require.
 
-**Plans:** every new workspace starts on Free. Pro comes from paying for it
-(`lib/payments/settle.ts`) or from a deliberate admin grant in the `/admin`
-subscriptions panel. Nothing hands out a free Pro period at signup.
+**Plans:** four tiers — Free, Starter, Growth, Business — defined once in
+`lib/plans/limits.ts`, which is the only place their numbers, prices, and
+copy live. Enforcement (send allowance, contact ceiling, domains, workspaces)
+and the public pricing page both read that table, so they cannot drift.
+Starter's stored plan key is still `pro`, for the live rows and settled
+payments that already carry it.
+
+Every new workspace starts on Free. A paid tier comes from buying it
+(`lib/payments/settle.ts`, priced in `lib/payments/catalog.ts`) or from a
+deliberate admin grant in the `/admin` subscriptions panel. Nothing hands out
+a free period at signup. **Business is deliberately not self-serve** — it has
+no catalog entry and routes to the contact form, because above Growth one
+sender importing a bought list can push the whole SES account past its
+bounce/complaint thresholds and take everyone else's sending down with it.
 
 ---
 
