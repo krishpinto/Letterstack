@@ -230,7 +230,11 @@ cheap if ever genuinely needed.
 - **Component order:** shadcn/ui → Radix primitive → custom (last resort,
   with a comment explaining why).
 - No inline `style={{}}`, no px font sizes, never edit `components/ui/*`
-  (extend via className only).
+  (extend via className only). One standing exception: `ui/tabs.tsx`, whose
+  orientation and active-state variants were written against attributes
+  Radix doesn't emit, so they matched nothing. Fixing a primitive that is
+  broken is not the same as customising it — but say so in the file, as
+  that one does.
 
 ---
 
