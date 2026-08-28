@@ -16,6 +16,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { type PlanKey } from "@/lib/plans/limits";
 import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
@@ -85,7 +86,7 @@ export function SettingsShell({
     sends: { used: number; limit: number };
     domains: { used: number; limit: number };
     contacts: { used: number; limit: number };
-    plan?: "free" | "pro";
+    plan?: PlanKey;
     planExpiresAt?: string | null;
     isTrial?: boolean;
     trialEnded?: boolean;
