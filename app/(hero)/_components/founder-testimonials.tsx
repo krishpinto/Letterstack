@@ -33,7 +33,13 @@ export function FounderTestimonials() {
   }, [activeIndex]);
 
   return (
-    <section className="py-12 sm:py-16 bg-white overflow-hidden">
+    // id + scroll-mt-24 to match the other landing sections: the navbar has
+    // linked to /#testimonials all along, but nothing on the page carried
+    // the anchor, so the link did nothing.
+    <section
+      id="testimonials"
+      className="scroll-mt-24 py-12 sm:py-16 bg-white overflow-hidden"
+    >
       <div className="mx-auto max-w-screen-lg px-6">
         
         {/* Testimonial slider outer container */}

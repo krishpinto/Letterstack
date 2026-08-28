@@ -7,61 +7,63 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 
+import {
+  PLAN_LIMITS,
+  PLAN_ORDER,
+  planHighlights,
+  type PlanKey,
+} from "@/lib/plans/limits";
+
+// Every figure and price on this page comes from lib/plans/limits.ts — the
+// same table the send path and the import guard enforce against. This page
+// used to keep its own hardcoded copy, which is how it ended up advertising
+// a tier the rest of the app had never heard of.
+//
 // Yearly is ten months' price on every tier — pay for 10, get 12. One rule
 // across the table keeps the discount easy to explain and easy to verify.
-const plans = [
-  {
-    name: "Free",
-    monthlyPrice: 0,
-    yearlyPrice: 0,
-    description: "Enough to run a real list and see whether this fits you.",
-    features: [
-      "500 contacts",
-      "2,000 emails a month",
-      "1 sending domain",
-      "1 signup form",
-      "7 days of analytics",
-      "Full block editor",
-    ],
-    includesLabel: "Free includes",
-    cta: "Start free",
-  },
-  {
-    name: "Starter",
-    monthlyPrice: 499,
-    yearlyPrice: 4999,
-    description: "For a newsletter going out to a few thousand people.",
-    features: [
-      "3,000 contacts",
-      "15,000 emails a month",
-      "2 sending domains",
-      "Unlimited signup forms",
-      "Full analytics history",
-      "Email support",
-    ],
-    includesLabel: "Everything in Free, plus",
-    cta: "Choose Starter",
-    featured: true,
-  },
-  {
-    name: "Growth",
-    monthlyPrice: 1499,
-    yearlyPrice: 14999,
-    description: "For orgs sending to a larger list, more than once a month.",
-    features: [
-      "10,000 contacts",
-      "50,000 emails a month",
-      "5 sending domains",
-      "Automations",
-      "Team roles and invites",
-      "Priority support",
-    ],
-    includesLabel: "Everything in Starter, plus",
-    cta: "Choose Growth",
-  },
-];
+type PlanCard = {
+  key: PlanKey;
+  name: string;
+  monthlyPrice: number | null;
+  yearlyPrice: number | null;
+  description: string;
+  features: string[];
+  includesLabel: string;
+  cta: string;
+  href: string;
+  featured?: boolean;
+};
+
+const plans: PlanCard[] = PLAN_ORDER.map((key, index) => {
+  const limits = PLAN_LIMITS[key];
+  const previous = index > 0 ? PLAN_LIMITS[PLAN_ORDER[index - 1]] : null;
+  return {
+    key,
+    name: limits.label,
+    monthlyPrice: limits.monthlyPrice,
+    yearlyPrice: limits.yearlyPrice,
+    description: limits.blurb,
+    features: planHighlights(key),
+    includesLabel: previous
+      ? `Everything in ${previous.label}, plus`
+      : `${limits.label} includes`,
+    // Free starts an account; the paid tiers go to the billing panel, which
+    // sits behind auth — so a signed-out visitor is sent through login and
+    // lands on the thing they were trying to buy. Business has nothing to
+    // buy, so it goes to the contact form instead.
+    cta: key === "free" ? "Start free" : limits.negotiable ? "Talk to us" : `Choose ${limits.label}`,
+    href:
+      key === "free"
+        ? "/signup"
+        : limits.negotiable
+          ? "/#contact"
+          : "/dashboard/settings?section=billing",
+    featured: key === "pro",
+  };
+});
 
 type BillingCycle = "monthly" | "yearly";
 
@@ -131,7 +133,10 @@ export function Pricing02() {
   }, [billingCycle]);
 
   return (
-    <section className="pricing-02 relative min-h-screen overflow-hidden bg-white px-4 py-20 text-[#172033] transition-colors duration-300 dark:bg-[#101010] dark:text-white sm:px-6 lg:px-8 lg:py-28">
+    // Extra top padding, not the symmetric py-20 this had as a standalone
+    // route: it now renders under the marketing shell's fixed navbar, whose
+    // pill reaches ~60px down the viewport.
+    <section className="pricing-02 relative min-h-screen overflow-hidden bg-white px-4 pb-20 pt-28 text-[#172033] transition-colors duration-300 dark:bg-[#101010] dark:text-white sm:px-6 lg:px-8 lg:pb-28 lg:pt-36">
       <style>{`
         .pricing-02 {
           --digit-dur: 500ms;
@@ -249,7 +254,9 @@ export function Pricing02() {
         }
       `}</style>
 
-      <div className="mx-auto max-w-6xl">
+      {/* max-w-7xl, not 6xl — four tiers now share this row, and at 6xl the
+          cards get too narrow for a feature line to sit on one line. */}
+      <div className="mx-auto max-w-7xl">
         <div className="grid gap-6 md:grid-cols-12 md:items-end">
           <div className="md:col-span-6">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-zinc-500">
@@ -305,103 +312,117 @@ export function Pricing02() {
           </div>
         </div>
 
-        <div className="relative mt-12 grid gap-3 lg:grid-cols-3">
-          {plans.map((plan, planIndex) => (
-            <article
-              key={plan.name}
-              className="group relative isolate flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/70 p-2 shadow-[0_18px_55px_-46px_rgba(15,23,42,0.35)] transition-[border-color,box-shadow] duration-500 ease-out hover:border-slate-300 hover:shadow-[0_24px_70px_-50px_rgba(15,23,42,0.52)] dark:border-white/[0.08] dark:bg-[#151515] dark:shadow-[0_18px_55px_-46px_rgba(0,0,0,0.95)] dark:hover:border-white/[0.15] dark:hover:shadow-[0_24px_70px_-48px_rgba(0,0,0,1)] lg:min-h-[640px]"
-            >
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 top-0 z-0 h-72 bg-[radial-gradient(ellipse_at_50%_-20%,rgba(148,163,184,0.16),transparent_66%)] opacity-0 transition-opacity duration-500 ease-out group-hover:opacity-100 dark:bg-[radial-gradient(ellipse_at_50%_-20%,rgba(255,255,255,0.09),transparent_64%)]"
-              />
+        <div className="relative mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {plans.map((plan, planIndex) => {
+            const price =
+              billingCycle === "monthly" ? plan.monthlyPrice : plan.yearlyPrice;
 
-              <div
-                className={`relative z-10 flex min-h-[248px] flex-col rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),inset_0_8px_18px_-20px_rgba(15,23,42,0.45),inset_0_-8px_18px_-22px_rgba(15,23,42,0.4)] transition-[background-color,box-shadow] duration-500 ease-out group-hover:shadow-[0_0_0_1px_rgba(0,0,0,0.075),inset_0_8px_18px_-20px_rgba(15,23,42,0.45),inset_0_-8px_18px_-22px_rgba(15,23,42,0.4)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.085),inset_0_8px_18px_-20px_rgba(255,255,255,0.45),inset_0_-8px_18px_-22px_rgba(255,255,255,0.4)] dark:group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.105),inset_0_8px_18px_-20px_rgba(255,255,255,0.45),inset_0_-8px_18px_-22px_rgba(255,255,255,0.4)] ${
-                  plan.featured
-                    ? "bg-[radial-gradient(circle_at_50%_0%,#eef2f7_0%,#ffffff_62%)] dark:bg-[radial-gradient(circle_at_50%_0%,#292929_0%,#1a1a1a_62%)]"
-                    : "bg-white dark:bg-[#1a1a1a]"
-                }`}
+            return (
+              <article
+                key={plan.key}
+                id={plan.key}
+                className="group relative isolate flex scroll-mt-24 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/70 p-2 shadow-[0_18px_55px_-46px_rgba(15,23,42,0.35)] transition-[border-color,box-shadow] duration-500 ease-out hover:border-slate-300 hover:shadow-[0_24px_70px_-50px_rgba(15,23,42,0.52)] dark:border-white/[0.08] dark:bg-[#151515] dark:shadow-[0_18px_55px_-46px_rgba(0,0,0,0.95)] dark:hover:border-white/[0.15] dark:hover:shadow-[0_24px_70px_-48px_rgba(0,0,0,1)] lg:min-h-[640px]"
               >
-                <div>
-                  <p className="text-base font-medium">{plan.name}</p>
-                  <p className="mt-2 min-h-12 max-w-xs text-sm leading-6 text-slate-500 dark:text-zinc-400">
-                    {plan.description}
-                  </p>
-                </div>
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 top-0 z-0 h-72 bg-[radial-gradient(ellipse_at_50%_-20%,rgba(148,163,184,0.16),transparent_66%)] opacity-0 transition-opacity duration-500 ease-out group-hover:opacity-100 dark:bg-[radial-gradient(ellipse_at_50%_-20%,rgba(255,255,255,0.09),transparent_64%)]"
+                />
 
-                <div className="mt-4 flex min-h-10 items-end gap-1.5">
-                  <span
-                    ref={(element) => {
-                      priceRefs.current[planIndex] = element;
-                    }}
-                    className="t-digit-group text-4xl font-medium leading-none tracking-[-0.045em]"
-                    style={
-                      {
-                        "--digit-dir-y": billingCycle === "yearly" ? 1 : -1,
-                      } as CSSProperties
-                    }
-                  >
-                    {`₹${(billingCycle === "monthly"
-                      ? plan.monthlyPrice
-                      : plan.yearlyPrice
-                    ).toLocaleString("en-IN")}`
-                      .split("")
-                      .map((character, index, characters) => (
-                        <span
-                          key={`${billingCycle}-${index}-${character}`}
-                          className="t-digit"
-                          data-stagger={
-                            index === characters.length - 2
-                              ? "1"
-                              : index === characters.length - 1
-                                ? "2"
-                                : undefined
-                          }
-                        >
-                          {character}
-                        </span>
-                      ))}
-                  </span>
-                  <span className="pb-1 text-sm text-slate-400 dark:text-zinc-500">
-                    / {billingCycle === "monthly" ? "month" : "year"}
-                  </span>
-                </div>
-
-                <a
-                  href="#"
-                  className={`mt-auto flex h-10 items-center justify-between rounded-lg px-4 text-sm font-medium transition-[background-color,color,transform] duration-300 active:scale-[0.99] ${
+                <div
+                  className={`relative z-10 flex min-h-[248px] flex-col rounded-xl p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.06),inset_0_8px_18px_-20px_rgba(15,23,42,0.45),inset_0_-8px_18px_-22px_rgba(15,23,42,0.4)] transition-[background-color,box-shadow] duration-500 ease-out group-hover:shadow-[0_0_0_1px_rgba(0,0,0,0.075),inset_0_8px_18px_-20px_rgba(15,23,42,0.45),inset_0_-8px_18px_-22px_rgba(15,23,42,0.4)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.085),inset_0_8px_18px_-20px_rgba(255,255,255,0.45),inset_0_-8px_18px_-22px_rgba(255,255,255,0.4)] dark:group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.105),inset_0_8px_18px_-20px_rgba(255,255,255,0.45),inset_0_-8px_18px_-22px_rgba(255,255,255,0.4)] ${
                     plan.featured
-                      ? "bg-[#172033] text-white hover:bg-slate-700 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
-                      : "border border-slate-200 bg-white text-[#172033] hover:border-slate-300 hover:bg-slate-50 dark:border-white/[0.1] dark:bg-transparent dark:text-zinc-100 dark:hover:border-white/[0.16] dark:hover:bg-white/[0.04]"
+                      ? "bg-[radial-gradient(circle_at_50%_0%,#eef2f7_0%,#ffffff_62%)] dark:bg-[radial-gradient(circle_at_50%_0%,#292929_0%,#1a1a1a_62%)]"
+                      : "bg-white dark:bg-[#1a1a1a]"
                   }`}
                 >
-                  {plan.cta}
-                  <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
-                </a>
-              </div>
+                  <div>
+                    <p className="text-base font-medium">{plan.name}</p>
+                    <p className="mt-2 min-h-12 max-w-xs text-sm leading-6 text-slate-500 dark:text-zinc-400">
+                      {plan.description}
+                    </p>
+                  </div>
 
-              <div className="relative z-10 flex flex-1 flex-col px-4 pb-5 pt-8 sm:px-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.15em] text-slate-400 dark:text-zinc-500">
-                  {plan.includesLabel}
-                </p>
-
-                <ul className="mt-5 space-y-4">
-                  {plan.features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-center gap-2.5 text-sm text-slate-600 dark:text-zinc-300"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                        <Check className="size-3" />
+                  <div className="mt-4 flex min-h-10 items-end gap-1.5">
+                    {price === null ? (
+                      // Nothing to animate and no per-month suffix: this tier
+                      // is quoted per deal, so a number here would be a lie.
+                      <span className="text-3xl font-medium leading-none tracking-[-0.045em]">
+                        Custom
                       </span>
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </article>
-          ))}
+                    ) : (
+                      <>
+                        <span
+                          ref={(element) => {
+                            priceRefs.current[planIndex] = element;
+                          }}
+                          className="t-digit-group text-4xl font-medium leading-none tracking-[-0.045em]"
+                          style={
+                            {
+                              "--digit-dir-y":
+                                billingCycle === "yearly" ? 1 : -1,
+                            } as CSSProperties
+                          }
+                        >
+                          {`₹${price.toLocaleString("en-IN")}`
+                            .split("")
+                            .map((character, index, characters) => (
+                              <span
+                                key={`${billingCycle}-${index}-${character}`}
+                                className="t-digit"
+                                data-stagger={
+                                  index === characters.length - 2
+                                    ? "1"
+                                    : index === characters.length - 1
+                                      ? "2"
+                                      : undefined
+                                }
+                              >
+                                {character}
+                              </span>
+                            ))}
+                        </span>
+                        <span className="pb-1 text-sm text-slate-400 dark:text-zinc-500">
+                          / {billingCycle === "monthly" ? "month" : "year"}
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  <Link
+                    href={plan.href}
+                    className={`mt-auto flex h-10 items-center justify-between rounded-lg px-4 text-sm font-medium transition-[background-color,color,transform] duration-300 active:scale-[0.99] ${
+                      plan.featured
+                        ? "bg-[#172033] text-white hover:bg-slate-700 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+                        : "border border-slate-200 bg-white text-[#172033] hover:border-slate-300 hover:bg-slate-50 dark:border-white/[0.1] dark:bg-transparent dark:text-zinc-100 dark:hover:border-white/[0.16] dark:hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {plan.cta}
+                    <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+                  </Link>
+                </div>
+
+                <div className="relative z-10 flex flex-1 flex-col px-4 pb-5 pt-8 sm:px-5">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.15em] text-slate-400 dark:text-zinc-500">
+                    {plan.includesLabel}
+                  </p>
+
+                  <ul className="mt-5 space-y-4">
+                    {plan.features.map((feature) => (
+                      <li
+                        key={feature}
+                        className="flex items-center gap-2.5 text-sm text-slate-600 dark:text-zinc-300"
+                      >
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                          <Check className="size-3" />
+                        </span>
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            );
+          })}
         </div>
 
         <div className="mt-5 flex flex-col gap-2 text-xs text-slate-400 dark:text-zinc-600 sm:flex-row sm:items-center sm:justify-between">

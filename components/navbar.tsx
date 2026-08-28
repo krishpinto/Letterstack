@@ -16,11 +16,14 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-// Every item points at a section of the landing page itself — the marketing
-// subpages are gone, so the nav scrolls instead of navigating.
+// Mostly sections of the landing page itself — the marketing subpages are
+// gone, so those items scroll instead of navigating. Pricing is the one real
+// route left, and it sits next to the section links rather than off in the
+// actions group because it's something people look for, not an action.
 const NAV_ITEMS = [
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "How it works" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/#testimonials", label: "Testimonials" },
   { href: "/#contact", label: "Contact" },
 ] as const;
@@ -46,14 +49,15 @@ export function Navbar() {
           taking the remaining space (1fr) gives a true, distinct
           left/center/right layout regardless of how wide Brand or the
           actions group are. */}
-      {/* max-w-4xl — measured the actual content (brand + 4 links + the
-          widest actions combo) at ~793px minimum with no wrapping, so this
-          still has ~100px of margin. max-w-3xl (768px) was the one that broke:
-          below its true minimum, which forced the grid to squeeze the
-          center column until "How it works" wrapped and the brand name
-          truncated. whitespace-nowrap on the links stays on as a second
-          line of defense regardless. */}
-      <nav className="mx-auto grid max-w-4xl grid-cols-[auto_1fr_auto] items-center gap-6 rounded-xl border border-white/10 bg-[#1a1a1a] px-2 py-1.5 text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
+      {/* max-w-5xl — was 4xl (896px) when this held 4 links, measured at
+          ~793px minimum. Adding "Pricing" puts the true minimum at ~870px,
+          which left under 30px of margin: close enough to the edge that a
+          font fallback or a wider label would start wrapping "How it works"
+          and truncating the brand, the exact failure max-w-3xl caused
+          before. 5xl (1024px) restores the margin the 4-link bar had.
+          whitespace-nowrap on the links stays on as a second line of
+          defense regardless. */}
+      <nav className="mx-auto grid max-w-5xl grid-cols-[auto_1fr_auto] items-center gap-6 rounded-xl border border-white/10 bg-[#1a1a1a] px-2 py-1.5 text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
         <Brand />
 
         <div className="hidden items-center justify-center gap-6 md:flex">
