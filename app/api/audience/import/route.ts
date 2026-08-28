@@ -8,6 +8,7 @@ import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { validateEmails } from "@/lib/import/validation";
 import { checkContactHeadroom } from "@/lib/plans/guards";
+import { nextPlanUp, PLAN_LIMITS } from "@/lib/plans/limits";
 
 export const runtime = "nodejs";
 
@@ -89,9 +90,11 @@ export async function POST(request: Request) {
           `This file adds ${toInsert.length.toLocaleString()} new contacts, but only ` +
           `${headroom.remaining.toLocaleString()} of your ${headroom.limit.toLocaleString()} ` +
           `contacts are still free. Nothing was imported. ` +
-          (headroom.plan === "pro"
-            ? "Contact us if you need a higher limit."
-            : "Upgrade to Starter in Settings → Billing for more."),
+          // Names the tier that would actually fit them, rather than always
+          // Starter — someone already on Starter needs to hear "Growth".
+          (nextPlanUp(headroom.plan)
+            ? `Upgrade to ${PLAN_LIMITS[nextPlanUp(headroom.plan)!].label} in Settings → Billing for more.`
+            : "Contact us if you need a higher limit."),
         limit: headroom.limit,
         used: headroom.used,
         attempted: toInsert.length,
