@@ -102,9 +102,26 @@ export function Footer() {
 
         {/* ── Bottom Row: Copyright & Status ─────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <p className="text-xs text-[#717171]">
-            © {new Date().getFullYear()} Letterstack
-          </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="text-xs text-[#717171]">
+              © {new Date().getFullYear()} Letterstack
+            </p>
+            {/* Google's OAuth review requires the privacy policy to be
+                reachable from the homepage, so these live in the footer
+                rather than only on the pages that reference them. */}
+            <Link
+              href="/privacy"
+              className="text-xs text-[#717171] underline-offset-4 transition-colors hover:text-[#0A0A0A] hover:underline"
+            >
+              Privacy
+            </Link>
+            <Link
+              href="/terms"
+              className="text-xs text-[#717171] underline-offset-4 transition-colors hover:text-[#0A0A0A] hover:underline"
+            >
+              Terms
+            </Link>
+          </div>
 
           {/* Status Badge */}
           <div className="self-start flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#E4E4E7] bg-white shadow-xs text-[11px] font-medium text-[#0A0A0A] select-none">
