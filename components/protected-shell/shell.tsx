@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { type PlanKey } from "@/lib/plans/limits";
+import { type PlanNotice } from "@/lib/plans/notice";
 import { ContentHeader } from "./content-header";
 import { IconRail } from "./icon-rail";
 import { NavSidebar } from "./nav-sidebar";
@@ -18,6 +19,7 @@ type ProtectedShellProps = {
   userEmail?: string;
   plan?: PlanKey;
   planUntil?: string | null;
+  planNotice?: PlanNotice | null;
   headerActions?: ReactNode;
 };
 
@@ -29,6 +31,7 @@ export function ProtectedShell({
   userEmail = "",
   plan = "free",
   planUntil = null,
+  planNotice = null,
   headerActions,
 }: ProtectedShellProps) {
   const [navOpen, setNavOpen] = useState(true);
@@ -58,6 +61,7 @@ export function ProtectedShell({
         userEmail={userEmail}
         plan={plan}
         planUntil={planUntil}
+        planNotice={planNotice}
       />
 
       {/* ── Body ── */}

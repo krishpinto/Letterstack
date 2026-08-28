@@ -1,96 +1,79 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangleIcon, ClockIcon } from "lucide-react";
+import { AlertTriangleIcon, ClockIcon, XIcon } from "lucide-react";
 
-import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
+import {
+  PLAN_NOTICE_DISMISSED_COOKIE,
+  type PlanNotice,
+} from "@/lib/plans/notice";
 
-// The settings page reads ?section=, not ?tab= — these links pointed at
-// ?tab=billing and so quietly landed on the Account panel instead.
-const BILLING_HREF = "/dashboard/settings?section=billing";
+const SIX_MONTHS = 60 * 60 * 24 * 180;
 
 /**
  * The standing reminder that a trial or paid period is running out, and the
  * notice that it already has.
  *
- * Deliberately not dismissible. The announcement dialog is the thing someone
- * acknowledges once; this is the thing that has to still be true on the day
- * they try to send and can't. A banner that can be closed is a banner that
- * will be closed and then missed.
+ * Dismissible — but the notice doesn't disappear, it moves. Closing this
+ * writes the notice id to a cookie the server layout reads, so the bar is
+ * gone from the next render onwards with no flash; the same notice keeps
+ * living in the notifications bell in the top navbar, which ignores
+ * dismissal entirely. That's what makes the close button safe: the earlier
+ * "deliberately not dismissible" rule here existed because a closed banner
+ * used to mean a lost warning, and now it doesn't.
  *
- * Renders nothing at all until there's something worth saying, so it's safe
- * to mount unconditionally in the layout.
+ * Dismissal is recorded per notice id, so it lapses on its own — see
+ * PlanNotice.id. Renders nothing until there's something worth saying, so
+ * it's safe to mount unconditionally in the layout.
  */
-export function TrialStatusBanner({
-  isTrial,
-  trialEnded,
-  isExpiringSoon,
-  daysLeft,
-  expiresAt,
-  plan = "free",
-}: {
-  isTrial: boolean;
-  trialEnded: boolean;
-  isExpiringSoon: boolean;
-  daysLeft: number | null;
-  expiresAt: string | null;
-  /** The tier currently in force, so the copy names it rather than assuming Pro. */
-  plan?: PlanKey;
-}) {
-  const current = PLAN_LIMITS[plan];
+export function TrialStatusBanner({ notice }: { notice: PlanNotice | null }) {
+  const [dismissed, setDismissed] = useState(false);
 
-  if (trialEnded) {
-    return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2.5 text-sm sm:px-6">
-        <AlertTriangleIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-        {/* The tier that ended isn't knowable here — the plan has already
-            resolved to free — so this stays deliberately unnamed. */}
-        <span className="font-medium">Your paid plan has ended.</span>
-        <span className="text-muted-foreground">
-          Your workspace is on the Free plan — everything you&rsquo;ve made is
-          still here, but sending and contact limits are lower.
-        </span>
-        <Link
-          href={BILLING_HREF}
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          See plans
-        </Link>
-      </div>
-    );
+  if (!notice || dismissed) return null;
+
+  function dismiss() {
+    if (!notice) return;
+    document.cookie = `${PLAN_NOTICE_DISMISSED_COOKIE}=${encodeURIComponent(
+      notice.id,
+    )}; path=/; max-age=${SIX_MONTHS}; samesite=lax`;
+    setDismissed(true);
   }
 
-  if (!isExpiringSoon || daysLeft === null) return null;
-
-  const until = expiresAt
-    ? new Date(expiresAt).toLocaleDateString(undefined, {
-        day: "numeric",
-        month: "long",
-      })
-    : null;
-  // "tomorrow" and "today" read as urgent in a way "in 1 days" never does.
-  const when =
-    daysLeft === 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`;
+  const ended = notice.kind === "ended";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-muted/40 px-4 py-2.5 text-sm sm:px-6">
-      <ClockIcon className="size-4 shrink-0 text-muted-foreground" />
-      <span className="font-medium">
-        Your {current.label} plan ends {when}
-        {until && daysLeft > 1 ? ` (${until})` : ""}.
-      </span>
-      <span className="text-muted-foreground">
-        {/* Prices come from the plan table, so a tier's rate can't be quoted
-            here at last month's number — and a negotiated tier, which has no
-            list price to quote, falls through to the neutral wording. */}
-        {isTrial && current.monthlyPrice !== null && current.yearlyPrice !== null
-          ? `Continue on ${current.label} for ₹${current.monthlyPrice.toLocaleString("en-IN")} a month, or ₹${current.yearlyPrice.toLocaleString("en-IN")} a year.`
-          : "Renew to keep your current limits."}
-      </span>
+    <div
+      className={
+        ended
+          ? "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2.5 text-sm sm:px-6"
+          : "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border bg-muted/40 px-4 py-2.5 text-sm sm:px-6"
+      }
+    >
+      {ended ? (
+        <AlertTriangleIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      ) : (
+        <ClockIcon className="size-4 shrink-0 text-muted-foreground" />
+      )}
+      <span className="font-medium">{notice.title}</span>
+      <span className="text-muted-foreground">{notice.body}</span>
       <Link
-        href={BILLING_HREF}
+        href={notice.actionHref}
         className="font-medium text-primary underline-offset-4 hover:underline"
       >
-        {isTrial ? `Continue on ${current.label}` : "Renew"}
+        {notice.actionLabel}
       </Link>
+      {/* ms-auto, not a fixed position: the bar wraps to two lines on narrow
+          viewports, and the close button should sit at the end of the text
+          either way rather than float over it. */}
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss — this stays in your notifications"
+        className="ms-auto shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <XIcon className="size-3.5" />
+      </button>
     </div>
   );
 }
