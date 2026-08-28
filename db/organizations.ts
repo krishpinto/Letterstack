@@ -323,50 +323,37 @@ export async function activatePlanForOrganization(
 }
 
 /**
- * Admin perk: grant a free Pro period of arbitrary length, with no payment
- * involved. Same extend-from-later-of-now-or-current-expiry mechanics as
- * activatePlanForOrganization, so granting more time to an org already on
- * Pro adds to what's left rather than throwing it away — an admin topping
- * up a trial keeps the trial's own remaining days too.
+ * Set a workspace's plan outright: the tier and the end date are both stated,
+ * rather than added to whatever is already there.
  *
- * planSource becomes 'granted' rather than 'paid', which keeps this
- * visible/auditable as a perk instead of blending into real revenue, while
- * still reading as "on us" (not "renew") everywhere in the UI — see the
- * 'granted' handling in planState().
+ * This replaced an extend-by-N-days grant, which could only ever add time and
+ * so could say neither of the two things a founder actually needs: put this
+ * workspace on a tier until a specific date, and take a plan away. Both go
+ * through here.
  *
- * Granting a DIFFERENT tier to an org that already has time left both moves
- * them to that tier and adds to the remaining days — it doesn't restart the
- * clock. That's the generous reading, and the right one for an action only a
- * founder can take; to move someone down without gifting time, grant the
- * lower tier and set the days explicitly.
+ * - `plan: "free"` removes the plan: the expiry is cleared and the source
+ *   goes back to 'none', so the workspace reads as never having had one
+ *   rather than as a lapsed trial nagging them to renew.
+ * - `expiresAt: null` on a paid tier means no expiry at all. activePlan()
+ *   and the SQL allowance both treat a null expiry as "still running", so
+ *   this is a permanent grant, not an instantly-lapsed one.
+ *
+ * Everything set here is recorded as 'granted', never 'paid' — a founder
+ * handing out a tier must not look like revenue in the source column.
  */
-export async function grantAdminPlan(
+export async function setAdminPlan(
   organizationId: string,
-  days: number,
-  // Which tier to grant. Business is provisioned this way by design — it has
-  // no catalog entry, so an admin grant is the ONLY route onto it, and this
-  // parameter is what makes that route exist.
-  plan: PlanKey = "pro",
+  plan: PlanKey,
+  expiresAt: Date | null,
 ) {
-  const [current] = await db
-    .select({ planExpiresAt: organizations.planExpiresAt, plan: organizations.plan })
-    .from(organizations)
-    .where(eq(organizations.id, organizationId))
-    .limit(1);
-
-  if (!current) return null;
-
-  const now = Date.now();
-  const currentExpiry =
-    activePlan(current) !== "free" && current.planExpiresAt
-      ? new Date(current.planExpiresAt).getTime()
-      : now;
-  const base = Math.max(now, currentExpiry);
-  const expiresAt = new Date(base + days * 24 * 60 * 60 * 1000);
-
+  const isFree = plan === "free";
   const [row] = await db
     .update(organizations)
-    .set({ plan, planExpiresAt: expiresAt, planSource: "granted" })
+    .set({
+      plan,
+      planExpiresAt: isFree ? null : expiresAt,
+      planSource: isFree ? "none" : "granted",
+    })
     .where(eq(organizations.id, organizationId))
     .returning({
       plan: organizations.plan,

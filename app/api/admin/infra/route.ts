@@ -152,6 +152,8 @@ async function platformStats() {
     [sentRow],
     [suppressedRow],
     [automationsRow],
+    [emailsSentRow],
+    [paidOrgsRow],
   ] = await Promise.all([
     db.select({ n: count() }).from(users),
     db.select({ n: count() }).from(users).where(gte(users.createdAt, weekAgo)),
@@ -164,6 +166,21 @@ async function platformStats() {
       .where(sql`${campaigns.status} = 'sent'`),
     db.select({ n: count() }).from(suppressedEmails),
     db.select({ n: count() }).from(automations),
+    // All-time emails actually delivered to SES, counted off the per-recipient
+    // rows rather than off email_events: a row marked 'sent' is our own record
+    // of the send, and survives whether or not the webhook ever reported back.
+    db
+      .select({ n: count() })
+      .from(campaignRecipients)
+      .where(eq(campaignRecipients.status, "sent")),
+    // Workspaces on a paid tier right now. A null expiry counts — that is a
+    // permanent grant, not a lapsed one — matching activePlan().
+    db
+      .select({ n: count() })
+      .from(organizations)
+      .where(
+        sql`${organizations.plan} <> 'free' and (${organizations.planExpiresAt} is null or ${organizations.planExpiresAt} > now())`,
+      ),
   ]);
 
   return {
@@ -175,6 +192,8 @@ async function platformStats() {
     campaignsSent: Number(sentRow?.n ?? 0),
     suppressed: Number(suppressedRow?.n ?? 0),
     automations: Number(automationsRow?.n ?? 0),
+    emailsSent: Number(emailsSentRow?.n ?? 0),
+    paidOrganizations: Number(paidOrgsRow?.n ?? 0),
   };
 }
 

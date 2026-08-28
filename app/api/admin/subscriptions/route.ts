@@ -2,12 +2,10 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
-import { grantAdminPlan, listOrganizationsForAdmin } from "@/db/organizations";
+import { listOrganizationsForAdmin, setAdminPlan } from "@/db/organizations";
 import { isPlanKey } from "@/lib/plans/limits";
 
 export const runtime = "nodejs";
-
-const MAX_GRANT_DAYS = 3650; // 10 years — generous ceiling against a fat-fingered grant, not a real limit
 
 export async function GET() {
   const session = await auth();
@@ -19,28 +17,54 @@ export async function GET() {
   return NextResponse.json({ ok: true, organizations });
 }
 
-export async function PATCH(request: Request) {
+/**
+ * Set a workspace's plan outright: the body states the tier and the end date,
+ * and both replace whatever was there.
+ *
+ * This is what the Users tab drives. `free` is accepted — that is how a plan
+ * is removed — and so is a null expiry, which means the tier simply does not
+ * run out.
+ */
+export async function PUT(request: Request) {
   const session = await auth();
   if (!isAdmin(session?.user?.email)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   const body = await request.json().catch(() => null);
-  const organizationId = typeof body?.organizationId === "string" ? body.organizationId : null;
-  const days = Number(body?.days);
-  // Which tier to grant. Omitted means Starter, so the existing callers keep
-  // working unchanged. Free is rejected: this endpoint grants a paid period,
-  // and "grant them Free" is really "end the period", which isn't this.
-  const plan = body?.plan === undefined ? "pro" : body.plan;
+  const organizationId =
+    typeof body?.organizationId === "string" ? body.organizationId : null;
+  const plan = body?.plan;
 
-  if (!organizationId || !Number.isFinite(days) || days <= 0 || days > MAX_GRANT_DAYS) {
+  if (!organizationId) {
     return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
   }
-  if (!isPlanKey(plan) || plan === "free") {
+  if (!isPlanKey(plan)) {
     return NextResponse.json({ ok: false, error: "Unknown plan" }, { status: 400 });
   }
 
-  const updated = await grantAdminPlan(organizationId, Math.round(days), plan);
+  // Absent or null both mean "no expiry". An unparseable or past date is
+  // rejected rather than quietly coerced: silently writing an expiry in the
+  // past would read as a granted plan while entitling nothing.
+  let expiresAt: Date | null = null;
+  if (body?.expiresAt !== undefined && body?.expiresAt !== null) {
+    if (typeof body.expiresAt !== "string") {
+      return NextResponse.json({ ok: false, error: "Invalid expiry" }, { status: 400 });
+    }
+    const parsed = new Date(body.expiresAt);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json({ ok: false, error: "Invalid expiry" }, { status: 400 });
+    }
+    if (parsed.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { ok: false, error: "Expiry is in the past" },
+        { status: 400 },
+      );
+    }
+    expiresAt = parsed;
+  }
+
+  const updated = await setAdminPlan(organizationId, plan, expiresAt);
   if (!updated) {
     return NextResponse.json({ ok: false, error: "Organization not found" }, { status: 404 });
   }
