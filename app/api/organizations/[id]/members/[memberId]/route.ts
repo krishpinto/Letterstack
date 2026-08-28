@@ -8,6 +8,8 @@ import {
   NotOrganizationOwnerError,
   removeOrganizationMember,
 } from "@/db/organizations";
+import { listRevocableMailboxesForOrgMember, markMailboxRevoked } from "@/db/connected-mailboxes";
+import { revokeMailboxToken } from "@/lib/send/gmail-auth";
 import { requireMember } from "@/lib/organizations/require-owner";
 
 export const runtime = "nodejs";
@@ -21,7 +23,23 @@ export async function DELETE(
   if (error) return error;
 
   try {
-    await removeOrganizationMember(id, memberId, userId!, organization!.role);
+    const result = await removeOrganizationMember(id, memberId, userId!, organization!.role);
+
+    // A connected Gmail mailbox has no business staying usable for a
+    // workspace this person is no longer part of — revoke with Google
+    // (not just locally) so the grant actually dies, not just our record
+    // of it. Best-effort: a mailbox revoke failing shouldn't undo the
+    // membership removal that already succeeded.
+    if (result?.removedUserId) {
+      const mailboxes = await listRevocableMailboxesForOrgMember(id, result.removedUserId);
+      await Promise.all(
+        mailboxes.map(async (mailbox) => {
+          await revokeMailboxToken(mailbox).catch(() => {});
+          await markMailboxRevoked(mailbox.id);
+        }),
+      );
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof NotFoundInOrganizationError) {

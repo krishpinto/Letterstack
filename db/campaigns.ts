@@ -15,6 +15,9 @@ export async function createCampaign(
     html: string;
     text: string;
     document?: EmailDocument;
+    replyTo?: string | null;
+    senderType?: string;
+    mailboxId?: string | null;
   },
 ) {
   const [row] = await db
@@ -30,6 +33,9 @@ export async function createCampaign(
       htmlSnapshot: input.html,
       textSnapshot: input.text,
       status: "draft",
+      replyTo: input.replyTo ?? null,
+      senderType: input.senderType ?? "shared",
+      mailboxId: input.mailboxId ?? null,
     })
     .returning();
 
@@ -47,6 +53,9 @@ export async function updateCampaignDraft(
     html: string;
     text: string;
     document: EmailDocument;
+    replyTo?: string | null;
+    senderType?: string;
+    mailboxId?: string | null;
   },
 ) {
   const campaign = await getCampaignForUser(id, userId);
@@ -59,6 +68,9 @@ export async function updateCampaignDraft(
       ...(input.subject !== undefined ? { subject: input.subject } : {}),
       ...(input.fromName !== undefined ? { fromName: input.fromName } : {}),
       ...(input.fromEmail ? { fromEmail: input.fromEmail } : {}),
+      ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+      ...(input.senderType !== undefined ? { senderType: input.senderType } : {}),
+      ...(input.mailboxId !== undefined ? { mailboxId: input.mailboxId } : {}),
       document: input.document,
       htmlSnapshot: input.html,
       textSnapshot: input.text,

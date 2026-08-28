@@ -15,7 +15,15 @@ const USED_THIS_MONTH = sql`(CASE WHEN ${ROLLED_OVER} THEN 0 ELSE ${organization
 // The plan in force right now, evaluated in the database rather than read
 // into JS first, so the limit can't be computed from a plan that expired
 // between the read and the write.
-const MONTHLY_ALLOWANCE = sql`(CASE WHEN ${organizations.plan} = 'pro' AND (${organizations.planExpiresAt} IS NULL OR ${organizations.planExpiresAt} > now()) THEN ${PLAN_LIMITS.pro.emailsPerMonth} ELSE ${PLAN_LIMITS.free.emailsPerMonth} END)`;
+//
+// ::int casts are load-bearing, not decoration: with two bare parameters
+// as the only content of both CASE branches, Postgres has no column or
+// literal in scope to infer a type from and defaults them to `text` —
+// which then fails at the `<=` comparison against the (integer)
+// used-this-month expression this CASE feeds into, with "operator does
+// not exist: integer <= text". Confirmed live in production (2026-08-28)
+// via tryReserveSendQuota, which is the only caller of this fragment.
+const MONTHLY_ALLOWANCE = sql`(CASE WHEN ${organizations.plan} = 'pro' AND (${organizations.planExpiresAt} IS NULL OR ${organizations.planExpiresAt} > now()) THEN ${PLAN_LIMITS.pro.emailsPerMonth}::int ELSE ${PLAN_LIMITS.free.emailsPerMonth}::int END)`;
 
 export type OrganizationType = "personal" | "business";
 
@@ -646,6 +654,14 @@ export async function removeOrganizationMember(
   }
 
   await db.delete(organizationMembers).where(eq(organizationMembers.id, memberId));
+
+  // Returned so the caller can also revoke any Gmail mailbox this person
+  // connected to this org — a live credential has no business staying
+  // usable for a workspace they're no longer part of. Deliberately not done
+  // here: revoking with Google needs lib/send/gmail-auth.ts, which pulls in
+  // googleapis (Node-only), and this module is imported transitively by
+  // proxy.ts (edge runtime) via lib/auth-helpers.ts — keep that path clean.
+  return { removedUserId: target.userId };
 }
 
 /** Delete a workspace and everything scoped to it. Owner-only. */

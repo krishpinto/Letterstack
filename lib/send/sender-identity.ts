@@ -34,14 +34,26 @@ export const FROM_LOCALPART_RE =
   /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/i;
 
 /**
- * A campaign may only send from the shared verified address (MAIL_FROM) or
- * any local part on one of the organization's verified custom domains.
+ * A campaign may only send from the shared verified address (MAIL_FROM),
+ * any local part on one of the organization's verified custom domains, or
+ * (exact match only — Gmail sends as itself, no arbitrary local part) one
+ * of the org's connected Gmail mailboxes.
+ *
+ * This function is org-scoped only, by design — it doesn't know which user
+ * is asking. A connected mailbox can only be used by the person who
+ * connected it (unlike a verified domain, which is org-wide), but *whose*
+ * request this is isn't something a pure "is this address allowed for this
+ * org" check should need to know. That ownership check happens separately,
+ * at the campaign create/edit routes, right where the requesting user is
+ * already in scope.
  */
 export function isAllowedFromEmail(
   email: string,
   verifiedDomains: string[],
+  mailboxEmails: string[] = [],
 ): boolean {
   if (email === (process.env.MAIL_FROM ?? "")) return email.length > 0;
+  if (mailboxEmails.some((m) => m.toLowerCase() === email.toLowerCase())) return true;
 
   const at = email.lastIndexOf("@");
   if (at <= 0) return false;

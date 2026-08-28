@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeftIcon, SearchIcon, UserRoundIcon } from "lucide-react";
+import { ArrowLeftIcon, MailIcon, SearchIcon, UserRoundIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ type Campaign = {
   status: string;
   fromName: string;
   fromEmail: string;
+  senderType?: string;
 };
 
 type Recipient = {
@@ -247,6 +249,12 @@ export default function CampaignAnalyticsPage() {
     ["all", "sent", "failed", "bounced", "pending"] as StatusKey[]
   ).filter((k) => k === "all" || counts[k] > 0);
 
+  // Gmail sends have no delivery-events source — no SES webhook equivalent,
+  // so delivered/bounced/opens/clicks would just be permanently zero rather
+  // than genuinely absent. Showing that as a normal-looking zeroed chart
+  // reads as broken; say the honest thing instead.
+  const sentViaGmail = campaign.senderType === "mailbox";
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -282,58 +290,82 @@ export default function CampaignAnalyticsPage() {
       </div>
 
       {/* ── Metrics grid ── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Metric label="Recipients" value={total} />
-        <Metric label="Delivered" value={counts.sent} tone="primary" />
-        <Metric
-          label="Opened"
-          value={`${openRate}%`}
-          hint={`${engagement?.opensUnique ?? 0} unique`}
-          tone="primary"
-          soft
-        />
-        <Metric
-          label="Clicked"
-          value={`${clickRate}%`}
-          hint={`${engagement?.clicksUnique ?? 0} unique`}
-          tone="primary"
-          soft
-        />
-        <Metric
-          label="Click-to-open"
-          value={`${clickToOpenRate}%`}
-          hint="clicked, of openers"
-          tone="primary"
-          soft
-        />
-        <Metric
-          label="Unsubscribed"
-          value={unsubscribed}
-          hint={`${unsubscribeRate}% of delivered`}
-          tone={unsubscribed > 0 ? "destructive" : "muted"}
-        />
-        <Metric
-          label="Spam reports"
-          value={complained}
-          hint={`${complaintRate}% · SES limit 0.5%`}
-          tone={complained > 0 ? "destructive" : "muted"}
-        />
-        <Metric
-          label="Failed"
-          value={counts.failed}
-          tone={counts.failed > 0 ? "destructive" : "muted"}
-        />
-        <Metric
-          label="Bounced"
-          value={counts.bounced}
-          hint={
-            counts.sent > 0
-              ? `${((counts.bounced / total) * 100).toFixed(1)}% · SES limit 10%`
-              : undefined
-          }
-          tone={counts.bounced > 0 ? "destructive" : "muted"}
-        />
-      </div>
+      {sentViaGmail ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Metric label="Recipients" value={total} />
+            <Metric label="Sent" value={counts.sent} tone="primary" />
+            <Metric
+              label="Failed"
+              value={counts.failed}
+              tone={counts.failed > 0 ? "destructive" : "muted"}
+            />
+          </div>
+          <Alert>
+            <MailIcon />
+            <AlertTitle>Gmail doesn&apos;t report back to LetterStack</AlertTitle>
+            <AlertDescription>
+              Delivery, opens, and clicks aren&apos;t available for a campaign
+              sent through a connected Gmail account — Gmail has no
+              equivalent of SES&apos;s delivery webhook. Check the Sent folder
+              in that Gmail account for the record of what actually went out.
+            </AlertDescription>
+          </Alert>
+        </>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Metric label="Recipients" value={total} />
+          <Metric label="Delivered" value={counts.sent} tone="primary" />
+          <Metric
+            label="Opened"
+            value={`${openRate}%`}
+            hint={`${engagement?.opensUnique ?? 0} unique`}
+            tone="primary"
+            soft
+          />
+          <Metric
+            label="Clicked"
+            value={`${clickRate}%`}
+            hint={`${engagement?.clicksUnique ?? 0} unique`}
+            tone="primary"
+            soft
+          />
+          <Metric
+            label="Click-to-open"
+            value={`${clickToOpenRate}%`}
+            hint="clicked, of openers"
+            tone="primary"
+            soft
+          />
+          <Metric
+            label="Unsubscribed"
+            value={unsubscribed}
+            hint={`${unsubscribeRate}% of delivered`}
+            tone={unsubscribed > 0 ? "destructive" : "muted"}
+          />
+          <Metric
+            label="Spam reports"
+            value={complained}
+            hint={`${complaintRate}% · SES limit 0.5%`}
+            tone={complained > 0 ? "destructive" : "muted"}
+          />
+          <Metric
+            label="Failed"
+            value={counts.failed}
+            tone={counts.failed > 0 ? "destructive" : "muted"}
+          />
+          <Metric
+            label="Bounced"
+            value={counts.bounced}
+            hint={
+              counts.sent > 0
+                ? `${((counts.bounced / total) * 100).toFixed(1)}% · SES limit 10%`
+                : undefined
+            }
+            tone={counts.bounced > 0 ? "destructive" : "muted"}
+          />
+        </div>
+      )}
 
       {/* ── Delivery progress ── */}
       <Card size="sm">
@@ -341,21 +373,20 @@ export default function CampaignAnalyticsPage() {
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="font-medium">
               {finished
-                ? `${deliveryRate}% delivered`
+                ? `${deliveryRate}% ${sentViaGmail ? "sent" : "delivered"}`
                 : `Sending… ${done}/${total}`}
             </span>
             <span className="tabular-nums text-muted-foreground">
               {finished
-                ? `${counts.sent}/${total} delivered`
+                ? `${counts.sent}/${total} ${sentViaGmail ? "sent" : "delivered"}`
                 : `${progressPercent}%`}
             </span>
           </div>
           <Progress value={finished ? deliveryRate : progressPercent} />
           <p className="text-xs text-muted-foreground">
-            Delivered, failed, bounced, unsubscribes, and spam reports are
-            exact. Opens and clicks are estimates — inboxes can block or
-            pre-fetch tracking pixels. Unsubscribes count this
-            campaign&apos;s recipients who opted out after the send.
+            {sentViaGmail
+              ? "This reflects LetterStack's own send attempts, not a delivery confirmation from Gmail — it has no equivalent of SES's delivery webhook."
+              : "Delivered, failed, bounced, unsubscribes, and spam reports are exact. Opens and clicks are estimates — inboxes can block or pre-fetch tracking pixels. Unsubscribes count this campaign's recipients who opted out after the send."}
           </p>
         </CardContent>
       </Card>

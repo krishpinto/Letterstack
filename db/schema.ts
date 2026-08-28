@@ -117,6 +117,47 @@ export const sendingDomains = pgTable("sending_domains", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// A personal Gmail account connected via OAuth, used as an alternative
+// sending channel for anyone without a verified domain — see
+// context/gmail-sending-plan.md and the Gmail Sending plan for the full
+// design. Owned by the connecting user, not the org: unlike a verified
+// domain (org-wide), only that one person may send through their own
+// mailbox — see the connector-only ownership rule enforced in
+// lib/send/sender-identity.ts and the campaign create/edit routes.
+export const connectedMailboxes = pgTable(
+  "connected_mailboxes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("gmail"),
+    email: text("email").notNull(),
+    displayName: text("display_name"),
+    // AES-256-GCM (lib/crypto/secret-box.ts). Only the refresh token is
+    // encrypted at rest — it's the credential that matters; the cached
+    // access token below is short-lived enough (~1hr) not to need it.
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    accessToken: text("access_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    scope: text("scope").notNull(),
+    // Flat v1 limit — see the Gmail Sending plan's "Deferred to v2" for the
+    // gradual warm-up ramp this intentionally does not implement yet.
+    dailyLimit: integer("daily_limit").notNull().default(450),
+    sentToday: integer("sent_today").notNull().default(0),
+    quotaResetAt: timestamp("quota_reset_at").notNull().defaultNow(),
+    status: text("status").notNull().default("active"), // active | error | revoked
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [unique("connected_mailboxes_org_email_unq").on(t.organizationId, t.email)],
+);
+
 // Razorpay order/payment lifecycle. One row per checkout attempt — created
 // at "pay now" time (status "created"), updated to "paid"/"failed" only
 // after the signature verifies server-side. No plan/pricing model exists
@@ -247,6 +288,19 @@ export const campaigns = pgTable("campaigns", {
   htmlSnapshot: text("html_snapshot").notNull(),
   textSnapshot: text("text_snapshot").notNull(),
   status: text("status").notNull().default("draft"),
+  // Where replies land. Optional — most sends use the recipient's normal
+  // reply-to-sender behavior; set this to route replies to a real inbox
+  // (e.g. a Gmail address) even when the send itself goes out from a
+  // verified domain.
+  replyTo: text("reply_to"),
+  // Which channel this campaign sends through, frozen at send time.
+  // 'mailbox' points at connectedMailboxes — see that table for why Gmail
+  // sends need their own channel (fixed From address, a daily cap, no
+  // delivery telemetry) rather than reusing the SES path.
+  senderType: text("sender_type").notNull().default("shared"), // shared | domain | mailbox
+  mailboxId: uuid("mailbox_id").references(() => connectedMailboxes.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),

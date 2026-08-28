@@ -7,6 +7,7 @@ import { compileEmailDocument } from "@/lib/email/compiler";
 import { isEmailDocument, normalizeDocument } from "@/lib/email/document";
 import { deleteCampaign, getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
 import { listVerifiedSendingDomains } from "@/db/sending-domains";
+import { listMailboxesForUser } from "@/db/connected-mailboxes";
 import { isAllowedFromEmail } from "@/lib/send/sender-identity";
 import { currentUserId } from "@/lib/auth-helpers";
 
@@ -57,23 +58,46 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const nextFromEmail =
       typeof body?.fromEmail === "string" ? body.fromEmail : doc.fromEmail;
     const existing = await getCampaignForUser(id, userId);
+    let senderType: string | undefined;
+    let mailboxId: string | null | undefined;
     if (
       existing &&
       nextFromEmail &&
       nextFromEmail !== existing.fromEmail
     ) {
-      const verifiedDomains = await listVerifiedSendingDomains(
-        existing.organizationId,
-      );
-      if (!isAllowedFromEmail(nextFromEmail.toLowerCase(), verifiedDomains)) {
+      const organizationId = existing.organizationId;
+      const [verifiedDomains, mailboxes] = await Promise.all([
+        listVerifiedSendingDomains(organizationId),
+        listMailboxesForUser(userId, organizationId),
+      ]);
+      const activeMailboxes = mailboxes.filter((m) => m.status === "active");
+      const normalized = nextFromEmail.toLowerCase();
+      // A mailbox address is only usable by the person who connected it —
+      // isAllowedFromEmail is org-scoped only, so this ownership check
+      // happens here, where the requesting user is already in scope.
+      const requestedMailbox = activeMailboxes.find((m) => m.email.toLowerCase() === normalized);
+      const mailboxEmails = activeMailboxes.map((m) => m.email);
+
+      if (!isAllowedFromEmail(normalized, verifiedDomains, mailboxEmails)) {
         return NextResponse.json(
           {
             ok: false,
             error:
-              "You can only send from the shared address or your verified domain.",
+              "You can only send from the shared address, your verified domain, or a Gmail account you've connected.",
           },
           { status: 400 },
         );
+      }
+
+      if (requestedMailbox) {
+        senderType = "mailbox";
+        mailboxId = requestedMailbox.id;
+      } else if (normalized === (process.env.MAIL_FROM ?? "").toLowerCase()) {
+        senderType = "shared";
+        mailboxId = null;
+      } else {
+        senderType = "domain";
+        mailboxId = null;
       }
     }
 
@@ -82,6 +106,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       subject: typeof body?.subject === "string" ? body.subject : doc.subject,
       fromName: typeof body?.fromName === "string" ? body.fromName : doc.fromName,
       fromEmail: typeof body?.fromEmail === "string" ? body.fromEmail : doc.fromEmail,
+      replyTo:
+        typeof body?.replyTo === "string"
+          ? body.replyTo.trim() || null
+          : body?.replyTo === null
+            ? null
+            : undefined,
+      senderType,
+      mailboxId,
       html,
       text,
       document: doc,

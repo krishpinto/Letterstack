@@ -30,6 +30,7 @@ export type FrozenContent = {
   text: string;
   fromName: string;
   fromEmail: string;
+  replyTo?: string;
 };
 
 type CampaignBatchRow = {
@@ -68,6 +69,7 @@ export async function sendCampaignBatch(
         text: personalized.text,
         fromName: content.fromName,
         fromEmail: content.fromEmail,
+        replyTo: content.replyTo,
         listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
         tags,
       });

@@ -84,6 +84,8 @@ export type CampaignData = {
   subject: string;
   fromName: string;
   fromEmail: string;
+  replyTo?: string | null;
+  senderType?: string;
   status: string;
   scheduledAt?: string | null;
   htmlSnapshot: string;
@@ -197,9 +199,13 @@ export function CampaignDetail({
   const [senderDomains, setSenderDomains] = useState<
     { domain: string; readyToSend: boolean }[]
   >([]);
-  // "shared" or one of the connected domain names.
+  const [mailboxes, setMailboxes] = useState<
+    { id: string; email: string; status: string }[]
+  >([]);
+  // "shared", one of the connected domain names, or `mailbox:<id>`.
   const [senderSource, setSenderSource] = useState("shared");
   const [customLocal, setCustomLocal] = useState("");
+  const [replyTo, setReplyTo] = useState(initial.replyTo ?? "");
   const [reusing, setReusing] = useState(false);
 
   // Audience state
@@ -250,6 +256,7 @@ export function CampaignDetail({
     setCampaign(initial);
     setFromName(initial.fromName);
     setSubject(initial.subject);
+    setReplyTo(initial.replyTo ?? "");
     setPreviewText(initial.document?.settings.previewText ?? "");
     setSendMode(initial.status === "scheduled" ? "schedule" : "now");
     setScheduleAt(
@@ -279,23 +286,42 @@ export function CampaignDetail({
   }, [loadAudience]);
 
   // Load the sender addresses this org can use (shared + verified custom
-  // domains), and reflect the campaign's current From address in the picker.
+  // domains + this user's own connected Gmail accounts), and reflect the
+  // campaign's current From address in the picker.
   useEffect(() => {
-    fetch("/api/domains")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.ok) return;
-        setSharedFromEmail(data.sharedFromEmail ?? "");
-        const list: { domain: string; readyToSend: boolean }[] =
-          data.domains ?? [];
-        setSenderDomains(list);
-
+    Promise.all([
+      fetch("/api/domains").then((r) => r.json()),
+      fetch("/api/senders/gmail/mailboxes").then((r) => r.json()),
+    ])
+      .then(([domainsData, mailboxesData]) => {
         const current = initialRef.current.fromEmail;
         const at = current.lastIndexOf("@");
-        const currentDomain = at > 0 ? current.slice(at + 1) : "";
-        const match = list.find((entry) => entry.domain === currentDomain);
-        if (match) {
-          setSenderSource(match.domain);
+
+        let list: { domain: string; readyToSend: boolean }[] = [];
+        if (domainsData.ok) {
+          setSharedFromEmail(domainsData.sharedFromEmail ?? "");
+          list = domainsData.domains ?? [];
+          setSenderDomains(list);
+        }
+
+        let mailboxList: { id: string; email: string; status: string }[] = [];
+        if (mailboxesData.ok) {
+          mailboxList = (mailboxesData.mailboxes ?? []).filter(
+            (m: { status: string }) => m.status === "active",
+          );
+          setMailboxes(mailboxList);
+        }
+
+        const mailboxMatch = mailboxList.find(
+          (m) => m.email.toLowerCase() === current.toLowerCase(),
+        );
+        const domainMatch = list.find(
+          (entry) => entry.domain === (at > 0 ? current.slice(at + 1) : ""),
+        );
+        if (mailboxMatch) {
+          setSenderSource(`mailbox:${mailboxMatch.id}`);
+        } else if (domainMatch) {
+          setSenderSource(domainMatch.domain);
           setCustomLocal(current.slice(0, at));
         } else {
           setSenderSource("shared");
@@ -394,6 +420,7 @@ export function CampaignDetail({
   async function saveSection(
     key: SectionKey,
     mutate: (doc: EmailDocument) => void,
+    extra: Record<string, unknown> = {},
   ) {
     if (!campaign.document) return;
     setSavingSection(key);
@@ -406,7 +433,7 @@ export function CampaignDetail({
       const r = await fetch(`/api/campaigns/${campaign.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: nextDoc }),
+        body: JSON.stringify({ document: nextDoc, ...extra }),
       });
       const data = await r.json();
       if (!data.ok) {
@@ -424,14 +451,27 @@ export function CampaignDetail({
 
   async function saveFrom() {
     if (!campaign.document) return;
-    const fromEmail =
-      senderSource !== "shared"
+    const selectedMailbox = mailboxes.find(
+      (m) => senderSource === `mailbox:${m.id}`,
+    );
+    const fromEmail = selectedMailbox
+      ? selectedMailbox.email
+      : senderSource !== "shared"
         ? `${customLocal.trim() || "hello"}@${senderSource}`
         : sharedFromEmail;
-    await saveSection("from", (doc) => {
-      doc.fromName = fromName.trim();
-      doc.fromEmail = fromEmail;
-    });
+    // senderType/mailboxId aren't sent — the PATCH route derives them itself
+    // from fromEmail (matching it against verified domains and this user's
+    // mailboxes), same as it always has for shared vs. domain. Keeps the
+    // server, not the client, as the source of truth for what a From
+    // address actually resolves to.
+    await saveSection(
+      "from",
+      (doc) => {
+        doc.fromName = fromName.trim();
+        doc.fromEmail = fromEmail;
+      },
+      { fromEmail, replyTo: replyTo.trim() || null },
+    );
   }
 
   async function switchTemplate() {
@@ -1316,16 +1356,67 @@ export function CampaignDetail({
                                   )}
                                 </label>
                               ))}
+                              {mailboxes.map((mailbox) => {
+                                const source = `mailbox:${mailbox.id}`;
+                                return (
+                                  <label
+                                    key={mailbox.id}
+                                    className={cn(
+                                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3",
+                                      senderSource === source
+                                        ? "border-primary bg-primary/5"
+                                        : "border-border",
+                                    )}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name="sender-address"
+                                      checked={senderSource === source}
+                                      onChange={() => setSenderSource(source)}
+                                      className="accent-current"
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-medium">
+                                        {mailbox.email}
+                                      </span>
+                                      <span className="block text-xs text-muted-foreground">
+                                        Your Gmail account — sends as a real
+                                        Gmail message, no domain needed
+                                      </span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
                             </div>
                             <FieldDescription>
-                              Connect and verify your own domain on the{" "}
+                              Connect your own domain, or a personal Gmail
+                              account, on the{" "}
                               <Link
                                 href="/dashboard/domains"
                                 className="underline underline-offset-2"
                               >
                                 Domains page
-                              </Link>{" "}
-                              to send from a branded address.
+                              </Link>
+                              .
+                            </FieldDescription>
+                          </Field>
+                          <Field>
+                            <FieldLabel htmlFor="reply-to">
+                              Reply-To{" "}
+                              <span className="font-normal text-muted-foreground">
+                                (optional)
+                              </span>
+                            </FieldLabel>
+                            <Input
+                              id="reply-to"
+                              type="email"
+                              value={replyTo}
+                              onChange={(e) => setReplyTo(e.target.value)}
+                              placeholder="you@example.com"
+                            />
+                            <FieldDescription>
+                              Where replies land, if different from the
+                              sending address above.
                             </FieldDescription>
                           </Field>
                           <SaveCancel

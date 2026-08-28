@@ -28,6 +28,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
         name: campaign.name,
         subject: campaign.subject,
         status: campaign.status,
+        senderType: campaign.senderType,
       },
       progress,
     });

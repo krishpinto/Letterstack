@@ -15,6 +15,7 @@ import {
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { getOrganizationForUser } from "@/db/organizations";
 import { listVerifiedSendingDomains } from "@/db/sending-domains";
+import { listMailboxesForUser } from "@/db/connected-mailboxes";
 import { isAllowedFromEmail, SENDING_LOCALPART } from "@/lib/send/sender-identity";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 
@@ -56,10 +57,12 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "Untitled Campaign";
     const templateId = typeof body?.templateId === "string" ? body.templateId : "blank";
 
-    const [organization, verifiedDomains] = await Promise.all([
+    const [organization, verifiedDomains, mailboxes] = await Promise.all([
       getOrganizationForUser(userId, organizationId),
       listVerifiedSendingDomains(organizationId),
+      listMailboxesForUser(userId, organizationId),
     ]);
+    const activeMailboxes = mailboxes.filter((m) => m.status === "active");
 
     // Sender: the caller's choice if it's one they're allowed to use, else
     // the org's first verified custom domain, else the shared default.
@@ -68,18 +71,35 @@ export async function POST(request: Request) {
     let fromEmail = verifiedDomains[0]
       ? `${SENDING_LOCALPART}@${verifiedDomains[0]}`
       : process.env.MAIL_FROM!;
+    let senderType = verifiedDomains[0] ? "domain" : "shared";
+    let mailboxId: string | null = null;
     if (requestedFrom) {
-      if (!isAllowedFromEmail(requestedFrom, verifiedDomains)) {
+      // A mailbox address is only usable by the person who connected it —
+      // isAllowedFromEmail is org-scoped only, so that ownership check
+      // happens here, where the requesting user is already in scope.
+      const requestedMailbox = activeMailboxes.find(
+        (m) => m.email.toLowerCase() === requestedFrom,
+      );
+      const mailboxEmails = activeMailboxes.map((m) => m.email);
+      if (!isAllowedFromEmail(requestedFrom, verifiedDomains, mailboxEmails)) {
         return NextResponse.json(
           {
             ok: false,
             error:
-              "You can only send from the shared address or your verified domain.",
+              "You can only send from the shared address, your verified domain, or a Gmail account you've connected.",
           },
           { status: 400 },
         );
       }
       fromEmail = requestedFrom;
+      if (requestedMailbox) {
+        senderType = "mailbox";
+        mailboxId = requestedMailbox.id;
+      } else if (requestedFrom === (process.env.MAIL_FROM ?? "")) {
+        senderType = "shared";
+      } else {
+        senderType = "domain";
+      }
     }
 
     // Build the starting design from the chosen template — prebuilt, one of
@@ -119,6 +139,8 @@ export async function POST(request: Request) {
       html,
       text,
       document: doc,
+      senderType,
+      mailboxId,
     });
 
     return NextResponse.json({ ok: true, id: campaign.id });

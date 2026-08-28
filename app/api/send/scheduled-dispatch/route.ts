@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { Receiver } from "@upstash/qstash";
 import { getCampaign } from "@/db/campaigns";
-import { startCampaign } from "@/lib/send/send-campaign";
+import { dispatchCampaign } from "@/lib/send/dispatch-campaign";
 import {
   appBaseUrl,
   publishQstashJSON,
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, hopped: true });
     }
 
-    const result = await startCampaign(campaignId);
+    const result = await dispatchCampaign(campaignId);
     console.log(
       `scheduled-dispatch: campaign ${campaignId} started - ${result.total} recipients in ${result.batches} batches`,
     );

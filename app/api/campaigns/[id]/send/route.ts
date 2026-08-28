@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { getCampaignForUser } from "@/db/campaigns";
 import { countPendingForCampaign } from "@/db/campaign-recipients";
-import { startCampaign } from "@/lib/send/send-campaign";
+import { dispatchCampaign } from "@/lib/send/dispatch-campaign";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -39,7 +39,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
       );
     }
 
-    const result = await startCampaign(id);
+    const result = await dispatchCampaign(id);
     return NextResponse.json({ ok: true, id, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

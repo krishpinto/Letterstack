@@ -6,7 +6,6 @@ import {
   CopyIcon,
   GlobeIcon,
   Loader2Icon,
-  MailIcon,
   PlusIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
@@ -32,7 +31,6 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -41,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { GmailMailboxCard } from "@/components/dashboard/gmail-mailbox-card";
 
 type DnsRecord = {
   type: string;
@@ -500,40 +499,7 @@ export default function DomainsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-start gap-4">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <MailIcon className="size-5" />
-              </span>
-              <div>
-                <CardTitle>Gmail integration</CardTitle>
-                <CardDescription>
-                  Let users connect a Gmail account with one click later.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <Alert>
-                <MailIcon />
-                <AlertTitle>Visual placeholder</AlertTitle>
-                <AlertDescription>
-                  Google OAuth, Gmail API permissions, token storage, and send
-                  limits still need backend work before this can send.
-                </AlertDescription>
-              </Alert>
-              <Separator />
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-muted-foreground">Status</span>
-                <Badge variant="outline">Not connected</Badge>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button variant="outline" className="w-full" disabled>
-                <MailIcon data-icon="inline-start" />
-                Connect Gmail
-              </Button>
-            </CardFooter>
-          </Card>
+          <GmailMailboxCard />
         </div>
       </div>
     </div>
