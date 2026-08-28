@@ -79,6 +79,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         isExpiringSoon={plan.isExpiringSoon}
         daysLeft={plan.daysLeft}
         expiresAt={plan.expiresAt?.toISOString() ?? null}
+        plan={plan.plan}
       />
       {children}
       {announceTrial ? (
