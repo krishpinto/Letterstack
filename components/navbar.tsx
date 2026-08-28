@@ -6,6 +6,7 @@ import { MenuIcon } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { RichButton } from "@/components/rich-button";
+import { StartCtaLink } from "@/components/start-cta";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -98,9 +99,7 @@ export function Navbar() {
               </Button>
             )}
             <RichButton color="primary" size="sm" asChild>
-              <Link href={isSignedIn ? "/dashboard" : "/signup"}>
-                {isSignedIn ? "Dashboard" : "Get started"}
-              </Link>
+              <StartCtaLink />
             </RichButton>
           </div>
 
@@ -173,9 +172,7 @@ function MobileNav({ isSignedIn }: { isSignedIn: boolean }) {
             )}
             <SheetClose asChild>
               <RichButton color="primary" size="sm" asChild>
-                <Link href={isSignedIn ? "/dashboard" : "/signup"}>
-                  {isSignedIn ? "Dashboard" : "Get started"}
-                </Link>
+                <StartCtaLink />
               </RichButton>
             </SheetClose>
             {isSignedIn && (

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ArrowRightIcon, MailIcon, SendIcon } from "lucide-react";
 
+import { useStartCta } from "@/components/start-cta";
 import { Marquee } from "@/components/ui/marquee";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { cn } from "@/lib/utils";
@@ -85,6 +86,7 @@ const HEADING_FONT = { fontFamily: "var(--font-bricolage, var(--font-inter))" };
 
 export function TrustSection() {
   const router = useRouter();
+  const startCta = useStartCta();
 
   return (
     <section id="contact" className="scroll-mt-24 py-24 sm:py-28">
@@ -125,12 +127,14 @@ export function TrustSection() {
               sent from a domain you own.
             </p>
 
+            {/* Same destination rule as the hero and the navbar: the
+                dashboard once you're signed in, signup before that. */}
             <ShimmerButton
-              onClick={() => router.push("/signup")}
+              onClick={() => router.push(startCta.href)}
               background="#5D5FEF"
               className="mt-2 gap-1.5 px-8 py-3 text-sm font-semibold"
             >
-              Get started
+              {startCta.label}
               <ArrowRightIcon className="size-4" />
             </ShimmerButton>
           </div>

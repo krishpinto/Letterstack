@@ -1,8 +1,8 @@
 import Image from "next/image";
-import Link from "next/link";
 import { ArrowRightIcon } from "lucide-react";
 
 import { RichButton } from "@/components/rich-button";
+import { StartCtaLink } from "@/components/start-cta";
 import { ProgressiveBlur } from "@/components/progressive-blur";
 
 // Two stacked halves sharing one hero image that straddles the seam
@@ -73,10 +73,13 @@ export function Hero() {
                 rounded-md so it keeps reading as a pill, not a chunky
                 rectangle. */}
             <RichButton color="default" size="lg" className="mt-2 gap-2 rounded-full" asChild>
-              <Link href="/signup">
-                Get started
+              {/* StartCtaLink, not a plain Link, so a signed-in visitor
+                  lands on their dashboard instead of a signup form. It reads
+                  the session, hence a client component here rather than
+                  making this whole image-heavy hero one. */}
+              <StartCtaLink>
                 <ArrowRightIcon data-icon="inline-end" />
-              </Link>
+              </StartCtaLink>
             </RichButton>
 
             <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-white/80">
