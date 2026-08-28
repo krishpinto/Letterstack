@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { PAID_PLAN_KEYS, PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
 
 type OrgRow = {
   id: string;
@@ -16,15 +17,15 @@ type OrgRow = {
   ownerName: string | null;
   ownerEmail: string | null;
   memberCount: number;
-  plan: "free" | "pro";
+  plan: PlanKey;
   planSource: "none" | "trial" | "paid" | "granted";
   planExpiresAt: string | null;
   daysLeft: number | null;
   createdAt: string;
 };
 
-function planVariant(plan: "free" | "pro"): "default" | "secondary" {
-  return plan === "pro" ? "default" : "secondary";
+function planVariant(plan: PlanKey): "default" | "secondary" {
+  return plan === "free" ? "secondary" : "default";
 }
 
 function sourceLabel(source: OrgRow["planSource"]) {
@@ -43,6 +44,9 @@ export function SubscriptionsPanel() {
   const [loading, setLoading] = useState(true);
   const [pendingOrgId, setPendingOrgId] = useState<string | null>(null);
   const [days, setDays] = useState<Record<string, string>>({});
+  // Which tier each row's Grant button will hand out. Defaults to Starter,
+  // which is what this panel did before it could grant anything else.
+  const [grantPlan, setGrantPlan] = useState<Record<string, PlanKey>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,7 +73,11 @@ export function SubscriptionsPanel() {
       const r = await fetch("/api/admin/subscriptions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId, days: amount }),
+        body: JSON.stringify({
+          organizationId,
+          days: amount,
+          plan: grantPlan[organizationId] ?? "pro",
+        }),
       });
       const payload = await r.json();
       if (payload.ok) await load();
@@ -105,7 +113,7 @@ export function SubscriptionsPanel() {
                   <th className="py-2 pr-3 font-medium">Plan</th>
                   <th className="py-2 pr-3 font-medium">Source</th>
                   <th className="py-2 pr-3 font-medium">Expires</th>
-                  <th className="py-2 pr-3 font-medium">Grant free Pro</th>
+                  <th className="py-2 pr-3 font-medium">Grant free period</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,7 +133,7 @@ export function SubscriptionsPanel() {
                       </td>
                       <td className="py-2 pr-3">
                         <Badge variant={planVariant(org.plan)}>
-                          {org.plan === "pro" ? "Pro" : "Free"}
+                          {PLAN_LIMITS[org.plan].label}
                         </Badge>
                       </td>
                       <td className="py-2 pr-3 text-xs text-muted-foreground">
@@ -137,7 +145,7 @@ export function SubscriptionsPanel() {
                             {new Date(org.planExpiresAt).toLocaleDateString()}
                             {typeof org.daysLeft === "number" ? ` (${org.daysLeft}d left)` : ""}
                           </>
-                        ) : org.plan === "pro" ? (
+                        ) : org.plan !== "free" ? (
                           "Never"
                         ) : (
                           "—"
@@ -145,6 +153,27 @@ export function SubscriptionsPanel() {
                       </td>
                       <td className="py-2 pr-3">
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* A plain <select>: the whole cell is a dense row
+                              of controls, and a styled combobox here would be
+                              taller than the inputs beside it. */}
+                          <select
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            value={grantPlan[org.id] ?? "pro"}
+                            disabled={pending}
+                            aria-label={`Tier to grant ${org.name}`}
+                            onChange={(e) =>
+                              setGrantPlan((prev) => ({
+                                ...prev,
+                                [org.id]: e.target.value as PlanKey,
+                              }))
+                            }
+                          >
+                            {PAID_PLAN_KEYS.map((key) => (
+                              <option key={key} value={key}>
+                                {PLAN_LIMITS[key].label}
+                              </option>
+                            ))}
+                          </select>
                           <Input
                             type="number"
                             min={1}

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+import { type PlanKey } from "@/lib/plans/limits";
 import { ContentHeader } from "./content-header";
 import { IconRail } from "./icon-rail";
 import { NavSidebar } from "./nav-sidebar";
@@ -15,7 +16,7 @@ type ProtectedShellProps = {
   organizations: NavbarOrganization[];
   userName?: string;
   userEmail?: string;
-  plan?: "free" | "pro";
+  plan?: PlanKey;
   planUntil?: string | null;
   headerActions?: ReactNode;
 };

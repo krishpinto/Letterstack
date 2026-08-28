@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
+import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
 import { CreateWorkspaceScreen } from "./create-workspace-screen";
 import { InviteMembersDialog } from "./invite-members-dialog";
 
@@ -56,7 +57,7 @@ type TopNavbarProps = {
   organizations: NavbarOrganization[];
   userName: string;
   userEmail: string;
-  plan?: "free" | "pro";
+  plan?: PlanKey;
   /** Pre-formatted expiry date, e.g. "10 October 2026". Null hides the line. */
   planUntil?: string | null;
 };
@@ -315,11 +316,12 @@ export function TopNavbar({
                   {userInitial}
                 </AvatarFallback>
               </Avatar>
-              {/* Pro mark: a ring plus a corner pip, so it still reads on a
+              {/* Paid mark: a ring plus a corner pip, so it still reads on a
                   28px avatar where a text badge would be unreadable. The
                   ring sits outside the avatar so it never crops the
-                  initial. */}
-              {plan === "pro" && (
+                  initial. Deliberately the same mark on every paid tier —
+                  at this size it can only say "paid", not which one. */}
+              {plan !== "free" && (
                 <>
                   <span className="pointer-events-none absolute -inset-0.5 rounded-full ring-2 ring-amber-400" />
                   <span className="pointer-events-none absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full bg-amber-400 ring-2 ring-background">
@@ -343,21 +345,21 @@ export function TopNavbar({
                   {userName}
                 </p>
                 <p className="text-xs text-muted-foreground">{userEmail}</p>
-                {/* Just "Pro" — the badge reads as the plan they're on, not as
-                    a countdown. How long it runs is the answer to clicking it,
-                    below, rather than a label worn permanently. */}
-                {plan === "pro" && (
+                {/* Just the tier name — the badge reads as the plan they're
+                    on, not as a countdown. How long it runs is the answer to
+                    clicking it, below, rather than a label worn permanently. */}
+                {plan !== "free" && (
                   <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
                     <ZapIcon className="size-2.5 fill-current" />
-                    Pro
+                    {PLAN_LIMITS[plan].label}
                   </span>
                 )}
-                {plan === "pro" && planUntil && (
+                {plan !== "free" && planUntil && (
                   <Link
                     href="/dashboard/settings?section=billing"
                     className="mt-1 text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
-                    Pro until {planUntil}
+                    {PLAN_LIMITS[plan].label} until {planUntil}
                   </Link>
                 )}
               </div>

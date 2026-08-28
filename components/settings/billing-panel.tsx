@@ -6,13 +6,22 @@ import {
   ClockIcon,
   GlobeIcon,
   MailIcon,
+  MessageSquareIcon,
   UsersIcon,
   ZapIcon,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RazorpayCheckoutButton } from "@/components/settings/razorpay-checkout-button";
+import { checkoutItemsFor } from "@/lib/payments/catalog";
+import {
+  PLAN_LIMITS,
+  PLAN_ORDER,
+  planRank,
+  type PlanKey,
+} from "@/lib/plans/limits";
 
 function UsageRow({
   icon: Icon,
@@ -45,6 +54,86 @@ function UsageRow({
   );
 }
 
+/** The allowance line under a tier's name, built from the enforced numbers. */
+function quotaLine(plan: PlanKey) {
+  const limits = PLAN_LIMITS[plan];
+  const plus = limits.negotiable ? "+" : "";
+  return (
+    `${limits.contacts.toLocaleString("en-IN")}${plus} contacts · ` +
+    `${limits.emailsPerMonth.toLocaleString("en-IN")}${plus} emails a month · ` +
+    `${limits.domains}${plus} sending domain${limits.domains === 1 ? "" : "s"}`
+  );
+}
+
+/**
+ * One purchasable (or enquirable) tier. Rendered for the current plan when
+ * it can be renewed, and for every tier above it.
+ */
+function PlanOffer({
+  plan,
+  heading,
+  profile,
+  onPaid,
+}: {
+  plan: PlanKey;
+  heading: string;
+  profile?: { name?: string | null; email?: string | null };
+  onPaid: () => void;
+}) {
+  const limits = PLAN_LIMITS[plan];
+  const items = checkoutItemsFor(plan);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium">{heading}</span>
+        <span className="text-xs text-muted-foreground">{quotaLine(plan)}</span>
+      </div>
+
+      {items ? (
+        <>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {/* Annual first: it's the better deal and, until recurring billing
+                exists, the one that doesn't need re-buying every month. */}
+            <RazorpayCheckoutButton
+              item={items.yearly}
+              label={`₹${limits.yearlyPrice!.toLocaleString("en-IN")} / year`}
+              prefill={profile}
+              onPaid={onPaid}
+            />
+            <RazorpayCheckoutButton
+              item={items.monthly}
+              label={`₹${limits.monthlyPrice!.toLocaleString("en-IN")} / month`}
+              prefill={profile}
+              onPaid={onPaid}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Yearly is ten months&rsquo; price for twelve. Pay by UPI, card, or
+            netbanking. Prices exclude GST.
+          </p>
+        </>
+      ) : (
+        <>
+          {/* No checkout button by design — Business is quoted per deal, and
+              the conversation before the first send is what keeps a bought
+              list off our sending reputation. */}
+          <Button variant="outline" className="w-fit" asChild>
+            <Link href="/#contact">
+              <MessageSquareIcon className="size-4" />
+              Talk to us
+            </Link>
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Priced per deal. Tell us your list size and how often you send, and
+            we&rsquo;ll come back with a number.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function BillingPanel({
   sends,
   domains,
@@ -63,14 +152,20 @@ export function BillingPanel({
   /** Founder-only: exposes the ₹5 smoke-test purchase. */
   showCheckout?: boolean;
   profile?: { name?: string | null; email?: string | null };
-  plan?: "free" | "pro";
+  plan?: PlanKey;
   planExpiresAt?: string | Date | null;
   isTrial?: boolean;
   trialEnded?: boolean;
   daysLeft?: number | null;
 }) {
   const router = useRouter();
-  const onPro = plan === "pro";
+  const onPaidPlan = plan !== "free";
+  const current = PLAN_LIMITS[plan];
+  const refresh = () => router.refresh();
+
+  // Every tier above the current one, cheapest first — so someone on Starter
+  // is offered Growth and Business, not told to "upgrade to Pro" again.
+  const upgrades = PLAN_ORDER.filter((key) => planRank(key) > planRank(plan));
 
   const until = planExpiresAt
     ? new Date(planExpiresAt).toLocaleDateString(undefined, {
@@ -84,9 +179,9 @@ export function BillingPanel({
     <div className="flex max-w-lg flex-col gap-6">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold">Billing & Plans</h3>
-        {onPro ? (
+        {onPaidPlan ? (
           <Badge className="h-5 bg-amber-400/15 px-2 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-            Pro
+            {current.label}
           </Badge>
         ) : (
           <Badge className="h-5 bg-muted px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -100,7 +195,7 @@ export function BillingPanel({
           meters. */}
       <div
         className={`rounded-xl border p-4 ${
-          onPro
+          onPaidPlan
             ? "border-amber-500/25 bg-amber-500/[0.06]"
             : "border-border bg-muted/20"
         }`}
@@ -108,31 +203,35 @@ export function BillingPanel({
         <div className="flex items-start gap-3">
           <span
             className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${
-              onPro
+              onPaidPlan
                 ? "bg-amber-400/20 text-amber-600 dark:text-amber-400"
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            {onPro ? <ZapIcon className="size-3.5" /> : <ClockIcon className="size-3.5" />}
+            {onPaidPlan ? (
+              <ZapIcon className="size-3.5" />
+            ) : (
+              <ClockIcon className="size-3.5" />
+            )}
           </span>
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium">
-              {onPro
-                ? "You're on Pro"
+              {onPaidPlan
+                ? `You're on ${current.label}`
                 : trialEnded
-                  ? "Your Pro plan has ended"
+                  ? "Your paid plan has ended"
                   : "You're on the Free plan"}
             </p>
             <p className="text-sm leading-6 text-muted-foreground">
               {isTrial ? (
                 <>
-                  Your Pro plan runs until{" "}
+                  Your {current.label} plan runs until{" "}
                   <strong className="text-foreground">{until}</strong>
                   {typeof daysLeft === "number" ? ` — ${daysLeft} days left` : ""}.
                   This period is on us: nothing to pay and no card on file. Continue
                   below any time to carry straight on without interruption.
                 </>
-              ) : onPro ? (
+              ) : onPaidPlan ? (
                 <>
                   Your plan runs until{" "}
                   <strong className="text-foreground">{until}</strong>. Renewing adds
@@ -172,37 +271,27 @@ export function BillingPanel({
         <UsageRow icon={GlobeIcon} label="Sending domains" used={domains.used} limit={domains.limit} />
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">
-            {onPro ? "Continue on Pro" : "Upgrade to Pro"}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            3,000 contacts · 15,000 emails a month · 2 sending domains
-          </span>
-        </div>
+      {/* Renewing the tier they already hold comes before upselling the next
+          one — someone whose plan is about to lapse is here to keep what they
+          have, not to be sold something bigger. */}
+      {onPaidPlan && checkoutItemsFor(plan) ? (
+        <PlanOffer
+          plan={plan}
+          heading={`Continue on ${current.label}`}
+          profile={profile}
+          onPaid={refresh}
+        />
+      ) : null}
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {/* Annual first: it's the better deal and, until recurring billing
-              exists, the one that doesn't need re-buying every month. */}
-          <RazorpayCheckoutButton
-            item="pro_yearly"
-            label="₹4,999 / year"
-            prefill={profile}
-            onPaid={() => router.refresh()}
-          />
-          <RazorpayCheckoutButton
-            item="pro_monthly"
-            label="₹499 / month"
-            prefill={profile}
-            onPaid={() => router.refresh()}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Yearly is ten months&rsquo; price for twelve. Pay by UPI, card, or
-          netbanking. Prices exclude GST.
-        </p>
-      </div>
+      {upgrades.map((key) => (
+        <PlanOffer
+          key={key}
+          plan={key}
+          heading={`Upgrade to ${PLAN_LIMITS[key].label}`}
+          profile={profile}
+          onPaid={refresh}
+        />
+      ))}
 
       {showCheckout ? (
         <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border px-4 py-4">
@@ -214,7 +303,7 @@ export function BillingPanel({
             item="pro_smoke_test"
             label="Smoke test (₹5)"
             prefill={profile}
-            onPaid={() => router.refresh()}
+            onPaid={refresh}
           />
         </div>
       ) : null}

@@ -1,7 +1,13 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
-import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
+import {
+  higherPlan,
+  normalizePlan,
+  PAID_PLAN_KEYS,
+  PLAN_LIMITS,
+  type PlanKey,
+} from "@/lib/plans/limits";
 
 /** How long a new workspace gets Pro for free before it has to pay. */
 export const TRIAL_DAYS = 60;
@@ -16,14 +22,24 @@ const USED_THIS_MONTH = sql`(CASE WHEN ${ROLLED_OVER} THEN 0 ELSE ${organization
 // into JS first, so the limit can't be computed from a plan that expired
 // between the read and the write.
 //
-// ::int casts are load-bearing, not decoration: with two bare parameters
-// as the only content of both CASE branches, Postgres has no column or
-// literal in scope to infer a type from and defaults them to `text` —
-// which then fails at the `<=` comparison against the (integer)
-// used-this-month expression this CASE feeds into, with "operator does
-// not exist: integer <= text". Confirmed live in production (2026-08-28)
-// via tryReserveSendQuota, which is the only caller of this fragment.
-const MONTHLY_ALLOWANCE = sql`(CASE WHEN ${organizations.plan} = 'pro' AND (${organizations.planExpiresAt} IS NULL OR ${organizations.planExpiresAt} > now()) THEN ${PLAN_LIMITS.pro.emailsPerMonth}::int ELSE ${PLAN_LIMITS.free.emailsPerMonth}::int END)`;
+// One WHEN per paid tier, generated from the same table the pricing page
+// reads, so adding a tier can never leave this enforcing last month's
+// allowances. Allowances are emitted as SQL literals rather than bound
+// parameters: a CASE whose every branch is an untyped parameter gives
+// Postgres nothing to infer the result type from and fails outright (hit
+// live, 2026-08-28, as "operator does not exist: integer <= text" — this
+// is that same bug, fixed here for every tier instead of just Pro). They
+// are our own compile-time constants, so there is no injection surface.
+const PLAN_ALLOWANCE_CASES = sql.join(
+  PAID_PLAN_KEYS.map(
+    (key) =>
+      sql`WHEN ${organizations.plan} = ${key} THEN ${sql.raw(String(PLAN_LIMITS[key].emailsPerMonth))}`,
+  ),
+  sql` `,
+);
+// The expiry guard wraps the whole CASE, so a lapsed period on ANY paid tier
+// falls back to Free — not just a lapsed Starter.
+const MONTHLY_ALLOWANCE = sql`(CASE WHEN (${organizations.planExpiresAt} IS NULL OR ${organizations.planExpiresAt} > now()) THEN (CASE ${PLAN_ALLOWANCE_CASES} ELSE ${sql.raw(String(PLAN_LIMITS.free.emailsPerMonth))} END) ELSE ${sql.raw(String(PLAN_LIMITS.free.emailsPerMonth))} END)`;
 
 export type OrganizationType = "personal" | "business";
 
@@ -132,11 +148,14 @@ function organizationSelect() {
 export function activePlan(org: {
   plan?: string | null;
   planExpiresAt?: Date | string | null;
-}): "free" | "pro" {
-  if (org.plan !== "pro") return "free";
-  if (!org.planExpiresAt) return "pro";
+}): PlanKey {
+  // normalizePlan collapses anything unrecognised to free, so a typo or a
+  // hand-edited row can only ever be less permissive than intended.
+  const plan = normalizePlan(org.plan);
+  if (plan === "free") return "free";
+  if (!org.planExpiresAt) return plan;
   const expires = new Date(org.planExpiresAt);
-  return expires.getTime() > Date.now() ? "pro" : "free";
+  return expires.getTime() > Date.now() ? plan : "free";
 }
 
 /** Warn this many days out, in-app, before a trial or paid period lapses. */
@@ -177,8 +196,10 @@ export function planState(org: {
   // for the admin panel and for telling perks apart from real revenue.
   const unpaid = source === "trial" || source === "granted";
 
+  // Any paid tier counts down, not just Starter — activePlan has already
+  // resolved a lapsed period to free, so "not free" means "still running".
   const daysLeft =
-    expiresAt && plan === "pro"
+    expiresAt && plan !== "free"
       ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000))
       : null;
 
@@ -187,7 +208,7 @@ export function planState(org: {
     source,
     expiresAt,
     daysLeft,
-    isTrial: unpaid && plan === "pro",
+    isTrial: unpaid && plan !== "free",
     isExpiringSoon: daysLeft !== null && daysLeft <= EXPIRY_WARNING_DAYS,
     trialEnded: unpaid && plan === "free",
   };
@@ -312,8 +333,21 @@ export async function activatePlanForOrganization(
  * visible/auditable as a perk instead of blending into real revenue, while
  * still reading as "on us" (not "renew") everywhere in the UI — see the
  * 'granted' handling in planState().
+ *
+ * Granting a DIFFERENT tier to an org that already has time left both moves
+ * them to that tier and adds to the remaining days — it doesn't restart the
+ * clock. That's the generous reading, and the right one for an action only a
+ * founder can take; to move someone down without gifting time, grant the
+ * lower tier and set the days explicitly.
  */
-export async function grantAdminPlan(organizationId: string, days: number) {
+export async function grantAdminPlan(
+  organizationId: string,
+  days: number,
+  // Which tier to grant. Business is provisioned this way by design — it has
+  // no catalog entry, so an admin grant is the ONLY route onto it, and this
+  // parameter is what makes that route exist.
+  plan: PlanKey = "pro",
+) {
   const [current] = await db
     .select({ planExpiresAt: organizations.planExpiresAt, plan: organizations.plan })
     .from(organizations)
@@ -332,7 +366,7 @@ export async function grantAdminPlan(organizationId: string, days: number) {
 
   const [row] = await db
     .update(organizations)
-    .set({ plan: "pro", planExpiresAt: expiresAt, planSource: "granted" })
+    .set({ plan, planExpiresAt: expiresAt, planSource: "granted" })
     .where(eq(organizations.id, organizationId))
     .returning({
       plan: organizations.plan,
@@ -491,9 +525,10 @@ export async function createOrganizationForUser(
   // one workspace gets the Pro allowance across all of them. Enforced only on
   // creating a new one, so anybody already over the line keeps everything
   // they have — the same grandfathering rule as contacts.
-  const bestPlan: PlanKey = existing.some((org) => activePlan(org) === "pro")
-    ? "pro"
-    : "free";
+  const bestPlan: PlanKey = existing.reduce<PlanKey>(
+    (best, org) => higherPlan(best, activePlan(org)),
+    "free",
+  );
   const allowance = PLAN_LIMITS[bestPlan].workspaces;
   if (existing.length >= allowance) {
     throw new WorkspaceLimitError(existing.length, allowance, bestPlan);

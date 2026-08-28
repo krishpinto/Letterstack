@@ -14,7 +14,7 @@
 import { sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
-import { limitMessage, limitsFor, type PlanKey } from "./limits";
+import { limitMessage, limitsFor, normalizePlan, type PlanKey } from "./limits";
 
 export type HeadroomResult = {
   ok: boolean;
@@ -44,15 +44,20 @@ export async function checkContactHeadroom(
     SELECT
       (SELECT count(*)::int FROM recipients r WHERE r.organization_id = ${organizationId}) AS used,
       o.plan AS plan,
-      (o.plan = 'pro' AND (o.plan_expires_at IS NULL OR o.plan_expires_at > now())) AS active
+      (o.plan <> 'free' AND (o.plan_expires_at IS NULL OR o.plan_expires_at > now())) AS active
     FROM organizations o
     WHERE o.id = ${organizationId}
   `);
 
   const row = Array.isArray(rows) ? rows[0] : (rows as { rows?: unknown[] }).rows?.[0];
-  const record = row as { used: number; active: boolean } | undefined;
+  const record = row as { used: number; plan: string; active: boolean } | undefined;
 
-  const plan: PlanKey = record?.active ? "pro" : "free";
+  // `active` only says the paid period hasn't lapsed — the tier itself comes
+  // from the stored value, so Growth and Business get their own allowances
+  // instead of every paid org being treated as Starter. normalizePlan turns
+  // an unrecognised string into free, so `active` can never widen a limit on
+  // its own.
+  const plan: PlanKey = record?.active ? normalizePlan(record.plan) : "free";
   const used = Number(record?.used ?? 0);
   const limit = limitsFor(plan).contacts;
   const remaining = Math.max(0, limit - used);
