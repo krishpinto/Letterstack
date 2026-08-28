@@ -317,7 +317,15 @@ export default function TemplatesPage() {
       <ImportHtmlDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImport={(html) => openDoc(documentFromHtml(html))}
+        onImport={(html) => {
+          // Close this dialog BEFORE openDoc, which raises a "replace your
+          // current draft?" confirm whenever the editor already holds one.
+          // Stacked modals leave that confirm portaled outside this dialog's
+          // focus trap — it renders, but clicks never reach it, so the import
+          // just appears to do nothing.
+          setImportOpen(false);
+          openDoc(documentFromHtml(html));
+        }}
       />
     </div>
   );
@@ -733,8 +741,19 @@ function ImportHtmlDialog({
         </DialogHeader>
 
         <DialogPanel className="flex flex-col gap-4">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as "upload" | "paste")} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+          {/* flex-col and h-9 are supplied here rather than inherited: the
+              Tabs primitive tries to set them off `data-horizontal`, but
+              Radix writes data-orientation="horizontal", so those variants
+              never match and the root stays a flex ROW — which laid the tab
+              list and the panel out side by side and squeezed the dropzone
+              into a sliver. Same reason the gallery Tabs above passes
+              flex-col. */}
+          <Tabs
+            value={mode}
+            onValueChange={(v) => setMode(v as "upload" | "paste")}
+            className="flex w-full flex-col"
+          >
+            <TabsList className="grid h-9 w-full grid-cols-2">
               <TabsTrigger value="upload">Upload HTML file</TabsTrigger>
               <TabsTrigger value="paste">Paste code</TabsTrigger>
             </TabsList>
