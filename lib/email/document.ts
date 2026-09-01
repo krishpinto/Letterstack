@@ -1,3 +1,5 @@
+import type { SocialPlatform } from "./social";
+
 export type EmailDocument = {
   id: string;
   name: string;
@@ -168,8 +170,16 @@ export type VideoBlock = BaseBlock<"video"> & {
 
 export type SocialLink = {
   id: string;
-  platform: "facebook" | "twitter" | "instagram" | "linkedin" | "youtube";
+  /** See SOCIAL_PLATFORMS in ./social — the five original ids still parse. */
+  platform: SocialPlatform;
   url: string;
+  /**
+   * `custom` only. The icon image (an UploadThing URL, or any absolute one);
+   * without it the custom link falls back to a neutral link tile. `label`
+   * becomes the alt text and hover title, since there's no platform name.
+   */
+  iconSrc?: string;
+  label?: string;
 };
 
 export type SocialBlock = BaseBlock<"social"> & {

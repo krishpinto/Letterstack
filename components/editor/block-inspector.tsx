@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { SocialLinksField } from "./social-links-field";
 import {
   Tooltip,
   TooltipContent,
@@ -870,24 +871,10 @@ function SocialBlockFields({
 }: { block: SocialBlock; onChange: (u: (b: EmailBlock) => EmailBlock) => void }) {
   return (
     <>
-      <Field><FieldTitle>Social links</FieldTitle></Field>
-      {block.links.map((link) => (
-        <Field key={link.id}>
-          <FieldLabel className="capitalize">{link.platform}</FieldLabel>
-          <Input
-            value={link.url}
-            placeholder={`https://${link.platform}.com/...`}
-            onChange={(e) =>
-              onChange((b) => ({
-                ...b,
-                links: (b as SocialBlock).links.map((l) =>
-                  l.id === link.id ? { ...l, url: e.target.value } : l,
-                ),
-              }) as SocialBlock)
-            }
-          />
-        </Field>
-      ))}
+      <SocialLinksField
+        links={block.links}
+        onChange={(links) => onChange((b) => ({ ...b, links }) as SocialBlock)}
+      />
       <AlignmentField value={block.align} onChange={(align) => onChange((b) => ({ ...b, align }) as SocialBlock)} />
     </>
   );

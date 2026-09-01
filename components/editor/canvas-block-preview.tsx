@@ -21,6 +21,7 @@ import {
   type RawHtmlBlock,
   type TextBlock,
 } from "@/lib/email/document";
+import { socialIconSrc, socialLabel } from "@/lib/email/social";
 
 function stripOuterP(html: string): string {
   const stripped = html.replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1").trim();
@@ -82,14 +83,6 @@ function EditableHtmlBlock({
     </div>
   );
 }
-
-const SOCIAL_CHARS: Record<string, string> = {
-  facebook:  "f",
-  twitter:   "𝕏",
-  instagram: "ig",
-  linkedin:  "in",
-  youtube:   "yt",
-};
 
 function getButtonColors(
   variant: ButtonVariant | undefined,
@@ -520,19 +513,30 @@ export function CanvasBlockPreview({
         <div style={{ padding: `16px ${s.padding}px`, textAlign: block.align }}>
           <div
             className={cn(
-              "flex gap-2",
+              "flex flex-wrap gap-2",
               block.align === "center" && "justify-center",
               block.align === "right" && "justify-end",
             )}
           >
             {block.links.map((link) => (
-              <div
+              // Same PNGs the compiler points at, served same-origin here.
+              // Half-faded when there is no URL yet: the compiler drops those
+              // from the sent email, and this is the only place that shows
+              // which ones are still unfinished.
+              // next/image is wrong here: the src is data-driven (it can be
+              // any uploaded custom icon) and these are 32px, so a loader
+              // round-trip per icon buys nothing.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
                 key={link.id}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                style={{ backgroundColor: s.linkColor }}
-              >
-                {SOCIAL_CHARS[link.platform] ?? link.platform[0].toUpperCase()}
-              </div>
+                src={socialIconSrc(link)}
+                alt={socialLabel(link)}
+                title={socialLabel(link)}
+                className={cn(
+                  "h-8 w-8 rounded-full object-cover",
+                  !link.url.trim() && "opacity-40",
+                )}
+              />
             ))}
           </div>
         </div>
