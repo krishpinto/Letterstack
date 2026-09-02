@@ -51,14 +51,22 @@ export type PlanLimits = {
 };
 
 export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
+  // Deliberately too small to run a newsletter on. Two reasons, and the
+  // second is the one that matters: a free workspace's sending costs us real
+  // money (every email is an SES charge), and — far more expensive — an
+  // anonymous signup importing a bought list is the likeliest way the shared
+  // SES account crosses the 10% bounce / 0.5% complaint line and takes every
+  // paying customer's sending down with it. The same reasoning that keeps
+  // Business off self-serve applies hardest at the bottom of the range.
+  // Free is enough to build something and send it to your own team.
   free: {
     label: "Free",
-    contacts: 500,
-    emailsPerMonth: 2_000,
+    contacts: 100,
+    emailsPerMonth: 500,
     domains: 1,
     workspaces: 1,
     rank: 0,
-    blurb: "Enough to run a real list and see whether this fits you.",
+    blurb: "Build a real campaign and send it to a small test list.",
     monthlyPrice: 0,
     yearlyPrice: 0,
     extras: ["1 signup form", "7 days of analytics", "Full block editor"],
@@ -74,8 +82,8 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     workspaces: 3,
     rank: 1,
     blurb: "For a newsletter going out to a few thousand people.",
-    monthlyPrice: 499,
-    yearlyPrice: 4_999,
+    monthlyPrice: 1_000,
+    yearlyPrice: 10_000,
     extras: ["Unlimited signup forms", "Full analytics history", "Email support"],
   },
   growth: {
@@ -86,8 +94,8 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     workspaces: 5,
     rank: 2,
     blurb: "For orgs sending to a larger list, more than once a month.",
-    monthlyPrice: 1_499,
-    yearlyPrice: 14_999,
+    monthlyPrice: 2_500,
+    yearlyPrice: 25_000,
     extras: [
       "Team roles and invites",
       "Full analytics history",
@@ -119,6 +127,40 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     ],
   },
 };
+
+/**
+ * What the yearly price is a discount *from*, for the struck-through figure
+ * on the pricing card.
+ *
+ * The list price is twelve monthly payments, computed rather than stored: a
+ * stored one goes stale the moment monthlyPrice changes, and a pricing page
+ * confidently crossing out last quarter's number is worse than showing no
+ * discount at all. Every tier is set exactly two months below its own list,
+ * so the percentage falls out of that instead of being picked separately per
+ * tier — which is how a "17% off" and a "2 months free" badge on the same
+ * card end up disagreeing.
+ *
+ * Null where there is nothing to discount: Free, and Business, which is
+ * quoted.
+ */
+export function yearlyPricing(plan: PlanKey) {
+  const { monthlyPrice, yearlyPrice } = PLAN_LIMITS[plan];
+  if (!monthlyPrice || yearlyPrice === null) return null;
+
+  const list = monthlyPrice * 12;
+  const saved = list - yearlyPrice;
+  if (saved <= 0) return null;
+
+  return {
+    /** Twelve months at the monthly rate — the crossed-out number. */
+    list,
+    /** What they actually pay. */
+    price: yearlyPrice,
+    saved,
+    percentOff: Math.round((saved / list) * 100),
+    monthsFree: Math.round(saved / monthlyPrice),
+  };
+}
 
 /** Every tier, cheapest first. The pricing page renders in this order. */
 export const PLAN_ORDER: PlanKey[] = (

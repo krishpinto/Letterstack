@@ -21,6 +21,7 @@ import {
   PLAN_ORDER,
   planRank,
   type PlanKey,
+  yearlyPricing,
 } from "@/lib/plans/limits";
 
 function UsageRow({
@@ -82,6 +83,8 @@ function PlanOffer({
 }) {
   const limits = PLAN_LIMITS[plan];
   const items = checkoutItemsFor(plan);
+  // Null on Free and Business — nothing to discount, nothing to cross out.
+  const annual = yearlyPricing(plan);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -97,7 +100,11 @@ function PlanOffer({
                 exists, the one that doesn't need re-buying every month. */}
             <RazorpayCheckoutButton
               item={items.yearly}
-              label={`₹${limits.yearlyPrice!.toLocaleString("en-IN")} / year`}
+              label={
+                annual
+                  ? `₹${limits.yearlyPrice!.toLocaleString("en-IN")} / year — save ₹${annual.saved.toLocaleString("en-IN")}`
+                  : `₹${limits.yearlyPrice!.toLocaleString("en-IN")} / year`
+              }
               prefill={profile}
               onPaid={onPaid}
             />
@@ -109,8 +116,17 @@ function PlanOffer({
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Yearly is ten months&rsquo; price for twelve. Pay by UPI, card, or
-            netbanking. Prices exclude GST.
+            {annual ? (
+              <>
+                Yearly is{" "}
+                <span className="line-through">
+                  ₹{annual.list.toLocaleString("en-IN")}
+                </span>{" "}
+                ₹{annual.price.toLocaleString("en-IN")} — {annual.monthsFree}{" "}
+                months free.{" "}
+              </>
+            ) : null}
+            Pay by UPI, card, or netbanking. Prices exclude GST.
           </p>
         </>
       ) : (

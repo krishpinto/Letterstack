@@ -106,6 +106,12 @@ export function Footer() {
             <p className="text-xs text-[#717171]">
               © {new Date().getFullYear()} Letterstack
             </p>
+            <Link
+              href="/pricing"
+              className="text-xs text-[#717171] underline-offset-4 transition-colors hover:text-[#0A0A0A] hover:underline"
+            >
+              Pricing
+            </Link>
             {/* Google's OAuth review requires the privacy policy to be
                 reachable from the homepage, so these live in the footer
                 rather than only on the pages that reference them. */}

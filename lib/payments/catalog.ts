@@ -33,7 +33,7 @@ export const PAYMENT_ITEMS = {
     planDays: 0,
   },
   pro_monthly: {
-    amount: 49_900,
+    amount: 100_000,
     currency: "INR",
     label: "Pro — 1 month",
     description: "LetterStack Pro (1 month)",
@@ -41,11 +41,15 @@ export const PAYMENT_ITEMS = {
     grantsPlan: "pro",
     planDays: 30,
   },
-  // Ten months' price for twelve. Annual also runs on the one-time payment
-  // rail — no mandate, no Razorpay Subscriptions — which is why it's the
-  // option worth steering people toward until recurring billing exists.
+  // Ten months' price for twelve. yearlyPricing() in lib/plans/limits.ts
+  // derives the crossed-out list price from that same ratio, so the discount
+  // shown on the pricing card and the amount charged here can't disagree.
+  //
+  // Annual runs on the one-time payment rail — no mandate, no Razorpay
+  // Subscriptions — which is why it's the option worth steering people toward
+  // until recurring billing exists.
   pro_yearly: {
-    amount: 499_900,
+    amount: 1_000_000,
     currency: "INR",
     label: "Pro — 12 months",
     description: "LetterStack Pro (1 year)",
@@ -54,7 +58,7 @@ export const PAYMENT_ITEMS = {
     planDays: 365,
   },
   growth_monthly: {
-    amount: 149_900,
+    amount: 250_000,
     currency: "INR",
     label: "Growth — 1 month",
     description: "LetterStack Growth (1 month)",
@@ -63,7 +67,7 @@ export const PAYMENT_ITEMS = {
     planDays: 30,
   },
   growth_yearly: {
-    amount: 1_499_900,
+    amount: 2_500_000,
     currency: "INR",
     label: "Growth — 12 months",
     description: "LetterStack Growth (1 year)",
@@ -73,7 +77,7 @@ export const PAYMENT_ITEMS = {
   },
   // The ₹5 item the rail was first proven with. Kept, founder-only, so the
   // live payment path can still be exercised end to end without spending
-  // ₹499 each time.
+  // a month's subscription each time.
   pro_smoke_test: {
     amount: 500,
     currency: "INR",

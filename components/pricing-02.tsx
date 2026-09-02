@@ -15,6 +15,7 @@ import {
   PLAN_ORDER,
   planHighlights,
   type PlanKey,
+  yearlyPricing,
 } from "@/lib/plans/limits";
 
 // Every figure and price on this page comes from lib/plans/limits.ts — the
@@ -29,6 +30,9 @@ type PlanCard = {
   name: string;
   monthlyPrice: number | null;
   yearlyPrice: number | null;
+  /** Twelve months at the monthly rate — the struck-through figure. Null on
+   *  tiers with nothing to discount. */
+  yearlyListPrice: number | null;
   description: string;
   features: string[];
   includesLabel: string;
@@ -36,6 +40,15 @@ type PlanCard = {
   href: string;
   featured?: boolean;
 };
+
+// Read off the cheapest paid tier rather than written out: every tier gets
+// the same two-months-free ratio, so hardcoding "2 months free" here is a
+// second copy of a number that already exists and can go stale on its own.
+const YEARLY_BADGE = (() => {
+  const pricing = yearlyPricing("pro");
+  if (!pricing) return "save on annual";
+  return `${pricing.monthsFree} months free`;
+})();
 
 const plans: PlanCard[] = PLAN_ORDER.map((key, index) => {
   const limits = PLAN_LIMITS[key];
@@ -45,6 +58,7 @@ const plans: PlanCard[] = PLAN_ORDER.map((key, index) => {
     name: limits.label,
     monthlyPrice: limits.monthlyPrice,
     yearlyPrice: limits.yearlyPrice,
+    yearlyListPrice: yearlyPricing(key)?.list ?? null,
     description: limits.blurb,
     features: planHighlights(key),
     includesLabel: previous
@@ -306,7 +320,7 @@ export function Pricing02() {
                 }`}
                 onClick={() => setBillingCycle("yearly")}
               >
-                Yearly · 2 months free
+                Yearly · {YEARLY_BADGE}
               </button>
             </div>
           </div>
@@ -384,6 +398,15 @@ export function Pricing02() {
                         <span className="pb-1 text-sm text-slate-400 dark:text-zinc-500">
                           / {billingCycle === "monthly" ? "month" : "year"}
                         </span>
+                        {/* The number the discount is measured from. Shown
+                            only on yearly, where it is the whole point: a
+                            crossed-out ₹12,000 is what makes ₹10,000 read as
+                            two months free rather than as the price. */}
+                        {billingCycle === "yearly" && plan.yearlyListPrice && (
+                          <span className="pb-1.5 text-sm text-slate-400 line-through decoration-slate-300 dark:text-zinc-500 dark:decoration-zinc-600">
+                            ₹{plan.yearlyListPrice.toLocaleString("en-IN")}
+                          </span>
+                        )}
                       </>
                     )}
                   </div>
