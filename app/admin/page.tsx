@@ -1,25 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { GaugeIcon, RefreshCwIcon, UsersIcon } from "lucide-react";
+import { GaugeIcon, MailIcon, RefreshCwIcon, UsersIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageLoader } from "@/components/bar-spinner";
 import { AnalyticsTab, type InfraPayload } from "@/components/admin/analytics-tab";
+import { CampaignsPanel } from "@/components/admin/campaigns-panel";
 import { UsersPanel } from "@/components/admin/users-panel";
 import { cn } from "@/lib/utils";
 
 // Founder-only admin console (krish + Ethan, via ADMIN_EMAILS). Not linked
 // from anywhere in the product — bookmark /admin.
 //
-// Two tabs, because the page answers two unrelated questions. Analytics is
-// about the platform and the providers underneath it — what we've done in
+// Three tabs, because the page answers three unrelated questions. Analytics
+// is about the platform and the providers underneath it — what we've done in
 // total, and what is close to a limit that could take sending down. Users is
 // about individual people: what they've sent, and what plan they're on.
+// Campaigns is about the mail itself — what is going out, through which
+// channel, and what it actually said.
 //
-// The Users tab is only mounted once it's opened (Radix unmounts inactive
-// panels), so its per-user queries never run on a page load that just wanted
+// Only the open tab is mounted (Radix unmounts inactive panels), so the
+// per-user and per-campaign queries never run on a page load that just wanted
 // to check the bounce rate.
 
 export default function AdminPage() {
@@ -95,6 +98,10 @@ export default function AdminPage() {
               <UsersIcon data-icon="inline-start" />
               Users
             </TabsTrigger>
+            <TabsTrigger value="campaigns">
+              <MailIcon data-icon="inline-start" />
+              Campaigns
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="analytics">
@@ -103,6 +110,10 @@ export default function AdminPage() {
 
           <TabsContent value="users">
             <UsersPanel />
+          </TabsContent>
+
+          <TabsContent value="campaigns">
+            <CampaignsPanel />
           </TabsContent>
         </Tabs>
       </div>

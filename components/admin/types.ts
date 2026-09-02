@@ -81,3 +81,39 @@ export function formatDateTime(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString();
 }
+
+export type AdminCampaignRow = {
+  id: string;
+  name: string;
+  subject: string;
+  status: string;
+  organizationId: string;
+  organizationName: string;
+  senderName: string | null;
+  senderEmail: string;
+  fromName: string;
+  fromEmail: string;
+  senderType: string;
+  createdAt: string;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  recipients: number;
+  sent: number;
+  failed: number;
+};
+
+export type AdminCampaignDetail = AdminCampaignRow & {
+  htmlSnapshot: string;
+  textSnapshot: string;
+  replyTo: string | null;
+};
+
+const SENDER_TYPE_LABELS: Record<string, string> = {
+  shared: "Shared domain",
+  domain: "Own domain",
+  mailbox: "Gmail",
+};
+
+export function senderTypeLabel(senderType: string) {
+  return SENDER_TYPE_LABELS[senderType] ?? senderType;
+}
