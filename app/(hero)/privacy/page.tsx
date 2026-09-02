@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "How LetterStack collects, uses, shares and protects personal data, including data received from Google APIs.",
 };
 
-const UPDATED = "28 August 2026";
+const UPDATED = "3 September 2026";
 
 const SECTIONS: LegalSection[] = [
   {
@@ -111,6 +111,12 @@ const SECTIONS: LegalSection[] = [
         ],
       },
       "Where the law requires consent, such as for optional integrations or for non-essential communications, we ask for it, and you can withdraw it at any time.",
+      { subheading: "Review of campaigns you send" },
+      "Every campaign is stored with a frozen copy of the exact email that went out, because that is what we send from and what we keep on record. Our operators can open that copy, together with the campaign's subject, sender, channel and recipient count, in an internal console protected by a named administrator allowlist. We are also notified when a campaign begins sending, by a message containing that same information and no subscriber addresses.",
+      "We do this to keep the platform deliverable and lawful: to investigate bounce and complaint spikes, to answer a support question about a send, and to detect phishing or bulk unsolicited mail before it costs every other sender on our shared infrastructure their delivery. Basis: our legitimate interest in protecting the service, and the instruction you give us to send on your behalf.",
+      {
+        note: "We do not read your campaigns for our own commercial purposes, do not use their content to build products or train models, do not receive copies of the individual emails delivered to your subscribers, and do not add ourselves or anyone else to your recipient lists.",
+      },
     ],
   },
   {
@@ -168,7 +174,7 @@ const SECTIONS: LegalSection[] = [
           "Passwords are stored only as bcrypt hashes, never in a recoverable form.",
           "Every database query is scoped to the requesting workspace, so one customer cannot read another's lists, campaigns or events.",
           "OAuth tokens are stored encrypted and are readable only by the send path that needs them.",
-          "Administrative access is limited to the operator of the service, and used only where support or investigation requires it.",
+          "Administrative access is limited to a named allowlist of operators, and used only where support or investigation requires it. That access includes the stored copy of a sent campaign, as described under How we use personal data.",
         ],
       },
       {
