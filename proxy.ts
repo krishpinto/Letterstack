@@ -28,6 +28,11 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/editor/:path*",
+    // /studio is the agentic editor — a full editing surface, so it belongs
+    // behind the same gate as /editor rather than rendering for signed-out
+    // visitors and failing once its authenticated fetches come back empty.
+    "/studio/:path*",
+    "/studio",
     "/onboarding",
     "/admin/:path*",
     "/admin",
