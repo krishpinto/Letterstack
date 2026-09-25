@@ -55,6 +55,7 @@ function matchesFilter(user: AdminUser, filter: Filter) {
 export function UsersPanel() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("newest");
@@ -62,12 +63,17 @@ export function UsersPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       const r = await fetch("/api/admin/users");
       const payload = await r.json();
+      // A rejected payload is a failure too, not an empty result — the two
+      // used to be indistinguishable on screen.
       if (payload.ok) setUsers(payload.users);
+      else setFailed(true);
     } catch {
-      // keep the last snapshot
+      // Keep the last snapshot, but say that this refresh didn't land.
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -160,7 +166,18 @@ export function UsersPanel() {
             </p>
           </div>
 
-          {!users ? (
+          {failed && !users ? (
+            // Without this branch a failed load left "Loading…" on screen for
+            // good, since the list stayed null while loading went false.
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-muted-foreground">
+                Couldn&apos;t load accounts.
+              </p>
+              <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+                Try again
+              </Button>
+            </div>
+          ) : !users ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : visible.length === 0 ? (
             <p className="text-sm text-muted-foreground">

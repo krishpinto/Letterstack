@@ -64,6 +64,7 @@ function statusVariant(status: string) {
 export function CampaignsPanel() {
   const [campaigns, setCampaigns] = useState<AdminCampaignRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("recent");
@@ -71,12 +72,17 @@ export function CampaignsPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       const r = await fetch("/api/admin/campaigns");
       const payload = await r.json();
+      // A rejected payload is a failure too, not an empty result — the two
+      // used to be indistinguishable on screen.
       if (payload.ok) setCampaigns(payload.campaigns);
+      else setFailed(true);
     } catch {
-      // keep the last snapshot
+      // Keep the last snapshot, but say that this refresh didn't land.
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -169,7 +175,18 @@ export function CampaignsPanel() {
             </p>
           </div>
 
-          {!campaigns ? (
+          {failed && !campaigns ? (
+            // Without this branch a failed load left "Loading…" on screen for
+            // good, since the list stayed null while loading went false.
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-muted-foreground">
+                Couldn&apos;t load campaigns.
+              </p>
+              <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+                Try again
+              </Button>
+            </div>
+          ) : !campaigns ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : visible.length === 0 ? (
             <p className="text-sm text-muted-foreground">
