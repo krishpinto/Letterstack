@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { recordEvent } from "@/db/events";
 import { suppressEmailForOrganization } from "@/db/suppression";
 import { suppressionTargetsForEmail } from "@/db/campaign-recipients";
+import { maybeAlertDeliverability } from "@/lib/notifications/campaign-notifications";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,13 @@ export async function POST(request: Request) {
           ),
         ),
       );
+
+      // Only on bounces and complaints, so the overwhelmingly common event
+      // types (Delivery, Open, Click) never pay for the rate query. Suppression
+      // happens first and unconditionally: keeping a bad address out of the
+      // next send is the part that protects the account, and it must not
+      // depend on a notification succeeding.
+      if (campaignId) await maybeAlertDeliverability(campaignId);
     }
   }
 

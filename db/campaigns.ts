@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { campaignRecipients, campaigns, organizationMembers } from "./schema";
 import { getDefaultOrganizationForUser } from "./organizations";
@@ -194,9 +194,48 @@ export async function markCampaignSending(id: string) {
     .where(eq(campaigns.id, id));
 }
 
-export async function markCampaignSent(id: string) {
-  await db
+/**
+ * Mark a campaign fully sent.
+ *
+ * Returns whether THIS call performed the transition. The guard on
+ * status = 'sending' already made the write idempotent, but callers could not
+ * tell the difference between "I finished it" and "it was already finished",
+ * and anything that should happen exactly once at completion needs that
+ * distinction: QStash delivers at least once and several workers can see the
+ * last recipient drain at the same moment. See notifyCampaignFinished.
+ */
+export async function markCampaignSent(id: string): Promise<boolean> {
+  const rows = await db
     .update(campaigns)
     .set({ status: "sent" })
-    .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")));
+    .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")))
+    .returning({ id: campaigns.id });
+  return rows.length > 0;
+}
+
+/**
+ * Claim the right to send this campaign's one deliverability alert.
+ *
+ * The alert fires from the SES webhook, which is invoked once per bounce and
+ * has no idea whether a sibling invocation is doing the same thing right now.
+ * Stamping the campaign inside the same statement that checks the stamp makes
+ * the claim atomic, so exactly one caller gets a row back and everyone else
+ * gets null.
+ *
+ * Returns the campaign facts the alert needs, so the winner does not need a
+ * second read.
+ */
+export async function claimDeliverabilityAlert(id: string) {
+  const [row] = await db
+    .update(campaigns)
+    .set({ deliverabilityAlertSentAt: new Date() })
+    .where(
+      and(eq(campaigns.id, id), isNull(campaigns.deliverabilityAlertSentAt)),
+    )
+    .returning({
+      name: campaigns.name,
+      subject: campaigns.subject,
+      organizationId: campaigns.organizationId,
+    });
+  return row ?? null;
 }
