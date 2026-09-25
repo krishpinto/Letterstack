@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Loader2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,11 @@ export function RazorpayCheckoutButton({
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
 
-  const pay = useCallback(async () => {
+  // Not memoized by hand: it is only ever a click handler, so its identity
+  // does not matter, and the manual dependency list disagreed with what the
+  // React Compiler inferred (it reads `prefill`, the list named two of its
+  // fields), which made the compiler bail out of optimizing this component.
+  const pay = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -140,7 +144,7 @@ export function RazorpayCheckoutButton({
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setBusy(false);
     }
-  }, [item, prefill?.name, prefill?.email, onPaid]);
+  };
 
   return (
     <div className="flex flex-col gap-2">
