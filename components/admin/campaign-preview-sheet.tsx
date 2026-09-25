@@ -58,16 +58,19 @@ export function CampaignPreviewSheet({
   const [campaign, setCampaign] = useState<AdminCampaignDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string, signal: AbortSignal) => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/admin/campaigns/${id}`);
+      const r = await fetch(`/api/admin/campaigns/${id}`, { signal });
       const payload = await r.json();
       setCampaign(payload.ok ? payload.campaign : null);
-    } catch {
+    } catch (err) {
+      // An abort means a newer campaign is already loading; leaving the state
+      // alone is the point, since this response is for the wrong row.
+      if ((err as Error)?.name === "AbortError") return;
       setCampaign(null);
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
@@ -76,7 +79,17 @@ export function CampaignPreviewSheet({
       setCampaign(null);
       return;
     }
-    void load(campaignId);
+    // Clear first so a slow fetch cannot leave the previous campaign's body
+    // sitting under the new row's header.
+    setCampaign(null);
+
+    // Clicking through rows faster than the requests return used to be enough
+    // to show one campaign's HTML under another's subject: responses are not
+    // guaranteed to arrive in the order they were sent. Aborting on change
+    // means only the row still open can write to state.
+    const controller = new AbortController();
+    void load(campaignId, controller.signal);
+    return () => controller.abort();
   }, [campaignId, load]);
 
   return (

@@ -116,25 +116,37 @@ export function UserDetailSheet({
   const [user, setUser] = useState<AdminUserDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    try {
-      const r = await fetch(`/api/admin/users/${userId}`);
-      const payload = await r.json();
-      if (payload.ok) setUser(payload.user);
-    } catch {
-      // keep the last snapshot
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!userId) return;
+      setLoading(true);
+      try {
+        const r = await fetch(`/api/admin/users/${userId}`, { signal });
+        const payload = await r.json();
+        if (payload.ok) setUser(payload.user);
+      } catch (err) {
+        // An abort means a newer person is already loading — their request
+        // owns the state now.
+        if ((err as Error)?.name === "AbortError") return;
+        // keep the last snapshot
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [userId]
+  );
 
   useEffect(() => {
     // Drop the previous person's detail immediately, so opening a second row
     // can never show the first row's history while the fetch is in flight.
     setUser(null);
-    void load();
+
+    // Clearing alone isn't enough: without this, a slow request for the first
+    // person could still resolve after the second person's and write their
+    // details into the open sheet.
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   async function afterPlanChange() {
