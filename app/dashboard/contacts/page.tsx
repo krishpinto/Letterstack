@@ -1336,7 +1336,12 @@ export default function AudiencePage() {
                   if (event.key === "Enter" && newFolderName.trim()) handleCreateCategory();
                 }}
               />
-              <Button size="icon-sm" onClick={handleCreateCategory} disabled={!newFolderName.trim()}>
+              <Button
+                size="icon-sm"
+                onClick={handleCreateCategory}
+                disabled={!newFolderName.trim()}
+                aria-label="Create folder"
+              >
                 <PlusIcon className="size-4" />
               </Button>
             </div>

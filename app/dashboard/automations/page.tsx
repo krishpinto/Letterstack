@@ -234,7 +234,11 @@ export default function AutomationsPage() {
                   <TableCell onClick={(event) => event.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Automation actions"
+                        >
                           <MoreHorizontalIcon />
                         </Button>
                       </DropdownMenuTrigger>

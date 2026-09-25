@@ -143,6 +143,7 @@ export function RecentCampaignsCard({ campaigns }: RecentCampaignsCardProps) {
                         variant="ghost"
                         size="icon"
                         className="size-7 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                        aria-label="Campaign actions"
                       >
                         <MoreHorizontalIcon className="size-3.5" />
                       </Button>

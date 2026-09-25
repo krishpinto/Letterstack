@@ -953,6 +953,8 @@ function EditorHeader({
           onClick={onExit}
           className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           type="button"
+          title="Leave the editor"
+          aria-label="Leave the editor"
         >
           <ChevronLeftIcon className="size-4" />
         </button>
@@ -1015,6 +1017,8 @@ function EditorHeader({
             disabled={!canUndo}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
             type="button"
+            title="Undo"
+            aria-label="Undo"
           >
             <Undo2Icon className="size-3.5" />
           </button>
@@ -1023,6 +1027,8 @@ function EditorHeader({
             disabled={!canRedo}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
             type="button"
+            title="Redo"
+            aria-label="Redo"
           >
             <Redo2Icon className="size-3.5" />
           </button>
