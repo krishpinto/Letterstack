@@ -690,3 +690,59 @@ export async function removeOrganizationMember(
 export async function deleteOrganization(organizationId: string) {
   await db.delete(organizations).where(eq(organizations.id, organizationId));
 }
+export type SenderDefaults = {
+  defaultFromName: string | null;
+  defaultReplyTo: string | null;
+};
+
+/**
+ * The workspace's sender defaults, read on their own rather than added to
+ * organizationSelect(). That helper feeds session resolution and the
+ * workspace switcher, which run on nearly every request and have no use for
+ * these two columns.
+ */
+export async function getSenderDefaults(
+  organizationId: string,
+): Promise<SenderDefaults> {
+  const [row] = await db
+    .select({
+      defaultFromName: organizations.defaultFromName,
+      defaultReplyTo: organizations.defaultReplyTo,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+
+  return {
+    defaultFromName: row?.defaultFromName ?? null,
+    defaultReplyTo: row?.defaultReplyTo ?? null,
+  };
+}
+
+/**
+ * Set the workspace's sender defaults. Empty strings are stored as NULL, so
+ * "cleared" and "never set" are the same state — there is no third meaning
+ * for an empty From name, and collapsing them keeps the fallback in
+ * app/api/campaigns/route.ts a single null check.
+ */
+export async function updateSenderDefaults(
+  organizationId: string,
+  input: SenderDefaults,
+): Promise<SenderDefaults> {
+  const [row] = await db
+    .update(organizations)
+    .set({
+      defaultFromName: input.defaultFromName?.trim() || null,
+      defaultReplyTo: input.defaultReplyTo?.trim().toLowerCase() || null,
+    })
+    .where(eq(organizations.id, organizationId))
+    .returning({
+      defaultFromName: organizations.defaultFromName,
+      defaultReplyTo: organizations.defaultReplyTo,
+    });
+
+  return {
+    defaultFromName: row?.defaultFromName ?? null,
+    defaultReplyTo: row?.defaultReplyTo ?? null,
+  };
+}

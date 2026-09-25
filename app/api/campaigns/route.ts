@@ -13,7 +13,7 @@ import {
   resolveTemplateVariables,
 } from "@/lib/email/templates";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
-import { getOrganizationForUser } from "@/db/organizations";
+import { getOrganizationForUser, getSenderDefaults } from "@/db/organizations";
 import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { listMailboxesForUser } from "@/db/connected-mailboxes";
 import { isAllowedFromEmail, SENDING_LOCALPART } from "@/lib/send/sender-identity";
@@ -57,10 +57,11 @@ export async function POST(request: Request) {
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "Untitled Campaign";
     const templateId = typeof body?.templateId === "string" ? body.templateId : "blank";
 
-    const [organization, verifiedDomains, mailboxes] = await Promise.all([
+    const [organization, verifiedDomains, mailboxes, senderDefaults] = await Promise.all([
       getOrganizationForUser(userId, organizationId),
       listVerifiedSendingDomains(organizationId),
       listMailboxesForUser(userId, organizationId),
+      getSenderDefaults(organizationId),
     ]);
     const activeMailboxes = mailboxes.filter((m) => m.status === "active");
 
@@ -134,8 +135,20 @@ export async function POST(request: Request) {
     const campaign = await createCampaign(userId, organizationId, {
       name,
       subject: doc.subject || "",
-      fromName: doc.fromName || "LetterStack",
+      // The template's own From name if it set one, then the workspace's
+      // default, then the workspace's name. "LetterStack" is the last resort
+      // and not really a fallback at all — it used to be the ONLY fallback,
+      // which meant a customer's first draft went out branded as us.
+      fromName:
+        doc.fromName ||
+        senderDefaults.defaultFromName ||
+        organization?.name ||
+        "LetterStack",
       fromEmail,
+      // Applied at creation rather than at send: a draft should show where
+      // its replies will land while it is still being written, and the editor
+      // reads this off the campaign row.
+      replyTo: senderDefaults.defaultReplyTo,
       html,
       text,
       document: doc,

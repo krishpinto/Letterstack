@@ -21,6 +21,11 @@ import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
+import {
+  SendingPanel,
+  type SendingDefaults,
+  type SendingMailbox,
+} from "@/components/settings/sending-panel";
 
 type SettingsSection = {
   id: string;
@@ -66,6 +71,13 @@ type Profile = { id: string; name: string | null; email: string; createdAt: stri
 type Organization = { id: string; name: string; type: string; role?: string; memberCount?: number };
 type Member = { id: string; userId: string; role: string; joinedAt: string; name: string | null; email: string };
 type PendingInvite = { id: string; email: string; role: string; createdAt: string; expiresAt: string };
+type Sending = {
+  defaults: SendingDefaults;
+  sharedFromEmail: string;
+  verifiedDomains: string[];
+  unverifiedDomains: string[];
+  mailboxes: SendingMailbox[];
+};
 
 export function SettingsShell({
   profile,
@@ -75,6 +87,7 @@ export function SettingsShell({
   currentUserId,
   otherWorkspaceCount,
   billing,
+  sending,
   isAdmin = false,
 }: {
   profile: Profile;
@@ -93,6 +106,7 @@ export function SettingsShell({
     trialEnded?: boolean;
     daysLeft?: number | null;
   };
+  sending: Sending;
   isAdmin?: boolean;
 }) {
   const router = useRouter();
@@ -112,6 +126,11 @@ export function SettingsShell({
   }, [sectionParam]);
 
   const active = SETTINGS_NAV.find((s) => s.id === activeSection)!;
+
+  // Workspace-wide settings sit with owners and admins. Members see the same
+  // panels read-only rather than a wall, because "what does this workspace
+  // send as" is useful to know even when you can't change it.
+  const canManage = organization.role === "owner" || organization.role === "admin";
 
   function selectSection(id: string) {
     setActiveSection(id);
@@ -191,8 +210,21 @@ export function SettingsShell({
               daysLeft={billing.daysLeft}
             />
           )}
+          {activeSection === "sending" && (
+            <SendingPanel
+              organizationId={organization.id}
+              organizationName={organization.name}
+              initialDefaults={sending.defaults}
+              sharedFromEmail={sending.sharedFromEmail}
+              verifiedDomains={sending.verifiedDomains}
+              unverifiedDomains={sending.unverifiedDomains}
+              mailboxes={sending.mailboxes}
+              canManage={canManage}
+              onNavigate={selectSection}
+            />
+          )}
           {activeSection === "api" && <ApiPanel />}
-          {!["account", "organization", "billing", "api"].includes(activeSection) && (
+          {!["account", "organization", "billing", "api", "sending"].includes(activeSection) && (
             <PlaceholderPanel label={active.label} />
           )}
         </div>

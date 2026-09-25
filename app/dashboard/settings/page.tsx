@@ -5,12 +5,14 @@ import { getUserProfile } from "@/db/users";
 import {
   activePlan,
   getOrganizationForUser,
+  getSenderDefaults,
   getSendUsage,
   listOrganizationMembers,
   listOrganizationsForUser,
   planState,
 } from "@/db/organizations";
 import { listPendingInvitesForOrganization } from "@/db/invites";
+import { listMailboxesForUser } from "@/db/connected-mailboxes";
 import { listSendingDomains } from "@/db/sending-domains";
 import { listRecipientsForOrganization } from "@/db/recipients";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
@@ -34,6 +36,8 @@ export default async function SettingsPage() {
     sendUsage,
     domains,
     contacts,
+    senderDefaults,
+    mailboxes,
   ] = await Promise.all([
     getUserProfile(userId),
     getOrganizationForUser(userId, organizationId),
@@ -43,6 +47,8 @@ export default async function SettingsPage() {
     getSendUsage(organizationId),
     listSendingDomains(organizationId),
     listRecipientsForOrganization(organizationId),
+    getSenderDefaults(organizationId),
+    listMailboxesForUser(userId, organizationId),
   ]);
 
   if (!profile || !organization) redirect("/dashboard");
@@ -83,6 +89,20 @@ export default async function SettingsPage() {
           isTrial: plan.isTrial,
           trialEnded: plan.trialEnded,
           daysLeft: plan.daysLeft,
+        }}
+        sending={{
+          defaults: senderDefaults,
+          sharedFromEmail: process.env.MAIL_FROM ?? "",
+          // Split here rather than in the panel so the panel never has to
+          // know that "verified" is stored as a nullable timestamp.
+          verifiedDomains: domains.filter((d) => d.verifiedAt).map((d) => d.domain),
+          unverifiedDomains: domains.filter((d) => !d.verifiedAt).map((d) => d.domain),
+          mailboxes: mailboxes.map((box) => ({
+            id: box.id,
+            email: box.email,
+            displayName: box.displayName,
+            status: box.status,
+          })),
         }}
         isAdmin={isAdmin(profile.email)}
       />

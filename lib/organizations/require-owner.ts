@@ -33,3 +33,28 @@ export async function requireOwner(organizationId: string) {
   }
   return result;
 }
+
+/**
+ * Owner or admin. The middle tier: settings that change how the whole
+ * workspace behaves — who it sends as, which domains it owns — rather than
+ * settings that only affect the person changing them.
+ *
+ * Distinct from requireOwner, which guards the things that can destroy or
+ * hand over the workspace itself. An admin is someone the owner invited to
+ * help run the account, so locking them out of the sender identity would
+ * mean every From-name change has to wait for one person.
+ */
+export async function requireManager(organizationId: string) {
+  const result = await requireMember(organizationId);
+  if (result.error) return result;
+  const role = result.organization!.role;
+  if (role !== "owner" && role !== "admin") {
+    return {
+      error: NextResponse.json(
+        { ok: false, error: "Only owners and admins can change this" },
+        { status: 403 },
+      ),
+    };
+  }
+  return result;
+}
