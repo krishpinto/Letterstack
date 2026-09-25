@@ -20,6 +20,7 @@ import { type PlanKey } from "@/lib/plans/limits";
 import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
+import { ApiPanel } from "@/components/settings/api-panel";
 
 type SettingsSection = {
   id: string;
@@ -190,7 +191,8 @@ export function SettingsShell({
               daysLeft={billing.daysLeft}
             />
           )}
-          {!["account", "organization", "billing"].includes(activeSection) && (
+          {activeSection === "api" && <ApiPanel />}
+          {!["account", "organization", "billing", "api"].includes(activeSection) && (
             <PlaceholderPanel label={active.label} />
           )}
         </div>
