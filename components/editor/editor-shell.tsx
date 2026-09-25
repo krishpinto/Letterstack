@@ -60,6 +60,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Dialog,
   DialogDescription,
@@ -86,6 +87,7 @@ import {
   CodeIcon,
   EyeIcon,
   CheckIcon,
+  AlertTriangleIcon,
   MonitorIcon,
   SmartphoneIcon,
   SearchIcon
@@ -139,6 +141,11 @@ async function copyToClipboard(text: string) {
   textarea.remove()
 }
 
+// The dock's save indicator. "saving" and "error" exist because autosave
+// happens without anyone asking for it — a silent background write that can
+// fail needs somewhere to say so.
+type DockStatus = "idle" | "saving" | "saved" | "copied" | "error"
+
 type ActiveDrag =
   | { kind: "palette"; blockType: EmailBlock["type"] }
   | { kind: "block"; block: EmailBlock; width: number }
@@ -184,7 +191,7 @@ export function EditorShell({
   const [rightPanel, setRightPanel] = React.useState<"block" | "theme" | "settings" | null>(null)
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
-  const [dockStatus, setDockStatus] = React.useState<"idle" | "saved" | "copied">("idle")
+  const [dockStatus, setDockStatus] = React.useState<DockStatus>("idle")
   const [view, setView] = React.useState<EditorView>("editor")
   const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
@@ -310,25 +317,107 @@ export function EditorShell({
     }
   }, [])
 
-  const showDockStatus = React.useCallback((status: "saved" | "copied") => {
-    setDockStatus(status)
+  const showDockStatus = React.useCallback(
+    (status: Exclude<DockStatus, "idle" | "saving">) => {
+      setDockStatus(status)
 
-    if (saveStatusTimeoutRef.current) {
-      clearTimeout(saveStatusTimeoutRef.current)
+      if (saveStatusTimeoutRef.current) {
+        clearTimeout(saveStatusTimeoutRef.current)
+      }
+      saveStatusTimeoutRef.current = setTimeout(
+        () => {
+          setDockStatus("idle")
+          saveStatusTimeoutRef.current = null
+        },
+        // A failure stays up long enough to be read; a success is just
+        // reassurance and can blink past.
+        status === "error" ? 4000 : 1400
+      )
+    },
+    []
+  )
+
+  // ── Autosave ──────────────────────────────────────────────────────────────
+  // The editor used to write only when someone clicked Save, and nothing
+  // guarded the tab, so closing mid-edit lost the work outright. Edits are now
+  // written back shortly after typing stops.
+  //
+  // Everything here reads through refs rather than through `document`, so the
+  // scheduling effect depends only on the document identity and is not torn
+  // down and rebuilt on each keystroke.
+
+  const AUTOSAVE_DELAY_MS = 1500
+
+  const onSaveRef = React.useRef(onSave)
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+
+  // The document last written successfully. Compared by reference, which is
+  // sound because updateDocument always produces a new object — so an equal
+  // reference really does mean nothing has changed since.
+  const lastSavedRef = React.useRef<EmailDocument>(
+    initialDocument ?? initialEmailDocument
+  )
+  const savingRef = React.useRef(false)
+  const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** Writes the current document. Returns false if the remote save failed. */
+  const persistDocument = React.useCallback(async () => {
+    const snapshot = documentRef.current
+    savingRef.current = true
+    try {
+      // localStorage first and unconditionally: it is the offline copy that
+      // makes a failed remote save recoverable rather than lost.
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+      await onSaveRef.current?.(snapshot)
+      lastSavedRef.current = snapshot
+      return true
+    } catch (err) {
+      console.error("[editor] save failed", err)
+      return false
+    } finally {
+      savingRef.current = false
     }
-    saveStatusTimeoutRef.current = setTimeout(() => {
-      setDockStatus("idle")
-      saveStatusTimeoutRef.current = null
-    }, 1400)
   }, [])
 
   const saveDocument = React.useCallback(async () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))
-    if (onSave) {
-      await onSave(document)
+    setDockStatus("saving")
+    const ok = await persistDocument()
+    showDockStatus(ok ? "saved" : "error")
+  }, [persistDocument, showDockStatus])
+
+  React.useEffect(() => {
+    if (document === lastSavedRef.current) return
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
+      // A manual save may already be in flight; its own effect run will
+      // reschedule this one if anything is still unsaved afterwards.
+      if (savingRef.current) return
+      void saveDocument()
+    }, AUTOSAVE_DELAY_MS)
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     }
-    showDockStatus("saved")
-  }, [document, onSave, showDockStatus])
+  }, [document, saveDocument])
+
+  // Last line of defence: if edits are still unwritten — because autosave has
+  // not fired yet, or because the remote save failed — make the browser ask
+  // before the tab goes.
+  React.useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (documentRef.current === lastSavedRef.current) return
+      event.preventDefault()
+      // Legacy browsers need returnValue set; modern ones ignore the string
+      // and show their own wording.
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [])
 
   const copyTemplateJson = React.useCallback(async () => {
     await copyToClipboard(JSON.stringify(document, null, 2))
@@ -840,7 +929,7 @@ function EditorHeader({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
-  status: "idle" | "saved" | "copied"
+  status: DockStatus
   mode: "campaign" | "template-creator" | "template-editor"
   onSaveAndExit: () => void
   onSaveAsTemplate: () => void
@@ -897,11 +986,25 @@ function EditorHeader({
           <span
             className={cn(
               "flex items-center gap-1 text-xs font-medium select-none mr-1.5",
-              status === "saved" ? "text-emerald-500" : "text-muted-foreground"
+              status === "saved" && "text-emerald-500",
+              status === "error" && "text-destructive",
+              (status === "copied" || status === "saving") && "text-muted-foreground"
             )}
           >
-            <CheckIcon className="size-3.5" />
-            {status === "saved" ? "Saved" : "Copied"}
+            {status === "error" ? (
+              <AlertTriangleIcon className="size-3.5" />
+            ) : status === "saving" ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <CheckIcon className="size-3.5" />
+            )}
+            {status === "saving"
+              ? "Saving…"
+              : status === "saved"
+                ? "Saved"
+                : status === "error"
+                  ? "Not saved"
+                  : "Copied"}
           </span>
         )}
 
