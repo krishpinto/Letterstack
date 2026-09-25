@@ -263,19 +263,3 @@
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
-/* ── Product tour (Onborda) ───────────────────────────────────────────────
-   Onborda portals its overlay onto <body> as `absolute inset-0`, and the
-   highlight inside it is a normal-flow box sized to whatever the current step
-   points at. A tall target — the dashboard's Get Started card is ~650px —
-   therefore extends the document's scrollable area and gives the window a
-   scrollbar. Since the app shell is `h-screen`, scrolling that window drags
-   the whole layout, icon rail included, out from under the tour.
-
-   Pinning the overlay to the viewport takes it out of document flow, so it can
-   no longer grow the page. The highlight's coordinates already include the
-   window scroll offset, and with the page unable to scroll that offset stays
-   zero — so fixed and absolute resolve to the same place here. */
-[data-name="onborda-overlay"] {
-  position: fixed;
-  overflow: clip;
-}

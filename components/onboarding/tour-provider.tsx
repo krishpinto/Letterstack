@@ -105,6 +105,24 @@ function useSuppressTourScroll(active: boolean) {
       }
     }
 
+    // Onborda portals its overlay onto <body> as `absolute inset-0`, and the
+    // highlight inside it is a normal-flow box sized to the current target. A
+    // tall one (the ~650px Getting Started card) therefore grows the document
+    // and gives this h-screen app a window scrollbar — which then scrolls the
+    // whole shell, icon rail included.
+    //
+    // Clipping the document for the life of the tour removes the overflow
+    // rather than fighting it. It has to be done here rather than by
+    // repositioning the overlay in CSS: `position: fixed` would create a
+    // stacking context, trapping the card's z-950 inside it and letting
+    // Onborda's own `fixed inset-0 z-[900]` click-blocker paint over the card,
+    // which swallows every click on Next and Back. This app's shell is
+    // `h-screen` and never scrolls the document anyway, so clipping it changes
+    // nothing a user could otherwise do.
+    const root = document.documentElement;
+    const previousOverflow = root.style.overflow;
+    root.style.overflow = "clip";
+
     // The window scrolls too, and it reports `document` as the event target
     // rather than an element — so it needs handling of its own.
     const pageTop = window.scrollY;
@@ -131,6 +149,7 @@ function useSuppressTourScroll(active: boolean) {
     document.addEventListener("scroll", restore, true);
 
     return () => {
+      root.style.overflow = previousOverflow;
       document.removeEventListener("scroll", restore, true);
       patched.forEach((element) => {
         // Deleting the own property exposes the prototype's real method again.
