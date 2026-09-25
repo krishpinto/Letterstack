@@ -1,4 +1,5 @@
-// Custom sending domains for the active organization (up to SENDING_DOMAIN_LIMIT).
+// Custom sending domains for the active organization, capped by its plan
+// (sendingDomainLimitFor — Free 1, Starter 2, Growth 5, Business 10).
 //
 // POST   { domain }  — register it in SES and attach it to the org (records returned)
 // GET                — all connected domains + live SES verification state + records
@@ -11,7 +12,7 @@ import {
   addSendingDomain,
   listSendingDomains,
   removeSendingDomain,
-  SENDING_DOMAIN_LIMIT,
+  sendingDomainLimitFor,
   setSendingDomainVerified,
 } from "@/db/sending-domains";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
@@ -65,6 +66,12 @@ function domainEntry(status: DomainIdentityStatus) {
 
 async function domainsPayload(organizationId: string) {
   const rows = await listSendingDomains(organizationId);
+  // The org's own tier, not the module-level fallback. These two used to
+  // disagree: the payload reported PLAN_LIMITS.pro.domains to everyone while
+  // addSendingDomain enforced the actual plan, so a Free workspace was told
+  // it could connect 2 and refused at 1, and a Business workspace paying for
+  // 10 was told 2.
+  const limit = await sendingDomainLimitFor(organizationId);
 
   const domains = await Promise.all(
     rows.map(async (row) => {
@@ -85,7 +92,7 @@ async function domainsPayload(organizationId: string) {
   return {
     ok: true,
     sharedFromEmail: process.env.MAIL_FROM ?? "",
-    limit: SENDING_DOMAIN_LIMIT,
+    limit,
     domains,
   };
 }
@@ -134,10 +141,11 @@ export async function POST(request: NextRequest) {
   try {
     const row = await addSendingDomain(organization.id, domain);
     if (!row) {
+      const limit = await sendingDomainLimitFor(organization.id);
       return NextResponse.json(
         {
           ok: false,
-          error: `You can connect up to ${SENDING_DOMAIN_LIMIT} domains. Disconnect one first.`,
+          error: `Your plan includes ${limit} sending domain${limit === 1 ? "" : "s"}. Disconnect one, or upgrade for more.`,
         },
         { status: 400 },
       );
@@ -182,7 +190,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       sharedFromEmail: process.env.MAIL_FROM ?? "",
-      limit: SENDING_DOMAIN_LIMIT,
+      limit: await sendingDomainLimitFor(organization.id),
       domains: [],
     });
   }

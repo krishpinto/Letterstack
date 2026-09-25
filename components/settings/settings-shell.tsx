@@ -21,6 +21,7 @@ import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
+import { DomainsPanel } from "@/components/settings/domains-panel";
 import {
   SendingPanel,
   type SendingDefaults,
@@ -223,8 +224,11 @@ export function SettingsShell({
               onNavigate={selectSection}
             />
           )}
+          {activeSection === "domains" && <DomainsPanel canManage={canManage} />}
           {activeSection === "api" && <ApiPanel />}
-          {!["account", "organization", "billing", "api", "sending"].includes(activeSection) && (
+          {!["account", "organization", "billing", "api", "sending", "domains"].includes(
+            activeSection,
+          ) && (
             <PlaceholderPanel label={active.label} />
           )}
         </div>
