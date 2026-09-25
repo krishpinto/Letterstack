@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { recipients } from "./schema";
 
@@ -132,4 +132,64 @@ export async function deleteRecipient(organizationId: string, id: string) {
     .returning({ id: recipients.id });
 
   return rows.length > 0;
+}
+/** One contact by address, for the API's upsert path — addRecipient returns
+ *  null on conflict, and the caller still owes the client the existing row. */
+export async function getRecipientByEmail(organizationId: string, email: string) {
+  const [row] = await db
+    .select()
+    .from(recipients)
+    .where(
+      and(
+        eq(recipients.organizationId, organizationId),
+        eq(recipients.email, email),
+      ),
+    )
+    .limit(1);
+
+  return row ?? null;
+}
+
+/**
+ * A cursor-paginated page of the audience, newest first.
+ *
+ * Over-fetches by one row so the caller can tell whether another page exists
+ * without a second COUNT. See lib/api/pagination.ts for why the sort key is
+ * (created_at, id) rather than created_at alone.
+ */
+export async function listRecipientsPage(
+  organizationId: string,
+  limit: number,
+  cursor: { ts: string; id: string } | null,
+) {
+  return db
+    .select({
+      id: recipients.id,
+      email: recipients.email,
+      name: recipients.name,
+      createdAt: recipients.createdAt,
+      // Postgres's own rendering of the same column, for the cursor. The
+      // Date above loses the microseconds; this doesn't. See
+      // lib/api/pagination.ts for why that matters at a page boundary.
+      cursorTs: sql<string>`${recipients.createdAt}::text`,
+    })
+    .from(recipients)
+    .where(
+      and(
+        eq(recipients.organizationId, organizationId),
+        // Row-value comparison, so the tie-break on id is part of the same
+        // index scan rather than a filter applied afterwards.
+        //
+        // The ::timestamptz cast is load-bearing. Without it Postgres infers
+        // an untyped parameter inside a row constructor as text and compares
+        // the whole tuple as text — at which point "2026-09-25 18:47" (the
+        // column's space separator) sorts below "2026-09-25T18:47" (the
+        // cursor's T), every row passes, and every page returns page one.
+        cursor
+          ? sql`(${recipients.createdAt}, ${recipients.id}) < (${cursor.ts}::timestamptz, ${cursor.id}::uuid)`
+          : undefined,
+      ),
+    )
+    .orderBy(desc(recipients.createdAt), desc(recipients.id))
+    .limit(limit + 1);
 }
