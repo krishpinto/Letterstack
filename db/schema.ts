@@ -73,6 +73,17 @@ export const organizations = pgTable("organizations", {
   // trial ("your trial ended") or a lapsed subscription ("renew"). A paid
   // purchase during a trial overwrites this, so paying converts cleanly.
   planSource: text("plan_source").notNull().default("none"), // none | trial | paid
+  // Workspace sender defaults, applied when a new campaign is created and
+  // the request didn't specify its own. Null means "no preference", which
+  // falls back to the organization's own name — never to ours. Before these
+  // existed the fallback was the literal string "LetterStack", so every
+  // customer's first draft went out branded as us.
+  defaultFromName: text("default_from_name"),
+  // Where replies land by default. Optional, and deliberately not validated
+  // against the sending domains: a reply-to is just an address people write
+  // back to, so routing replies to a Gmail inbox while sending from a
+  // verified domain is a normal thing to want.
+  defaultReplyTo: text("default_reply_to"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -301,6 +312,11 @@ export const campaigns = pgTable("campaigns", {
   mailboxId: uuid("mailbox_id").references(() => connectedMailboxes.id, {
     onDelete: "set null",
   }),
+  // Set the first (and only) time a deliverability alert goes out for this
+  // campaign. The alert fires from the SES webhook, which sees one bounce at
+  // a time — without a stamp it would mail on every bounce past the
+  // threshold instead of once. See lib/notifications/deliverability.ts.
+  deliverabilityAlertSentAt: timestamp("deliverability_alert_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),
@@ -534,5 +550,48 @@ export const apiKeyUsage = pgTable(
   },
   (table) => [
     unique("api_key_usage_org_period_unq").on(table.organizationId, table.period),
+  ],
+);
+
+/**
+ * Which notification emails a member wants, per workspace.
+ *
+ * Per (organization, user) rather than per user: the same person can want a
+ * report for every send out of the workspace they run and total silence from
+ * one they were invited into as a reviewer.
+ *
+ * A missing row means "the defaults" (NOTIFICATION_DEFAULTS in
+ * lib/notifications/preferences.ts), not "everything off". That is what keeps
+ * this table free of a backfill — every existing member and every future
+ * invite already behaves correctly with no row at all, and a row only appears
+ * the first time someone changes something.
+ */
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** A summary email when one of this workspace's campaigns finishes sending. */
+    campaignFinished: boolean("campaign_finished").notNull().default(true),
+    /**
+     * A warning when a campaign's bounce or complaint rate crosses the level
+     * that puts the shared SES account at risk. Defaults on, and the UI says
+     * plainly why turning it off is a bad idea: SES suspends sending above
+     * 10% bounces or 0.5% complaints, and a suspension is account-wide.
+     */
+    deliverabilityAlerts: boolean("deliverability_alerts").notNull().default(true),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("notification_preferences_org_user_unq").on(
+      table.organizationId,
+      table.userId,
+    ),
+    index("notification_preferences_user_idx").on(table.userId),
   ],
 );
