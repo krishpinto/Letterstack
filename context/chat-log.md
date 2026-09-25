@@ -54,7 +54,7 @@ work can continue cleanly if conversation context is compacted.
 - `/editor` is now the canonical editor route.
 - Former `/editor-new` shell was preserved as `components/editor/editor-shell.tsx`.
 - `components/editor-new/` and `app/editor-new/` were removed after moving code.
-- Old `LetterStackEditor` code remains in `components/editor/letterstack-editor.tsx` for reference/no code loss.
+- Old `LetterStackEditor` code was kept at `components/editor/letterstack-editor.tsx` for reference, then deleted once nothing imported it — git history is the reference copy.
 - Campaign flow planning is tracked in `context/campaign-flow-plan.md`.
 
 ## Campaign Detail Page Remake & Layout Polish

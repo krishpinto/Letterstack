@@ -14,10 +14,9 @@ per-user token budgets, running entirely on free model tiers.
 [app/editor/page.tsx](app/editor/page.tsx),
 [app/editor/[id]/page.tsx](app/editor/[id]/page.tsx), and
 [app/editor/template/[id]/page.tsx](app/editor/template/[id]/page.tsx) — mount
-`EditorShell`. `components/editor/letterstack-editor.tsx` is referenced by
-nothing and `context/chat-log.md:57` records it as kept "for reference/no code
-loss". It is dead. The agent panel goes in `editor-shell.tsx`, and that 533-line
-file should be deleted so nobody plans against it again.
+`EditorShell`. `components/editor/letterstack-editor.tsx` was the old editor,
+referenced by nothing; it has since been deleted, and git history is the
+"for reference" copy. The agent panel goes in `editor-shell.tsx`.
 
 **A custom HTML block already exists.** `RawHtmlBlock` is in
 [lib/email/document.ts:154](lib/email/document.ts#L154) with `label`, `html`,

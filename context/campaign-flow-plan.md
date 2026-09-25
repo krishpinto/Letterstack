@@ -10,8 +10,8 @@ implementation. Keep this short and revise as campaign UX decisions land.
 - Canonical editor route is now `/editor`.
 - Historical `/editor-new` implementation was preserved and moved into
   `components/editor/editor-shell.tsx` as `EditorShell`.
-- Old editor implementation is preserved as
-  `components/editor/letterstack-editor.tsx`; it is not the active route.
+- Old editor implementation (`components/editor/letterstack-editor.tsx`) has
+  been deleted; it was never the active route and nothing imported it.
 - `app/editor/page.tsx` renders `EditorBackLink` plus `EditorShell`.
 - Only one editor component folder should remain: `components/editor/`.
 
