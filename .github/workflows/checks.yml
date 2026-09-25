@@ -1,0 +1,35 @@
+# Nothing verified this repo before a deploy — main pushed straight to Vercel
+# and a type error or a lint error only surfaced in the build log, or not at
+# all. This runs the two checks that are cheap and already pass, so that
+# staying clean is the default rather than something to remember.
+
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ci, not install: it installs exactly what package-lock.json pins, so a
+      # check run can't pass against different dependency versions than the
+      # ones a deploy will use.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Warnings are fine and there are currently 16 of them; this fails only
+      # on errors, which the repo has none of.
+      - name: Lint
+        run: npm run lint

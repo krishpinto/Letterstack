@@ -8,6 +8,7 @@
     "start": "next start",
     "qstash:dev": "npx --yes @upstash/qstash-cli dev",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
