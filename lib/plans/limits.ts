@@ -29,6 +29,18 @@ export type PlanLimits = {
    * more monthly sending than the paid tier they'd otherwise buy.
    */
   workspaces: number;
+  /**
+   * API requests a month, counted across every key the workspace holds —
+   * the allowance belongs to the workspace, not to the key, so minting a
+   * second key buys no extra headroom.
+   *
+   * 0 means no API at all: the key cannot be minted, not merely rate
+   * limited. Free sits at 0 for the same reason it sits at 100 contacts —
+   * programmatic access is the cheapest way for an anonymous signup to push
+   * a bought list into the shared SES account and cross the bounce
+   * threshold for everybody.
+   */
+  apiRequestsPerMonth: number;
 
   // ── Presentation. Read by the pricing page and the billing panel. ──
 
@@ -65,6 +77,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     emailsPerMonth: 500,
     domains: 1,
     workspaces: 1,
+    apiRequestsPerMonth: 0,
     rank: 0,
     blurb: "Build a real campaign and send it to a small test list.",
     monthlyPrice: 0,
@@ -80,6 +93,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     emailsPerMonth: 15_000,
     domains: 2,
     workspaces: 3,
+    apiRequestsPerMonth: 10_000,
     rank: 1,
     blurb: "For a newsletter going out to a few thousand people.",
     monthlyPrice: 1_000,
@@ -92,6 +106,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     emailsPerMonth: 50_000,
     domains: 5,
     workspaces: 5,
+    apiRequestsPerMonth: 50_000,
     rank: 2,
     blurb: "For orgs sending to a larger list, more than once a month.",
     monthlyPrice: 2_500,
@@ -114,6 +129,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     emailsPerMonth: 150_000,
     domains: 10,
     workspaces: 10,
+    apiRequestsPerMonth: 250_000,
     rank: 3,
     blurb: "For high-volume senders who need room past Growth.",
     monthlyPrice: null,
@@ -212,7 +228,7 @@ export function nextPlanUp(plan: PlanKey | string): PlanKey | null {
  * which limit and what to do about it.
  */
 export function limitMessage(
-  what: "contacts" | "emails" | "domains" | "workspaces",
+  what: "contacts" | "emails" | "domains" | "workspaces" | "api",
   plan: PlanKey | string,
   attempted?: number,
 ): string {
@@ -237,7 +253,19 @@ export function limitMessage(
         `${limits.label} plans include ${limits.workspaces} workspace${limits.workspaces === 1 ? "" : "s"}. ` +
         `Your existing workspaces aren't affected — you just can't add another. ${upgrade}`
       );
+    case "api":
+      // Two different walls share this message: no API on the tier at all,
+      // and the monthly ceiling reached on a tier that has one. They read
+      // differently enough that collapsing them would confuse the second.
+      return limits.apiRequestsPerMonth === 0
+        ? `${limits.label} plans don't include API access. ${upgrade}`
+        : `${limits.label} plans include ${limits.apiRequestsPerMonth.toLocaleString()} API requests a month, and this workspace has used them all. The allowance resets on the 1st. ${upgrade}`;
   }
+}
+
+/** Whether a tier has an API at all. The gate on minting a key. */
+export function planAllowsApi(plan: PlanKey | string): boolean {
+  return limitsFor(plan).apiRequestsPerMonth > 0;
 }
 
 /**
