@@ -17,6 +17,7 @@ import {
   PLAN_NOTICE_DISMISSED_COOKIE,
 } from "@/lib/plans/notice";
 import { ProtectedShell } from "@/components/protected-shell/shell";
+import { TourProvider } from "@/components/onboarding/tour-provider";
 import { TrialAnnouncement } from "@/components/plan/trial-announcement";
 import { TrialStatusBanner } from "@/components/plan/trial-status-banner";
 
@@ -59,44 +60,46 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     cookieStore.get(PLAN_NOTICE_DISMISSED_COOKIE)?.value === notice.id;
 
   return (
-    <ProtectedShell
-      organization={{
-        id: organization.id,
-        name: organization.name,
-        type: organization.type,
-        role: organization.role,
-        memberCount: organization.memberCount,
-      }}
-      organizations={organizations.map((item) => ({
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        role: item.role,
-        memberCount: item.memberCount,
-      }))}
-      userName={session.user?.name ?? "User"}
-      userEmail={session.user?.email ?? ""}
-      plan={activePlan(organization)}
-      planUntil={
-        plan.expiresAt
-          ? plan.expiresAt.toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })
-          : null
-      }
-      planNotice={notice}
-    >
-      <TrialStatusBanner notice={noticeDismissed ? null : notice} />
-      {children}
-      {announceTrial ? (
-        <TrialAnnouncement
-          expiresAt={plan.expiresAt?.toISOString() ?? null}
-          daysLeft={plan.daysLeft}
-          trialDays={TRIAL_DAYS}
-        />
-      ) : null}
-    </ProtectedShell>
+    <TourProvider organizationId={organization.id}>
+      <ProtectedShell
+        organization={{
+          id: organization.id,
+          name: organization.name,
+          type: organization.type,
+          role: organization.role,
+          memberCount: organization.memberCount,
+        }}
+        organizations={organizations.map((item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          role: item.role,
+          memberCount: item.memberCount,
+        }))}
+        userName={session.user?.name ?? "User"}
+        userEmail={session.user?.email ?? ""}
+        plan={activePlan(organization)}
+        planUntil={
+          plan.expiresAt
+            ? plan.expiresAt.toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })
+            : null
+        }
+        planNotice={notice}
+      >
+        <TrialStatusBanner notice={noticeDismissed ? null : notice} />
+        {children}
+        {announceTrial ? (
+          <TrialAnnouncement
+            expiresAt={plan.expiresAt?.toISOString() ?? null}
+            daysLeft={plan.daysLeft}
+            trialDays={TRIAL_DAYS}
+          />
+        ) : null}
+      </ProtectedShell>
+    </TourProvider>
   );
 }

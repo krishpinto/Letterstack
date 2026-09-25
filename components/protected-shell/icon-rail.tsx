@@ -30,11 +30,18 @@ type RailNavItem = {
   matchPrefix?: boolean;
   /** Additional path prefixes that count as this module (e.g. analytics → Campaigns). */
   extraPrefixes?: string[];
+  /**
+   * Anchor the product tour points at. Onborda finds its target with a plain
+   * CSS selector, so every rail item carries a stable id that never changes
+   * with layout or class names — see `components/onboarding/tours.ts`.
+   */
+  tourId: string;
 };
 
 const NAV_ITEMS: RailNavItem[] = [
   {
     href: "/dashboard/campaigns",
+    tourId: "tour-rail-campaigns",
     icon: SendIcon,
     label: "Campaigns",
     matchPrefix: true,
@@ -42,30 +49,35 @@ const NAV_ITEMS: RailNavItem[] = [
   },
   {
     href: "/dashboard/audience",
+    tourId: "tour-rail-audience",
     icon: UsersIcon,
     label: "Audience",
     matchPrefix: true,
   },
   {
     href: "/dashboard/templates",
+    tourId: "tour-rail-templates",
     icon: LayoutTemplateIcon,
     label: "Templates",
     matchPrefix: true,
   },
   {
     href: "/dashboard/automations",
+    tourId: "tour-rail-automations",
     icon: WorkflowIcon,
     label: "Automations",
     matchPrefix: true,
   },
   {
     href: "/dashboard/forms",
+    tourId: "tour-rail-forms",
     icon: MailPlusIcon,
     label: "Forms",
     matchPrefix: true,
   },
   {
     href: "/dashboard/domains",
+    tourId: "tour-rail-domains",
     icon: GlobeIcon,
     label: "Domains",
     matchPrefix: true,
@@ -75,6 +87,7 @@ const NAV_ITEMS: RailNavItem[] = [
 const BOTTOM_ITEMS: RailNavItem[] = [
   {
     href: "/dashboard/settings",
+    tourId: "tour-rail-settings",
     icon: SettingsIcon,
     label: "Settings",
     matchPrefix: true,
@@ -86,12 +99,14 @@ function RailButton({
   icon: Icon,
   label,
   active,
+  tourId,
 }: RailNavItem & { active: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Link
           href={href}
+          id={tourId}
           className={cn(
             "flex size-9 items-center justify-center rounded-lg transition-all duration-150",
             active
@@ -129,6 +144,7 @@ export function IconRail() {
           <TooltipTrigger asChild>
             <Link
               href="/dashboard"
+              id="tour-rail-home"
               className={cn(
                 "mb-3 flex size-9 items-center justify-center rounded-lg transition-colors",
                 pathname === "/dashboard"

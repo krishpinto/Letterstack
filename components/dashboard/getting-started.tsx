@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRightIcon, XIcon } from "lucide-react";
+import { ArrowRightIcon, CompassIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useDashboardTour } from "@/components/onboarding/tour-provider";
 import { cn } from "@/lib/utils";
 
 export type OnboardingStep = {
@@ -49,6 +50,7 @@ export function GettingStarted({
   const [dismissed, setDismissed] = useState<boolean>(() =>
     readDismissed(organizationId),
   );
+  const startTour = useDashboardTour(organizationId);
 
   // Re-evaluate when the active workspace changes (the component can stay
   // mounted across a workspace switch).
@@ -87,7 +89,11 @@ export function GettingStarted({
 
   return (
     /* ── Outer Chrome Container (bg-muted p-1) matching StatFrameCard ── */
-    <div className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pb-0 gap-0 select-none flex flex-col">
+    /* id: the product tour's final step points here (components/onboarding). */
+    <div
+      id="tour-getting-started"
+      className="overflow-hidden rounded-[1.375rem] border border-border bg-muted p-1 pb-0 gap-0 select-none flex flex-col"
+    >
       
       {/* ── Inner Main Card (bg-card) ── */}
       <div className="rounded-[1.125rem] border border-border bg-card p-4 flex flex-col gap-5">
@@ -111,6 +117,20 @@ export function GettingStarted({
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            {/* Replays the product tour. It auto-opens once per workspace, so
+                this is the way back to it afterwards. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden h-6 px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:inline-flex"
+              onClick={(e) => {
+                e.stopPropagation();
+                startTour();
+              }}
+            >
+              <CompassIcon className="size-3.5" data-icon="inline-start" />
+              Take the tour
+            </Button>
             <span className="text-xs text-muted-foreground font-medium">
               {requiredDone} of {required.length} Completed
             </span>
