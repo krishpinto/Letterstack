@@ -470,3 +470,69 @@ export const aiBudgets = pgTable("ai_budgets", {
   monthlyTokenLimit: integer("monthly_token_limit").notNull().default(200_000),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// API keys let a customer's own server talk to LetterStack: sync contacts
+// from their CRM, read campaign results. Deliberately NOT the same auth as
+// the dashboard — see lib/api/with-api-key.ts for why the public tree is
+// kept separate from the session-authed internal routes.
+//
+// The key belongs to the ORGANIZATION, not to the person who made it.
+// Scoping it to a user would leave a working key behind when that user is
+// removed from the workspace, which is a backdoor nothing in the UI shows.
+// createdByUserId is the audit trail, and the author of any row the key
+// writes — it is not the thing being authenticated.
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** What it's for ("Zapier", "billing cron"), so it can be revoked knowingly. */
+    name: text("name").notNull(),
+    /**
+     * Unsalted sha256 of the raw key. Unsalted is correct here and wrong for
+     * a password: the key is 32 bytes of CSPRNG output, so there is no
+     * dictionary to slow down, and a deterministic digest is what makes
+     * authentication a single indexed lookup instead of a bcrypt compare
+     * against every row in the table.
+     */
+    keyHash: text("key_hash").notNull().unique(),
+    /** Display only — enough to recognise a key, useless for calling the API. */
+    prefix: text("prefix").notNull(),
+    lastFour: text("last_four").notNull(),
+    /** See API_SCOPES in lib/api/scopes.ts. jsonb because it's read, never queried. */
+    scopes: jsonb("scopes").$type<string[]>().notNull(),
+    /**
+     * Written best-effort on each authenticated call. The point is answering
+     * "is anything still using this key" six months later, which is the
+     * question people actually ask before revoking one.
+     */
+    lastUsedAt: timestamp("last_used_at"),
+    /** Revocation is a tombstone, not a delete, so the audit trail survives. */
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("api_keys_organization_idx").on(table.organizationId)],
+);
+
+// The monthly API allowance, counted per workspace rather than per key, so
+// minting a second key buys no extra headroom. One row per org per calendar
+// month; `period` is "YYYY-MM" in UTC.
+export const apiKeyUsage = pgTable(
+  "api_key_usage",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    period: text("period").notNull(),
+    requests: integer("requests").notNull().default(0),
+  },
+  (table) => [
+    unique("api_key_usage_org_period_unq").on(table.organizationId, table.period),
+  ],
+);
