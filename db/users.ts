@@ -114,3 +114,37 @@ export async function getSendingSlug(userId: string): Promise<string | null> {
 export async function setSendingSlug(userId: string, slug: string): Promise<void> {
   await db.update(users).set({ sendingSlug: slug }).where(eq(users.id, userId));
 }
+
+/**
+ * Whether this account has a password at all.
+ *
+ * Null for accounts created through Google sign-in, which have never set one
+ * (see the credentials authorize callback in lib/auth.ts, which refuses them).
+ * The settings panel needs the distinction to offer "set a password" rather
+ * than "change password", and the change route needs it to know whether to
+ * demand the current one.
+ */
+export async function hasPassword(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return Boolean(row?.passwordHash);
+}
+
+/** The stored hash, for verifying a current password. Null for OAuth-only. */
+export async function getPasswordHash(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.passwordHash ?? null;
+}
+
+/** Replace the password hash. Hashing is the caller's job — this never sees a
+ *  plaintext password, so no code path can accidentally log one from here. */
+export async function setPasswordHash(userId: string, passwordHash: string) {
+  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+}

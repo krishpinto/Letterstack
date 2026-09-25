@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
-import { getUserProfile } from "@/db/users";
+import { getUserProfile, hasPassword } from "@/db/users";
 import {
   activePlan,
   getOrganizationForUser,
@@ -17,6 +17,7 @@ import { listSendingDomains } from "@/db/sending-domains";
 import { listRecipientsForOrganization } from "@/db/recipients";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { isAdmin } from "@/lib/admin";
+import { GOOGLE_AUTH_ENABLED } from "@/lib/auth";
 import { limitsFor } from "@/lib/plans/limits";
 import { SettingsShell } from "@/components/settings/settings-shell";
 
@@ -38,6 +39,7 @@ export default async function SettingsPage() {
     contacts,
     senderDefaults,
     mailboxes,
+    passwordSet,
   ] = await Promise.all([
     getUserProfile(userId),
     getOrganizationForUser(userId, organizationId),
@@ -49,6 +51,7 @@ export default async function SettingsPage() {
     listRecipientsForOrganization(organizationId),
     getSenderDefaults(organizationId),
     listMailboxesForUser(userId, organizationId),
+    hasPassword(userId),
   ]);
 
   if (!profile || !organization) redirect("/dashboard");
@@ -103,6 +106,10 @@ export default async function SettingsPage() {
             displayName: box.displayName,
             status: box.status,
           })),
+        }}
+        security={{
+          hasPassword: passwordSet,
+          googleSignInEnabled: GOOGLE_AUTH_ENABLED,
         }}
         isAdmin={isAdmin(profile.email)}
       />

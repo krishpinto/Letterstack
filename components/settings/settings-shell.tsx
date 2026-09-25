@@ -24,6 +24,7 @@ import { ApiPanel } from "@/components/settings/api-panel";
 import { DomainsPanel } from "@/components/settings/domains-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
+import { SecurityPanel } from "@/components/settings/security-panel";
 import {
   SendingPanel,
   type SendingDefaults,
@@ -58,6 +59,19 @@ function SettingsIcon({ className }: { className?: string }) {
   );
 }
 
+/** Kept in step with the panels rendered below. */
+const SECTIONS_WITH_PANELS = new Set([
+  "account",
+  "organization",
+  "sending",
+  "domains",
+  "notifications",
+  "appearance",
+  "security",
+  "api",
+  "billing",
+]);
+
 function PlaceholderPanel({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-20 text-center text-muted-foreground">
@@ -91,6 +105,7 @@ export function SettingsShell({
   otherWorkspaceCount,
   billing,
   sending,
+  security,
   isAdmin = false,
 }: {
   profile: Profile;
@@ -110,6 +125,7 @@ export function SettingsShell({
     daysLeft?: number | null;
   };
   sending: Sending;
+  security: { hasPassword: boolean; googleSignInEnabled: boolean };
   isAdmin?: boolean;
 }) {
   const router = useRouter();
@@ -231,17 +247,18 @@ export function SettingsShell({
             <NotificationsPanel userEmail={profile.email} />
           )}
           {activeSection === "appearance" && <AppearancePanel />}
+          {activeSection === "security" && (
+            <SecurityPanel
+              email={profile.email}
+              hasPassword={security.hasPassword}
+              googleSignInEnabled={security.googleSignInEnabled}
+            />
+          )}
           {activeSection === "api" && <ApiPanel />}
-          {![
-            "account",
-            "organization",
-            "billing",
-            "api",
-            "sending",
-            "domains",
-            "notifications",
-            "appearance",
-          ].includes(activeSection) && (
+          {/* Every entry in SETTINGS_NAV now has a real panel. This stays as
+              the guard for a nav entry added before its panel exists, which is
+              a better failure than a silently blank pane. */}
+          {!SECTIONS_WITH_PANELS.has(activeSection) && (
             <PlaceholderPanel label={active.label} />
           )}
         </div>
