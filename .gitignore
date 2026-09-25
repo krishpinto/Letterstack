@@ -47,3 +47,10 @@ next-env.d.ts
 
 # local credential scratch file
 /data
+
+# local agent tooling and notes — not part of the project
+.claude/
+.agents/
+CLAUDE.md
+AGENTS.md
+skills-lock.json
