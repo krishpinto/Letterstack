@@ -36,7 +36,7 @@ export async function PUT(request: Request) {
   const slug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
   if (slug !== "" && !isValidSlug(slug)) {
     return NextResponse.json(
-      { ok: false, error: "Use lowercase letters, numbers and hyphens (e.g. ciba)." },
+      { ok: false, error: "Use lowercase letters, numbers and hyphens (e.g. acme)." },
       { status: 400 },
     );
   }

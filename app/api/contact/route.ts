@@ -1,13 +1,18 @@
 // Public contact-form endpoint. The landing page's "Contact us" screen posts
-// here; we relay the message to the founders' inbox through SES with the
+// here; the message is relayed to the operator's inbox through SES with the
 // visitor's address as Reply-To, so answering is just hitting reply.
+//
+// The destination is CONTACT_INBOX rather than a constant, so a self-hosted
+// deployment delivers to its own operator instead of this project's authors.
+// Unset, the form reports that contact is unavailable rather than sending
+// somewhere unintended.
 
 import { NextResponse } from "next/server";
 import { sendEmail } from "@/lib/send/ses";
 
 export const runtime = "nodejs";
 
-const CONTACT_INBOX = "krishpinto123@gmail.com";
+const CONTACT_INBOX = process.env.CONTACT_INBOX;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_MESSAGE_LENGTH = 4000;
 
@@ -21,7 +26,7 @@ function escapeHtml(value: string) {
 
 export async function POST(request: Request) {
   const fromEmail = process.env.MAIL_FROM;
-  if (!fromEmail) {
+  if (!fromEmail || !CONTACT_INBOX) {
     return NextResponse.json(
       { ok: false, error: "Contact form is not configured." },
       { status: 500 },

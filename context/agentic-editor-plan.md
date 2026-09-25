@@ -60,7 +60,7 @@ That is not a product, it's a demo that breaks by lunchtime.
 Google's free tier may use prompts and responses to improve their models, and
 human reviewers may annotate them. The paid tier does not. For a product where
 users paste unreleased newsletters and client copy, that's a disclosure
-obligation, not a footnote — and it's a reason CIBA's real content should not go
+obligation, not a footnote — and it's a reason a customer's real content should not go
 through a free-tier model without telling them.
 
 **The SDK does not change this.** The AI SDK, the Google SDK, and raw `fetch`

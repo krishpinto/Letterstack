@@ -1,6 +1,6 @@
 // Per-account sending identity: a branded subdomain of the SES-verified parent
 // domain. Verifying letterstack.site in SES lets us send from any subdomain of
-// it (e.g. ciba.letterstack.site) with no extra verification — DKIM signs as the
+// it (e.g. acme.letterstack.site) with no extra verification — DKIM signs as the
 // parent domain and DMARC relaxed alignment passes for the subdomain.
 
 /** The SES-verified parent domain, derived from MAIL_FROM (e.g. "letterstack.site"). */

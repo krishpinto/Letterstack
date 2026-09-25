@@ -30,7 +30,11 @@ import { Textarea } from "@/components/ui/textarea";
 // the morph origin, and the screen expands out of it (same pattern as the
 // create-workspace screen) into a two-column contact form.
 
-const CONTACT_EMAIL = "krishpinto123@gmail.com";
+// Shown to visitors and used for the mailto: fallback. Public by nature, but
+// configured rather than hard-coded so a self-hosted deployment shows its own
+// address.
+const CONTACT_EMAIL =
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hello@letterstack.site";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const COMPANY_SIZES = ["Just me", "2–10", "11–50", "51–200", "200+"] as const;

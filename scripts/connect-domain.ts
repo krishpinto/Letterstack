@@ -1,5 +1,5 @@
 // Connect a customer's domain to our SES account so campaigns can send from
-// their addresses (e.g. newsletter@ciba.org). We never touch the customer's
+// their addresses (e.g. newsletter@acme.org). We never touch the customer's
 // DNS — this prints the records they paste into their own provider.
 //
 // The dashboard Domains page does the same thing per-organization; this CLI is

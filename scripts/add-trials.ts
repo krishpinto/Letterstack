@@ -35,10 +35,11 @@ async function main() {
   await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS emails_sent_period_start TIMESTAMP`;
   await sql`UPDATE organizations SET emails_sent_period_start = date_trunc('month', now()) WHERE emails_sent_period_start IS NULL`;
 
-  // emails_sent_count has drifted from reality — CIBA shows 0 against 5,034
-  // genuinely sent. campaign_recipients is the actual record of what left the
-  // building, so the counter is rebuilt from it for the current month rather
-  // than trusted. Blocks are only as honest as the number behind them.
+  // emails_sent_count has drifted from reality — a workspace can show 0
+  // against thousands genuinely sent. campaign_recipients is the actual
+  // record of what left the building, so the counter is rebuilt from it for
+  // the current month rather than trusted. Blocks are only as honest as the
+  // number behind them.
   const rebuilt = await sql`
     UPDATE organizations o
        SET emails_sent_count = COALESCE(actual.n, 0)

@@ -1,5 +1,5 @@
 -- Early-access waitlist gate. New signups default to 'pending'; existing
--- accounts (including CIBA's) are grandfathered to 'approved' below so
+-- accounts (including the first customer's) are grandfathered to 'approved' so
 -- nothing regresses for current users.
 
 alter table users add column access_status text not null default 'pending';

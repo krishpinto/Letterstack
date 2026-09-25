@@ -87,7 +87,7 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Custom sending domains (e.g. "ciba.org") registered as SES identities.
+// Custom sending domains (e.g. "acme.org") registered as SES identities.
 // verifiedAt is set once SES confirms DKIM + MAIL FROM; only verified domains
 // may appear in a campaign's From address. Unique globally: one org owns a
 // domain at a time.

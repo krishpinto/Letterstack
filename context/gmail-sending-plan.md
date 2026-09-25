@@ -36,7 +36,7 @@ Asked and researched 2026-07-29. Short answer: **mechanically yes, and it's a
 trap.** Worth writing down so it doesn't get re-proposed later.
 
 SES does let you verify an individual *email address* identity — you can't
-verify the `gmail.com` domain, but you can verify `ethan@gmail.com`. AWS mails
+verify the `gmail.com` domain, but you can verify `someone@gmail.com`. AWS mails
 a confirmation link, the user clicks it, and SES will then accept that address
 in the `From:` header. So it looks like it works.
 
@@ -70,9 +70,9 @@ What actually happens in the wild:
 
 Two more costs specific to us:
 
-- **Shared reputation.** Our SES account sends CIBA's newsletter. Spoof-shaped
+- **Shared reputation.** Our SES account sends every customer's newsletter. Spoof-shaped
   traffic driving complaints puts that account's reputation — and therefore
-  CIBA's sending — at risk. SES suspends above 10% bounce / 0.5% complaint.
+  real customer sending — at risk. SES suspends above 10% bounce / 0.5% complaint.
 - The message shows a "via" line in Gmail's UI, never lands in the user's
   **Sent** folder, and replies don't thread with anything.
 
@@ -133,7 +133,7 @@ sign-in.
 ## 4. Hard constraints Gmail brings (design around these, don't discover them later)
 
 1. **Volume caps.** Consumer Gmail ≈ 500 recipients/day; Workspace ≈ 2,000/day.
-   A Gmail sender can never run CIBA's 3,000-recipient newsletter. The UI must
+   A Gmail sender can never run a 3,000-recipient newsletter. The UI must
    refuse rather than half-send: block the send if audience size > remaining
    daily quota, and show a quota meter on the mailbox card.
 2. **No delivery events.** SES events arrive via configuration set → SNS →

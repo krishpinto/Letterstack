@@ -20,7 +20,7 @@ function ses(): SESv2Client {
   return client;
 }
 
-/** Hostname like "ciba.org" or "news.ciba.org" — no scheme, no @, no spaces. */
+/** Hostname like "acme.org" or "news.acme.org" — no scheme, no @, no spaces. */
 export const DOMAIN_RE =
   /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/;
 
