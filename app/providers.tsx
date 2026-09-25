@@ -24,14 +24,29 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // the page.
   const isLightRoute =
     LIGHT_ROUTES.has(pathname) || pathname.startsWith("/landing");
-  const forcedTheme = isLightRoute ? "light" : "dark";
+
+  // Marketing stays pinned. Inside the app, the theme is the person's own
+  // choice (Settings → Appearance), so nothing is forced and next-themes
+  // reads what they picked.
+  //
+  // Undefined rather than "dark" is the whole change here: forcedTheme wins
+  // over stored preference by design, so while the app was pinned dark,
+  // setTheme() ran, stored the value, and changed nothing on screen. The
+  // palette itself was always ready for this — globals.css has defined both
+  // token sets from the start, and the analytics series carry light/dark
+  // colour pairs.
+  const forcedTheme = isLightRoute ? "light" : undefined;
 
   return (
     <SessionProvider>
       <TooltipProvider>
         <ThemeProvider
           attribute="class"
+          // Dark is the product's look, so an untouched account gets dark
+          // rather than whatever its OS happens to be set to. "System" is
+          // something you opt into, not a default.
           defaultTheme="dark"
+          enableSystem
           forcedTheme={forcedTheme}
           enableColorScheme
           disableTransitionOnChange

@@ -23,6 +23,7 @@ import { BillingPanel } from "@/components/settings/billing-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
 import { DomainsPanel } from "@/components/settings/domains-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import { AppearancePanel } from "@/components/settings/appearance-panel";
 import {
   SendingPanel,
   type SendingDefaults,
@@ -229,6 +230,7 @@ export function SettingsShell({
           {activeSection === "notifications" && (
             <NotificationsPanel userEmail={profile.email} />
           )}
+          {activeSection === "appearance" && <AppearancePanel />}
           {activeSection === "api" && <ApiPanel />}
           {![
             "account",
@@ -238,6 +240,7 @@ export function SettingsShell({
             "sending",
             "domains",
             "notifications",
+            "appearance",
           ].includes(activeSection) && (
             <PlaceholderPanel label={active.label} />
           )}
