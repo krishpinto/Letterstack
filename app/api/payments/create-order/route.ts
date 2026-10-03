@@ -12,7 +12,7 @@ import { recordOrder } from "@/db/payments";
 import { isAdmin } from "@/lib/admin";
 import { auth } from "@/lib/auth";
 import { currentOrganizationId } from "@/lib/auth-helpers";
-import { getPaymentItem } from "@/lib/payments/catalog";
+import { getPaymentItem, itemDisplayName } from "@/lib/payments/catalog";
 import { createOrder } from "@/lib/payments/razorpay";
 
 export const runtime = "nodejs";
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      description: item.description,
+      description: itemDisplayName(itemKey),
     });
   } catch (err) {
     const status = (err as { statusCode?: number })?.statusCode;

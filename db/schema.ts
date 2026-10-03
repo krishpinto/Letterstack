@@ -196,6 +196,33 @@ export const payments = pgTable("payments", {
   paidAt: timestamp("paid_at"),
 });
 
+// One row per invoice actually issued. The serial is stored in parts as well
+// as formatted, so "next number this financial year" is a MAX() over an
+// integer rather than parsing LS/2026-27/0001 back apart. See db/invoices.ts.
+export const invoices = pgTable("invoices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  // Unique in the database: settlement can run twice (browser callback racing
+  // the webhook, plus webhook retries) and the second pass must find this row,
+  // not mint a second invoice with a fresh serial.
+  paymentId: uuid("payment_id")
+    .notNull()
+    .references(() => payments.id, { onDelete: "cascade" }),
+  financialYear: text("financial_year").notNull(),
+  sequence: integer("sequence").notNull(),
+  number: text("number").notNull(),
+  amount: integer("amount").notNull(), // paise
+  currency: text("currency").notNull().default("INR"),
+  issuedAt: timestamp("issued_at").defaultNow().notNull(),
+  // Null until the email actually goes out, so a failed send is visible rather
+  // than indistinguishable from a delivered one.
+  sentTo: text("sent_to"),
+  sentAt: timestamp("sent_at"),
+  sesMessageId: text("ses_message_id"),
+});
+
 export const organizationMembers = pgTable(
   "organization_members",
   {

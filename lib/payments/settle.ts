@@ -7,7 +7,11 @@
 // update already has.
 
 import { activatePlanForOrganization } from "@/db/organizations";
-import { settlePaymentPaid } from "@/db/payments";
+import {
+  getSettledPaymentForInvoice,
+  settlePaymentPaid,
+} from "@/db/payments";
+import { issueAndSendInvoice } from "@/lib/invoices/issue";
 import { getPaymentItem } from "./catalog";
 
 export type SettleResult = {
@@ -38,5 +42,32 @@ export async function settlePaidOrder(
     item.grantsPlan,
     item.planDays,
   );
+
+  // After the grant, never before: the customer has paid and must get their
+  // access whether or not a PDF renders. issueAndSendInvoice swallows its own
+  // failures for the same reason, so a mail problem can't turn a successful
+  // payment into a failed settlement.
+  //
+  // Only this branch invoices, so the ₹1 and ₹5 internal items — which grant
+  // nothing — never generate a document.
+  await invoiceSettledPayment(row.id);
+
   return { settled: true, planGranted: item.grantsPlan };
+}
+
+/**
+ * Loads everything the invoice needs for a settled payment and sends it.
+ *
+ * The read is here rather than in lib/invoices so that module stays free of
+ * schema knowledge, and so settlement passes an id rather than assembling a
+ * payload the invoice layer would have to re-validate.
+ */
+async function invoiceSettledPayment(paymentId: string): Promise<void> {
+  try {
+    const details = await getSettledPaymentForInvoice(paymentId);
+    if (!details) return;
+    await issueAndSendInvoice(details);
+  } catch (error) {
+    console.error("Could not invoice the settled payment", error);
+  }
 }

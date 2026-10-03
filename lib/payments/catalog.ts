@@ -109,6 +109,34 @@ export function checkoutItemsFor(
   return null;
 }
 
+/**
+ * What to call this purchase in front of a customer.
+ *
+ * Derived from the plan table rather than read off the item's own `description`
+ * string, because those strings were written when the paid tier was called Pro
+ * and kept saying so after it was renamed to Starter — so the checkout modal
+ * and the invoice both advertised a plan name that appears nowhere else in the
+ * product. The stored key is still `pro` (live rows and settled payments carry
+ * it), and that's exactly why the display name can't be inferred from it.
+ *
+ * `description` survives for the items that grant no plan and so have no label
+ * to borrow.
+ */
+export function itemDisplayName(key: PaymentItemKey | string): string {
+  const item = getPaymentItem(key);
+  if (!item) return "LetterStack subscription";
+  if (!item.grantsPlan) return item.description;
+
+  const label = PLAN_LIMITS[item.grantsPlan as PlanKey].label;
+  const period =
+    item.planDays >= 365
+      ? "1 year"
+      : item.planDays >= 28
+        ? "1 month"
+        : `${item.planDays} days`;
+  return `LetterStack ${label} (${period})`;
+}
+
 // Fails at import time — so in the build, not in front of a customer — if an
 // advertised price ever stops matching the amount actually charged. Paise, so
 // the comparison is exact: no float rounding to explain away.
