@@ -171,3 +171,63 @@ describe("compileEmailDocument: links", () => {
     expect(parse(html).querySelectorAll("img")).toHaveLength(0);
   });
 });
+
+describe("compileEmailDocument: Outlook", () => {
+  it("wraps the content in a fixed-width table only Outlook sees", () => {
+    const { html } = compileEmailDocument(doc([block("paragraph")], { maxWidth: 640 }));
+    expect(html).toContain(
+      '<!--[if mso]><table role="presentation" align="center" width="640"',
+    );
+    expect(html).toContain("<!--[if mso]></td></tr></table><![endif]-->");
+  });
+
+  it("renders buttons as table cells that Outlook pads", () => {
+    const { html } = compileEmailDocument(
+      doc([block("button", { label: "Buy", href: "https://a.com", secondaryLabel: "More", secondaryHref: "https://b.com" })]),
+    );
+    const cells = [...parse(html).querySelectorAll("td[bgcolor]")];
+    expect(cells).toHaveLength(2);
+    for (const cell of cells) {
+      expect(cell.getAttribute("style")).toContain("mso-padding-alt:14px 18px;");
+      expect(cell.querySelector("a")?.getAttribute("href")).toMatch(/^https:/);
+    }
+    expect(cells[0].textContent?.trim()).toBe("Buy");
+  });
+
+  it("stacks stretched buttons at full width", () => {
+    const { html } = compileEmailDocument(
+      doc([block("button", { fullWidth: true, secondaryLabel: "More", secondaryHref: "https://b.com" })]),
+    );
+    const cells = [...parse(html).querySelectorAll("td[bgcolor]")];
+    expect(cells.map((c) => c.getAttribute("width"))).toEqual(["100%", "100%"]);
+    expect(cells[0].parentElement).not.toBe(cells[1].parentElement);
+  });
+
+  it("gives every image a numeric width attribute", () => {
+    const { html } = compileEmailDocument(
+      doc([
+        block("logo", { src: "https://a.com/l.png", width: 40 }),
+        block("image", { src: "https://a.com/i.png", width: 50 }),
+        block("articleCard", { imageSrc: "https://a.com/a.png" }),
+        block("columns", {
+          gap: 16,
+          cellPadding: 12,
+          borderStyle: "none",
+          columns: [
+            { ...createColumn(), showImage: true, imageSrc: "https://a.com/c1.png" },
+            { ...createColumn(), showImage: true, imageSrc: "https://a.com/c2.png" },
+          ],
+        }),
+      ]),
+    );
+    const widths = [...parse(html).querySelectorAll("img")].map((img) => img.getAttribute("width"));
+    // 600px container, 24px side padding → 552px of content.
+    expect(widths).toEqual([
+      "200", // logo: 40% of 552 = 221, capped at 200
+      "300", // image: 50% of the 600px container
+      "214", // article: 40% of (552 - 16)
+      "244", // columns: (552 - 16) / 2 - 2 × 12
+      "244",
+    ]);
+  });
+});

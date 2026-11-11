@@ -35,13 +35,20 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
     .join("");
   const previewText = escapeHtml(document.settings.previewText);
 
+  const maxWidth = document.settings.maxWidth;
+  // Outlook on Windows ignores max-width, so without a fixed-width table
+  // around it the content stretches to the full reading pane. The wrapper is
+  // inside MSO conditional comments, so only Outlook sees it.
   const html = `<!doctype html>
-<html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="x-apple-disable-message-reformatting">
     <title>${escapeHtml(document.name)}</title>
+    <!--[if mso]>
+    <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+    <![endif]-->
     <style>
       @media only screen and (max-width:480px) {
         .ls-col { display:block !important; width:100% !important; box-sizing:border-box; }
@@ -55,7 +62,8 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${document.settings.backgroundColor};width:100%;">
       <tr>
         <td align="center" style="padding:${document.settings.padding}px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:${document.settings.maxWidth}px;background:${document.settings.contentColor};border-radius:${document.settings.radius}px;overflow:hidden;box-shadow:${getEmailContainerShadow(document.settings)};">
+          <!--[if mso]><table role="presentation" align="center" width="${maxWidth}" cellspacing="0" cellpadding="0" border="0" style="width:${maxWidth}px;"><tr><td><![endif]-->
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:${maxWidth}px;background:${document.settings.contentColor};border-radius:${document.settings.radius}px;overflow:hidden;box-shadow:${getEmailContainerShadow(document.settings)};">
             ${body}
             <tr>
               <td style="padding:24px ${document.settings.padding}px;" align="center">
@@ -66,6 +74,7 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
               </td>
             </tr>
           </table>
+          <!--[if mso]></td></tr></table><![endif]-->
         </td>
       </tr>
     </table>
@@ -161,6 +170,11 @@ function withNormalizedUrls(document: EmailDocument): EmailDocument {
     }
   });
   return { ...document, blocks };
+}
+
+/** Width inside the content table's side padding, in pixels. */
+function contentWidth(document: EmailDocument): number {
+  return Math.max(1, document.settings.maxWidth - document.settings.padding * 2);
 }
 
 /** href="…" with a leading space, or nothing when there is no link. */
@@ -405,7 +419,11 @@ function renderLogoBlock(block: LogoBlock, document: EmailDocument) {
   if (!block.src) {
     return `<tr><td style="padding:16px ${p}px;height:60px;"></td></tr>`;
   }
-  const img = `<img src="${escapeAttribute(block.src)}" alt="${escapeAttribute(block.alt)}" style="display:inline-block;width:${block.width}%;max-width:200px;height:auto;border:0;">`;
+  // Outlook sizes images from the width attribute and ignores CSS widths;
+  // without one it shows the logo at its natural size. Same maths as the
+  // style: a percentage of the content width, capped at 200px.
+  const pixels = Math.min(200, Math.round((contentWidth(document) * block.width) / 100));
+  const img = `<img src="${escapeAttribute(block.src)}" alt="${escapeAttribute(block.alt)}" width="${pixels}" style="display:inline-block;width:${block.width}%;max-width:200px;height:auto;border:0;">`;
   return `
             <tr>
               <td align="${block.align}" style="padding:16px ${p}px;">
@@ -445,9 +463,22 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
   const cells = block.columns
     .map((column) => {
       const widthPct = Math.round(((column.width || 1) / total) * 1000) / 10;
+      // A numeric width for Outlook, which ignores width:100% on images and
+      // would show them at natural size: the column's share of the row,
+      // less the gaps, the cell padding and the border.
+      const cellsWidth =
+        contentWidth(document) - block.gap * Math.max(0, block.columns.length - 1);
+      const imageWidth = Math.max(
+        1,
+        Math.floor(
+          (cellsWidth * (column.width || 1)) / total -
+            block.cellPadding * 2 -
+            (block.borderStyle === "none" ? 0 : 2),
+        ),
+      );
       const image = column.showImage
         ? column.imageSrc
-          ? `<img src="${escapeAttribute(column.imageSrc)}" alt="${escapeAttribute(column.imageAlt)}" width="100%" style="display:block;width:100%;height:auto;border:0;border-radius:${Math.max(4, block.borderRadius)}px;margin:0 0 14px 0;">`
+          ? `<img src="${escapeAttribute(column.imageSrc)}" alt="${escapeAttribute(column.imageAlt)}" width="${imageWidth}" style="display:block;width:100%;height:auto;border:0;border-radius:${Math.max(4, block.borderRadius)}px;margin:0 0 14px 0;">`
           : `<div style="height:132px;border-radius:${Math.max(4, block.borderRadius)}px;background:#e8e8e8;color:#888;font-family:${ff};font-size:18px;font-weight:700;line-height:132px;text-align:center;margin:0 0 14px 0;">Image</div>`
         : "";
       const eyebrow = column.eyebrow
@@ -489,9 +520,11 @@ function renderArticleCardBlock(
   block: ArticleCardBlock,
   document: EmailDocument
 ) {
+  // 40% of the row beside a 16px gutter; numeric for Outlook (see columns).
+  const imageWidth = Math.floor((contentWidth(document) - 16) * 0.4);
   const imageCell = `
                     <td width="40%" valign="top" style="padding:0;">
-                      <img src="${escapeAttribute(block.imageSrc)}" alt="${escapeAttribute(block.imageAlt)}" width="100%" style="display:block;width:100%;height:auto;border:0;border-radius:4px;">
+                      <img src="${escapeAttribute(block.imageSrc)}" alt="${escapeAttribute(block.imageAlt)}" width="${imageWidth}" style="display:block;width:100%;height:auto;border:0;border-radius:4px;">
                     </td>`;
 
   const textColor = block.textColor ?? document.settings.textColor;
@@ -730,29 +763,53 @@ function getButtonItems(block: ButtonBlock) {
   }[];
 }
 
+/**
+ * Buttons are table cells, not padded links. Outlook on Windows ignores
+ * padding (and display:inline-block) on an <a>, which leaves a bare
+ * underlined word. This is the usual hybrid: the cell carries the colour,
+ * border and radius, plus mso-padding-alt so Outlook pads the cell; every
+ * other client pads the link itself, so the whole button stays clickable.
+ * No VML, so Outlook shows square corners.
+ */
+function renderButtonCell(
+  button: { label: string; href: string; variant: ButtonVariant },
+  document: EmailDocument,
+  full: boolean,
+): string {
+  const s = document.settings;
+  const colors = getButtonColors(button.variant, document);
+  const border =
+    button.variant === "secondary"
+      ? `border:1px solid ${s.secondaryButtonTextColor};`
+      : `border:1px solid ${colors.backgroundColor};`;
+  const padding = `${s.buttonPaddingY}px ${s.buttonPaddingX}px`;
+  const width = full ? ' width="100%"' : "";
+  return `<td align="center" bgcolor="${colors.backgroundColor}"${width} style="background:${colors.backgroundColor};${border}border-radius:${s.buttonRadius}px;mso-padding-alt:${padding};">
+                      <a${hrefAttr(button.href)} style="display:${full ? "block" : "inline-block"};padding:${padding};mso-padding-alt:0;color:${colors.color};font-family:${s.fontFamily};font-size:${s.buttonFontSize}px;font-weight:700;line-height:1;text-decoration:none;border-radius:${s.buttonRadius}px;"><span style="color:${colors.color};">${escapeHtml(button.label)}</span></a>
+                    </td>`;
+}
+
 function renderButtonBlock(block: ButtonBlock, document: EmailDocument) {
   const p = document.settings.padding;
   const full = block.fullWidth ?? false;
-  const buttons = getButtonItems(block)
-    .map((button) => {
-      const colors = getButtonColors(button.variant, document);
-      const border =
-        button.variant === "secondary"
-          ? `border:1px solid ${document.settings.secondaryButtonTextColor};`
-          : "border:1px solid transparent;";
-      // Stretched buttons become block-level and fill the column; default
-      // buttons hug their label inline.
-      const layout = full
-        ? "display:block;width:100%;box-sizing:border-box;text-align:center;margin:0 0 8px 0;"
-        : "display:inline-block;margin:0 6px 8px 0;";
-      return `<a${hrefAttr(button.href)} style="${layout}background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(button.label)}</a>`;
-    })
-    .join("");
+  const cells = getButtonItems(block).map((button) =>
+    renderButtonCell(button, document, full),
+  );
+
+  // Stretched buttons fill the content width, one per row, 8px apart; the
+  // others sit side by side, 8px apart — the same spacing as the canvas.
+  const rows = full
+    ? cells
+        .map((cell) => `<tr>${cell}</tr>`)
+        .join(`<tr><td height="8" style="height:8px;font-size:1px;line-height:1px;">&nbsp;</td></tr>`)
+    : `<tr>${cells.join(`<td width="8" style="width:8px;font-size:1px;line-height:1px;">&nbsp;</td>`)}</tr>`;
 
   return `
             <tr>
-              <td align="${full ? "center" : block.align}" style="padding:4px ${p}px 12px ${p}px;">
-                ${buttons}
+              <td align="${full ? "center" : block.align}" style="padding:4px ${p}px 20px ${p}px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0"${full ? ' width="100%"' : ` align="${block.align}"`} style="border-collapse:separate;${full ? "width:100%;" : ""}">
+                  ${rows}
+                </table>
               </td>
             </tr>`;
 }
