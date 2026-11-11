@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  if (item.adminOnly && !isAdmin(session?.user?.email)) {
+  if (item.adminOnly && !isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 

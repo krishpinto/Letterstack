@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { getCampaignForUser } from "@/db/campaigns";
 import { countPendingForCampaign } from "@/db/campaign-recipients";
 import { dispatchCampaign } from "@/lib/send/dispatch-campaign";
-import { currentUserId } from "@/lib/auth-helpers";
+import { currentUserId, requireVerifiedEmail } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
@@ -19,6 +19,8 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const unverified = await requireVerifiedEmail();
+  if (unverified) return unverified;
 
   try {
     const campaign = await getCampaignForUser(id, userId);
