@@ -34,6 +34,7 @@ import { CreateWorkspaceScreen } from "./create-workspace-screen";
 import { HelpMenu, useModifierKey } from "./help-menu";
 import { NotificationsMenu } from "./notifications-menu";
 import { InviteMembersDialog } from "./invite-members-dialog";
+import { canManageWorkspace } from "./workspace-role";
 
 export type NavbarOrganization = {
   id: string;
@@ -95,6 +96,8 @@ export function TopNavbar({
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
+  // Only owners and admins may invite; the invite API answers 403 to members.
+  const canInvite = canManageWorkspace(activeOrg.role);
 
   async function selectOrganization(id: string) {
     if (id === activeOrg.id) return;
@@ -208,20 +211,22 @@ export function TopNavbar({
                 </span>
               </span>
             </div>
-            <div className="mt-2.5 flex gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-                onClick={() => {
-                  setOrgMenuOpen(false);
-                  setInviteOpen(true);
-                }}
-              >
-                <UserPlusIcon className="size-3.5" />
-                Invite members
-              </Button>
-            </div>
+            {canInvite && (
+              <div className="mt-2.5 flex gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+                  onClick={() => {
+                    setOrgMenuOpen(false);
+                    setInviteOpen(true);
+                  }}
+                >
+                  <UserPlusIcon className="size-3.5" />
+                  Invite members
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Other workspaces */}
@@ -293,7 +298,7 @@ export function TopNavbar({
         activeOrganizationId={activeOrg.id}
         onSwitchOrganization={(id) => void selectOrganization(id)}
         onCreateWorkspace={() => setCreateOpen(true)}
-        onInviteMembers={() => setInviteOpen(true)}
+        onInviteMembers={canInvite ? () => setInviteOpen(true) : undefined}
       />
 
       {/* ── Center: search — opens the command palette ── */}

@@ -208,7 +208,8 @@ export function CommandPalette({
   activeOrganizationId: string;
   onSwitchOrganization: (id: string) => void;
   onCreateWorkspace: () => void;
-  onInviteMembers: () => void;
+  /** Omitted for members, who can't invite. */
+  onInviteMembers?: () => void;
 }) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -311,14 +312,16 @@ export function CommandPalette({
               <WorkflowIcon />
               {creatingAutomation ? "Creating automation…" : "New automation"}
             </CommandItem>
-            <CommandItem
-              value="create Invite members"
-              keywords={["team", "teammate", "user"]}
-              onSelect={() => run(onInviteMembers)}
-            >
-              <UserPlusIcon />
-              Invite members
-            </CommandItem>
+            {onInviteMembers && (
+              <CommandItem
+                value="create Invite members"
+                keywords={["team", "teammate", "user"]}
+                onSelect={() => run(onInviteMembers)}
+              >
+                <UserPlusIcon />
+                Invite members
+              </CommandItem>
+            )}
           </CommandGroup>
 
           <CommandSeparator />

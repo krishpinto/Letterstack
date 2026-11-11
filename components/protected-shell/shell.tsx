@@ -11,6 +11,7 @@ import { IconRail } from "./icon-rail";
 import { MobileNav } from "./mobile-nav";
 import { NavSidebar } from "./nav-sidebar";
 import { TopNavbar, type NavbarOrganization } from "./top-navbar";
+import { WorkspaceRoleProvider } from "./workspace-role";
 
 type ProtectedShellProps = {
   children: ReactNode;
@@ -54,79 +55,81 @@ export function ProtectedShell({
     pathname === "/dashboard/forms";
 
   return (
-    // h-dvh, not h-screen: on phones 100vh includes the area under the
-    // browser's toolbar, which pushed the bottom of every page off screen.
-    <div className="flex h-dvh flex-col overflow-hidden">
-      {/* ── Global top navbar — full width ── */}
-      <TopNavbar
-        organization={organization}
-        organizations={organizations}
-        userName={userName}
-        userEmail={userEmail}
-        plan={plan}
-        planUntil={planUntil}
-        planNotice={planNotice}
-        onOpenMobileNav={() => setMobileNavOpen(true)}
-      />
+    <WorkspaceRoleProvider value={organization.role}>
+      {/* h-dvh, not h-screen: on phones 100vh includes the area under the
+          browser's toolbar, which pushed the bottom of every page off screen. */}
+      <div className="flex h-dvh flex-col overflow-hidden">
+        {/* ── Global top navbar — full width ── */}
+        <TopNavbar
+          organization={organization}
+          organizations={organizations}
+          userName={userName}
+          userEmail={userEmail}
+          plan={plan}
+          planUntil={planUntil}
+          planNotice={planNotice}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+        />
 
-      <MobileNav
-        open={mobileNavOpen}
-        onOpenChange={setMobileNavOpen}
-        showModuleSidebar={!contentOnly}
-      />
+        <MobileNav
+          open={mobileNavOpen}
+          onOpenChange={setMobileNavOpen}
+          showModuleSidebar={!contentOnly}
+        />
 
-      {/* ── Body ── */}
-      <div className="flex flex-1 gap-2 overflow-hidden px-2 pb-2">
+        {/* ── Body ── */}
+        <div className="flex flex-1 gap-2 overflow-hidden px-2 pb-2">
 
-        {/* Icon rail — md and up; phones use the MobileNav sheet */}
-        <IconRail />
+          {/* Icon rail — md and up; phones use the MobileNav sheet */}
+          <IconRail />
 
-        {/* ── Main bordered container ── */}
-        <div className="flex flex-1 overflow-hidden rounded-xl border border-border bg-muted/30 shadow-sm">
+          {/* ── Main bordered container ── */}
+          <div className="flex flex-1 overflow-hidden rounded-xl border border-border bg-muted/30 shadow-sm">
 
-          {/* Left nav sidebar — hidden on content-only routes */}
-          {!contentOnly && navOpen && (
-            <div className="hidden md:flex">
-              <NavSidebar />
-            </div>
-          )}
-
-          {/* ── Content column ── */}
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
-
-            {/* Content header — hidden on content-only routes */}
-            {!contentOnly && (
-              <ContentHeader
-                onToggleSidebar={() => setNavOpen((v) => !v)}
-                sidebarOpen={navOpen}
-                actions={headerActions}
-              />
+            {/* Left nav sidebar — hidden on content-only routes */}
+            {!contentOnly && navOpen && (
+              <div className="hidden md:flex">
+                <NavSidebar />
+              </div>
             )}
 
-            {/* Page content. Settings draws its own full-bleed two-panel
-                layout; every other page expects the old layout's padding.
+            {/* ── Content column ── */}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
 
-                Keyed by the active organization id: the organization is the
-                single source of truth for the whole dashboard, so switching it
-                remounts the current page and every page reloads its data scoped
-                to the new org. The server layout re-runs on switch (via
-                router.refresh) and feeds this component the new org id. */}
-            <main
-              key={organization.id}
-              className={cn(
-                "scrollbar-none",
-                isSettings
-                  ? "flex-1 overflow-auto"
-                  : isFullBleedList
-                    ? "flex flex-1 flex-col overflow-hidden"
-                    : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
+              {/* Content header — hidden on content-only routes */}
+              {!contentOnly && (
+                <ContentHeader
+                  onToggleSidebar={() => setNavOpen((v) => !v)}
+                  sidebarOpen={navOpen}
+                  actions={headerActions}
+                />
               )}
-            >
-              {children}
-            </main>
+
+              {/* Page content. Settings draws its own full-bleed two-panel
+                  layout; every other page expects the old layout's padding.
+
+                  Keyed by the active organization id: the organization is the
+                  single source of truth for the whole dashboard, so switching it
+                  remounts the current page and every page reloads its data scoped
+                  to the new org. The server layout re-runs on switch (via
+                  router.refresh) and feeds this component the new org id. */}
+              <main
+                key={organization.id}
+                className={cn(
+                  "scrollbar-none",
+                  isSettings
+                    ? "flex-1 overflow-auto"
+                    : isFullBleedList
+                      ? "flex flex-1 flex-col overflow-hidden"
+                      : "flex flex-1 flex-col overflow-auto p-4 md:p-6"
+                )}
+              >
+                {children}
+              </main>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </WorkspaceRoleProvider>
   );
 }
