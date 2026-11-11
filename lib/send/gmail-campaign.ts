@@ -4,7 +4,8 @@ import {
   returnCampaignRecipientToPending,
 } from "@/db/campaign-recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
-import { getMailbox } from "@/db/connected-mailboxes";
+import { getMailbox, releaseMailboxQuota } from "@/db/connected-mailboxes";
+import { releaseSendQuota } from "@/db/organizations";
 import { getValidAccessToken, MailboxReauthRequiredError } from "./gmail-auth";
 import { sendGmailMessage } from "./gmail";
 import { appBaseUrl, publishQstashJSON } from "./qstash";
@@ -16,9 +17,11 @@ import {
 import {
   recordSent,
   releaseClaimAndThrow,
+  releaseUnreachedQuota,
   settleProviderError,
   type FrozenContent,
   type QueueResult,
+  type UnreachedTally,
 } from "./send-campaign";
 import { gmailDeduplicationId, pendingIdsInOrder, type RecipientState } from "./send-policy";
 
@@ -62,6 +65,26 @@ export async function sendGmailCampaignBatch(
   organizationId: string,
   mailboxId: string,
 ): Promise<GmailBatchResult> {
+  const tally: UnreachedTally = { unreached: 0 };
+  try {
+    return await sendGmailRows(content, recipientIds, userId, organizationId, mailboxId, tally);
+  } finally {
+    // Both ceilings were reserved for these rows; give both back.
+    await releaseUnreachedQuota(tally, async (count) => {
+      await releaseMailboxQuota(mailboxId, count);
+      await releaseSendQuota(organizationId, count);
+    });
+  }
+}
+
+async function sendGmailRows(
+  content: FrozenContent,
+  recipientIds: string[],
+  userId: string,
+  organizationId: string,
+  mailboxId: string,
+  tally: UnreachedTally,
+): Promise<GmailBatchResult> {
   let sent = 0;
   let failed = 0;
   let unrecorded = 0;
@@ -89,7 +112,7 @@ export async function sendGmailCampaignBatch(
       return releaseClaimAndThrow(row.id, err);
     }
     if (suppressed) {
-      await finishCampaignRecipient(row.id, "failed", "suppressed");
+      if (await finishCampaignRecipient(row.id, "failed", "suppressed")) tally.unreached++;
       failed++;
       continue;
     }
@@ -138,12 +161,13 @@ export async function sendGmailCampaignBatch(
       // Still rate-limited after the backoff above, a 5xx, or a network
       // failure: the row goes back to pending and QStash retries the run.
       // Anything else fails this one recipient with Gmail's reason.
-      await settleProviderError(
+      const refused = await settleProviderError(
         row.id,
         err,
         { sent, failed, unrecorded },
         { retryable: isRateLimitError(err) },
       );
+      if (refused) tally.unreached++;
       failed++;
       await sleep(SEND_GAP_MS);
       continue;

@@ -6,6 +6,7 @@ vi.mock("@/db/campaign-recipients", () => ({
   returnCampaignRecipientToPending: vi.fn(),
 }));
 vi.mock("@/db/suppression", () => ({ isSuppressedForOrganization: vi.fn() }));
+vi.mock("@/db/organizations", () => ({ releaseSendQuota: vi.fn() }));
 vi.mock("./ses", () => ({ sendEmail: vi.fn() }));
 vi.mock("./qstash", () => ({
   appBaseUrl: () => "https://app.test",
@@ -24,6 +25,7 @@ import {
   returnCampaignRecipientToPending,
 } from "@/db/campaign-recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
+import { releaseSendQuota } from "@/db/organizations";
 import { sendEmail } from "./ses";
 import { RetryableSendError, sendCampaignBatch, type FrozenContent } from "./send-campaign";
 
@@ -141,5 +143,43 @@ describe("sendCampaignBatch", () => {
       "Email address is not verified.",
     );
     expect(result).toMatchObject({ sent: 1, failed: 1 });
+  });
+
+  it("gives back quota for suppressed and refused rows, never for sent ones", async () => {
+    claimOnce({ r1: "a@x.test", r2: "b@x.test", r3: "c@x.test" });
+    vi.mocked(isSuppressedForOrganization).mockImplementation(
+      async (_org: string, email: string) => email === "a@x.test",
+    );
+    const rejected = Object.assign(new Error("Rejected"), { name: "MessageRejected" });
+    vi.mocked(sendEmail).mockRejectedValueOnce(rejected).mockResolvedValueOnce("m3");
+
+    await sendCampaignBatch(content, ["r1", "r2", "r3"], "u1", "org1", "c1");
+
+    expect(releaseSendQuota).toHaveBeenCalledTimes(1);
+    expect(releaseSendQuota).toHaveBeenCalledWith("org1", 2);
+  });
+
+  it("still gives back quota when the batch stops for a retry", async () => {
+    claimOnce({ r1: "a@x.test", r2: "b@x.test" });
+    vi.mocked(isSuppressedForOrganization).mockImplementation(
+      async (_org: string, email: string) => email === "a@x.test",
+    );
+    vi.mocked(sendEmail).mockRejectedValueOnce(
+      Object.assign(new Error("slow down"), { name: "ThrottlingException" }),
+    );
+
+    await expect(sendCampaignBatch(content, ["r1", "r2"], "u1", "org1", "c1")).rejects.toBeInstanceOf(
+      RetryableSendError,
+    );
+    // r1 was suppressed (released); r2 went back to pending (still reserved).
+    expect(releaseSendQuota).toHaveBeenCalledWith("org1", 1);
+  });
+
+  it("releases nothing when everything was sent", async () => {
+    claimOnce({ r1: "a@x.test" });
+
+    await sendCampaignBatch(content, ["r1"], "u1", "org1", "c1");
+
+    expect(releaseSendQuota).not.toHaveBeenCalled();
   });
 });

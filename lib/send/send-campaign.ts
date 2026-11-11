@@ -1,4 +1,5 @@
 import { isSuppressedForOrganization } from "@/db/suppression";
+import { releaseSendQuota } from "@/db/organizations";
 import {
   claimCampaignRecipient,
   finishCampaignRecipient,
@@ -55,14 +56,15 @@ export class RetryableSendError extends Error {
 /**
  * After a provider error on a claimed row: put it back and stop the batch
  * if the error is retryable, otherwise fail just this row with the
- * provider's reason. Shared by the SES and Gmail loops.
+ * provider's reason. Shared by the SES and Gmail loops. Returns whether it
+ * failed the row, so the caller can give back the row's quota.
  */
 export async function settleProviderError(
   id: string,
   err: unknown,
   progress: BatchResult,
   options: { retryable?: boolean } = {},
-): Promise<void> {
+): Promise<boolean> {
   const verdict = classifySendError(err);
   if (verdict.retryable || options.retryable) {
     try {
@@ -72,7 +74,29 @@ export async function settleProviderError(
     }
     throw new RetryableSendError(verdict.reason, progress);
   }
-  await finishCampaignRecipient(id, "failed", verdict.reason);
+  return finishCampaignRecipient(id, "failed", verdict.reason);
+}
+
+/** Rows of one batch that failed without reaching the provider. */
+export type UnreachedTally = { unreached: number };
+
+/**
+ * Hand back the quota reserved for rows that will never reach the provider
+ * (suppressed since the send started, or refused outright). Rows the
+ * provider accepted are never refunded, and neither are rows settled as
+ * "unknown delivery state". Best-effort: it runs in a finally, and must not
+ * replace the error that got us there.
+ */
+export async function releaseUnreachedQuota(
+  tally: UnreachedTally,
+  release: (count: number) => Promise<void>,
+): Promise<void> {
+  if (tally.unreached <= 0) return;
+  try {
+    await release(tally.unreached);
+  } catch (err) {
+    console.error(`releaseUnreachedQuota: could not release ${tally.unreached}`, err);
+  }
 }
 
 /**
@@ -124,6 +148,22 @@ export async function sendCampaignBatch(
   organizationId: string,
   campaignId?: string,
 ): Promise<BatchResult> {
+  const tally: UnreachedTally = { unreached: 0 };
+  try {
+    return await sendBatchRows(content, recipientIds, userId, organizationId, campaignId, tally);
+  } finally {
+    await releaseUnreachedQuota(tally, (count) => releaseSendQuota(organizationId, count));
+  }
+}
+
+async function sendBatchRows(
+  content: FrozenContent,
+  recipientIds: string[],
+  userId: string,
+  organizationId: string,
+  campaignId: string | undefined,
+  tally: UnreachedTally,
+): Promise<BatchResult> {
   let sent = 0;
   let failed = 0;
   let unrecorded = 0;
@@ -141,7 +181,7 @@ export async function sendCampaignBatch(
       return releaseClaimAndThrow(row.id, err);
     }
     if (suppressed) {
-      await finishCampaignRecipient(row.id, "failed", "suppressed");
+      if (await finishCampaignRecipient(row.id, "failed", "suppressed")) tally.unreached++;
       failed++;
       continue;
     }
@@ -163,7 +203,7 @@ export async function sendCampaignBatch(
         tags,
       });
     } catch (err) {
-      await settleProviderError(row.id, err, { sent, failed, unrecorded });
+      if (await settleProviderError(row.id, err, { sent, failed, unrecorded })) tally.unreached++;
       failed++;
       continue;
     }
