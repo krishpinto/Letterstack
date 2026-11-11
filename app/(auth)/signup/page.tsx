@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
 
 // Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts.
 const GOOGLE_AUTH_ENABLED = true;
@@ -176,9 +177,9 @@ export default function SignupPage() {
                         type="password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
-                        placeholder="At least 6 characters"
+                        placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                         className="pl-8"
-                        minLength={6}
+                        minLength={MIN_PASSWORD_LENGTH}
                         required
                       />
                     </div>

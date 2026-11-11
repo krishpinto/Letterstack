@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { consumePasswordResetToken } from "@/db/password-resets";
+import { BCRYPT_COST, MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
 
 export const runtime = "nodejs";
 
@@ -18,9 +19,9 @@ export async function POST(request: Request) {
   const token = String(body?.token ?? "");
   const password = String(body?.password ?? "");
 
-  if (password.length < 8) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
     return NextResponse.json(
-      { ok: false, error: "Password must be at least 8 characters" },
+      { ok: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
       { status: 400 },
     );
   }
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
 
     return NextResponse.json({ ok: true });

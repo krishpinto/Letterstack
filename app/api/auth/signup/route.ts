@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST, MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
 
 export async function POST(req: Request) {
   const { email, password, name } = await req.json();
@@ -16,9 +17,9 @@ export async function POST(req: Request) {
 
   const trimmedEmail = email.toLowerCase().trim();
 
-  if (password.length < 6) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
     return NextResponse.json(
-      { ok: false, error: "Password must be at least 6 characters" },
+      { ok: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
       { status: 400 },
     );
   }
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
   const [user] = await db
     .insert(users)

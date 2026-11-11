@@ -13,18 +13,9 @@ import bcrypt from "bcryptjs";
 
 import { getPasswordHash, setPasswordHash } from "@/db/users";
 import { currentUserId } from "@/lib/auth-helpers";
+import { BCRYPT_COST, MIN_PASSWORD_LENGTH as MIN_LENGTH } from "@/lib/auth-rules";
 
 export const runtime = "nodejs";
-
-/**
- * Matches /api/auth/reset. Signup still allows 6, which is a real
- * inconsistency in the codebase; 8 is the one worth keeping, so new and
- * changed passwords use it and signup is the thing to raise later.
- */
-const MIN_LENGTH = 8;
-
-/** Signup's cost, not reset's 10. Both exist today; the stronger one wins. */
-const BCRYPT_COST = 12;
 
 export async function PUT(request: Request) {
   const userId = await currentUserId();
