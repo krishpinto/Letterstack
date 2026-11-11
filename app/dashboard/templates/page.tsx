@@ -32,6 +32,14 @@ import {
 } from "@/lib/email/document";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { confirmDialog, promptDialog } from "@/components/app-dialogs";
+import {
+  DataState,
+  useAsyncData,
+  type AsyncData,
+} from "@/components/data-state";
+import { toast } from "@/components/toast";
+import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { errorMessage, fetchJson } from "@/lib/fetch-json";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,7 +78,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
-import { PageLoader } from "@/components/bar-spinner";
 import { cn } from "@/lib/utils";
 
 type Tab = "letterstack" | "saved" | "recent";
@@ -98,29 +105,50 @@ export default function TemplatesPage() {
     setTab(requested && TAB_KEYS.includes(requested) ? requested : "letterstack");
   }, [searchParams]);
 
-  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
-  const [loadingSaved, setLoadingSaved] = useState(false);
+  // Loaded on mount (not on tab switch) so the Saved tab is ready right
+  // away. A failed load renders an error with Retry in the Saved tab, never
+  // "No saved templates".
+  const saved = useAsyncData(
+    () =>
+      fetchJson<{ templates?: SavedTemplate[] }>("/api/templates").then(
+        (data) => data.templates ?? [],
+      ),
+    [],
+  );
+  const { reload: reloadSaved, setData: setSavedData } = saved;
 
-  const loadSavedTemplates = async () => {
-    setLoadingSaved(true);
-    try {
-      const r = await fetch("/api/templates");
-      const data = await r.json();
-      if (data.ok) {
-        setSavedTemplates(data.templates);
-      }
-    } catch (err) {
-      console.error("Failed to load saved templates:", err);
-    } finally {
-      setLoadingSaved(false);
-    }
-  };
-
-  // Load on mount (not on tab switch) so the Saved tab count is right away.
   useEffect(() => {
-    loadSavedTemplates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return onOrganizationChanged(() => {
+      void reloadSaved();
+    });
+  }, [reloadSaved]);
+
+  // One create-campaign request at a time; holds the template's id.
+  const [startingTemplateId, setStartingTemplateId] = useState<string | null>(
+    null,
+  );
+
+  // "Use template" only opened /editor, which can save templates but not
+  // send — a dead end for someone who wants to mail their list. This creates
+  // a real draft campaign from the template (POST /api/campaigns accepts a
+  // prebuilt id or a saved template's id) and opens the campaign page, where
+  // it can be edited, tested and sent.
+  async function startCampaign(templateId: string, name: string) {
+    if (startingTemplateId) return;
+    setStartingTemplateId(templateId);
+    try {
+      const data = await fetchJson<{ id: string }>("/api/campaigns", {
+        method: "POST",
+        json: { name, templateId },
+      });
+      router.push(`/dashboard/campaigns/${data.id}`);
+    } catch (error) {
+      toast.error("Couldn't create the campaign", {
+        description: errorMessage(error),
+      });
+      setStartingTemplateId(null);
+    }
+  }
 
   async function openDoc(doc: EmailDocument) {
     try {
@@ -144,27 +172,40 @@ export default function TemplatesPage() {
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
 
   async function handleShareTemplate(id: string) {
+    let shareToken: string;
     try {
-      const r = await fetch(`/api/templates/${id}/share`, { method: "POST" });
-      const data = await r.json();
-      if (!data.ok) return;
-      const url = `${window.location.origin}/templates/shared/${data.shareToken}`;
-      await navigator.clipboard.writeText(url).catch(() =>
-        promptDialog({
-          title: "Copy this share link",
-          description: "Clipboard access was blocked — copy it manually.",
-          defaultValue: url,
-        }),
+      const data = await fetchJson<{ shareToken: string }>(
+        `/api/templates/${id}/share`,
+        { method: "POST" },
       );
-      setCopiedShareId(id);
-      setTimeout(
-        () => setCopiedShareId((current) => (current === id ? null : current)),
-        2000,
-      );
-    } catch (err) {
-      console.error("Failed to share template:", err);
+      shareToken = data.shareToken;
+    } catch (error) {
+      toast.error("Couldn't create a share link", {
+        description: errorMessage(error),
+      });
+      return;
     }
+    const url = `${window.location.origin}/templates/shared/${shareToken}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard blocked: hand the link over to copy by hand, and don't
+      // claim it was copied.
+      await promptDialog({
+        title: "Copy this share link",
+        description: "Clipboard access was blocked — copy it manually.",
+        defaultValue: url,
+      });
+      return;
+    }
+    setCopiedShareId(id);
+    setTimeout(
+      () => setCopiedShareId((current) => (current === id ? null : current)),
+      2000,
+    );
   }
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleDeleteSavedTemplate(id: string) {
     const ok = await confirmDialog({
@@ -174,16 +215,17 @@ export default function TemplatesPage() {
       destructive: true,
     });
     if (!ok) return;
+    setDeletingId(id);
     try {
-      const r = await fetch(`/api/templates/${id}`, {
-        method: "DELETE",
+      await fetchJson(`/api/templates/${id}`, { method: "DELETE" });
+      setSavedData((prev) => prev.filter((t) => t.id !== id));
+      toast.success("Template deleted");
+    } catch (error) {
+      toast.error("Couldn't delete the template", {
+        description: errorMessage(error),
       });
-      const data = await r.json();
-      if (data.ok) {
-        setSavedTemplates((prev) => prev.filter((t) => t.id !== id));
-      }
-    } catch (err) {
-      console.error("Failed to delete template:", err);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -272,12 +314,16 @@ export default function TemplatesPage() {
 
         <TabsContent value="saved" className="pt-0">
           <SavedTab
-            loading={loadingSaved}
-            templates={savedTemplates}
+            state={saved}
             onDelete={handleDeleteSavedTemplate}
+            deletingId={deletingId}
             onShare={handleShareTemplate}
             copiedShareId={copiedShareId}
             onEditTemplate={(id) => router.push(`/editor/template/${id}`)}
+            onStartCampaign={(template) =>
+              startCampaign(template.id, template.name)
+            }
+            startingTemplateId={startingTemplateId}
           />
         </TabsContent>
 
@@ -295,6 +341,11 @@ export default function TemplatesPage() {
                 key={template.id}
                 template={template}
                 onOpen={() => openDoc(template.build())}
+                onStartCampaign={() =>
+                  startCampaign(template.id, template.title)
+                }
+                starting={startingTemplateId === template.id}
+                busy={startingTemplateId !== null}
               />
             ))}
           </div>
@@ -344,115 +395,132 @@ type SentCampaign = {
 /** Sent campaigns as reusable starting points — one click clones to a draft. */
 function RecentlySentTab() {
   const router = useRouter();
-  const [campaigns, setCampaigns] = useState<SentCampaign[]>([]);
-  const [loading, setLoading] = useState(true);
   const [reusingId, setReusingId] = useState<string | null>(null);
+  const state = useAsyncData(
+    () =>
+      fetchJson<{ campaigns?: SentCampaign[] }>("/api/campaigns").then((data) =>
+        // Anything that went out, or tried to, can be reused; the reuse
+        // route refuses only drafts.
+        (data.campaigns ?? []).filter(
+          (c) =>
+            c.status === "sent" || c.status === "sending" || c.status === "failed",
+        ),
+      ),
+    [],
+  );
+  const { reload } = state;
 
   useEffect(() => {
-    fetch("/api/campaigns")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok) {
-          setCampaigns(
-            (data.campaigns as SentCampaign[]).filter(
-              (c) => c.status === "sent" || c.status === "sending",
-            ),
-          );
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    return onOrganizationChanged(() => {
+      void reload();
+    });
+  }, [reload]);
 
   async function reuse(id: string) {
     setReusingId(id);
     try {
-      const r = await fetch(`/api/campaigns/${id}/reuse`, { method: "POST" });
-      const data = await r.json();
-      if (data.ok) {
-        router.push(`/dashboard/campaigns/${data.id}`);
-        return;
-      }
-    } catch {
-      // fall through to reset
+      const data = await fetchJson<{ id: string }>(
+        `/api/campaigns/${id}/reuse`,
+        { method: "POST" },
+      );
+      router.push(`/dashboard/campaigns/${data.id}`);
+    } catch (error) {
+      toast.error("Couldn't reuse this campaign", {
+        description: errorMessage(error),
+      });
+      setReusingId(null);
     }
-    setReusingId(null);
-  }
-
-  if (loading) {
-    return (
-      <PageLoader className="min-h-0 py-12" label="Loading sent campaigns..." />
-    );
-  }
-
-  if (campaigns.length === 0) {
-    return (
-      <Empty className="rounded-xl border border-dashed py-12">
-        <EmptyHeader>
-          <EmptyMedia>
-            <IconStack aria-hidden="true" className="h-24 w-22">
-              <SendIcon className="size-5" />
-            </IconStack>
-          </EmptyMedia>
-          <EmptyTitle>Nothing sent yet</EmptyTitle>
-          <EmptyDescription>
-            Once a campaign is sent, it shows up here so you can reuse it as a
-            starting point.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
-      <div className="divide-y divide-border">
-        {campaigns.map((campaign) => (
-          <div
-            key={campaign.id}
-            className="flex items-center justify-between gap-3 px-4 py-3"
-          >
-            <button
-              type="button"
-              className="min-w-0 flex-1 text-left"
-              onClick={() => router.push(`/dashboard/campaigns/${campaign.id}`)}
-            >
-              <span className="block truncate text-sm font-medium">
-                {campaign.name || "Untitled Campaign"}
-              </span>
-              <span className="block truncate text-xs text-muted-foreground">
-                {campaign.subject || "No subject"}
-                {campaign.sentAt &&
-                  ` · sent ${new Date(campaign.sentAt).toLocaleDateString()}`}
-                {` · ${campaign.sentCount}/${campaign.audienceCount} delivered to`}
-              </span>
-            </button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => reuse(campaign.id)}
-              disabled={reusingId !== null}
-            >
-              {reusingId === campaign.id ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <PlusIcon data-icon="inline-start" />
-              )}
-              Reuse
-            </Button>
+    <DataState
+      state={state}
+      loadingLabel="Loading sent campaigns..."
+      errorTitle="Couldn't load sent campaigns"
+      isEmpty={(campaigns) => campaigns.length === 0}
+      empty={
+        <Empty className="rounded-xl border border-dashed py-12">
+          <EmptyHeader>
+            <EmptyMedia>
+              <IconStack aria-hidden="true" className="h-24 w-22">
+                <SendIcon className="size-5" />
+              </IconStack>
+            </EmptyMedia>
+            <EmptyTitle>Nothing sent yet</EmptyTitle>
+            <EmptyDescription>
+              Once a campaign is sent, it shows up here so you can reuse it as a
+              starting point.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      }
+    >
+      {(campaigns) => (
+        <div className="overflow-hidden rounded-xl border border-border">
+          <div className="divide-y divide-border">
+            {campaigns.map((campaign) => (
+              <div
+                key={campaign.id}
+                className="flex items-center justify-between gap-3 px-4 py-3"
+              >
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 cursor-pointer text-left"
+                  onClick={() =>
+                    router.push(`/dashboard/campaigns/${campaign.id}`)
+                  }
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {campaign.name || "Untitled Campaign"}
+                    </span>
+                    {campaign.status === "failed" && (
+                      <Badge variant="destructive" className="shrink-0">
+                        Failed
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {campaign.subject || "No subject"}
+                    {campaign.sentAt &&
+                      ` · sent ${new Date(campaign.sentAt).toLocaleDateString()}`}
+                    {` · sent to ${campaign.sentCount.toLocaleString()} of ${campaign.audienceCount.toLocaleString()}`}
+                  </span>
+                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reuse(campaign.id)}
+                  disabled={reusingId !== null}
+                >
+                  {reusingId === campaign.id ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <PlusIcon data-icon="inline-start" />
+                  )}
+                  Reuse
+                </Button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      )}
+    </DataState>
   );
 }
 
 function TemplateCard({
   template,
   onOpen,
+  onStartCampaign,
+  starting,
+  busy,
 }: {
   template: PrebuiltTemplate;
   onOpen: () => void;
+  onStartCampaign: () => void;
+  starting: boolean;
+  busy: boolean;
 }) {
   return (
     <div
@@ -460,22 +528,22 @@ function TemplateCard({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => {
-        if (event.key === "Enter") onOpen();
+        // Only the tile itself: Enter on a button inside it is that button's.
+        if (event.key === "Enter" && event.target === event.currentTarget) {
+          onOpen();
+        }
       }}
       className="group cursor-pointer"
     >
       <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/40 transition-colors duration-300 group-hover:border-muted-foreground/40">
         <TemplateThumb template={template} />
-        {/* Hover Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
-          <Button size="sm" onClick={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }} className="shadow-lg transform translate-y-2 transition-transform duration-300 group-hover:translate-y-0">
-            <PlusIcon data-icon="inline-start" />
-            Use template
-          </Button>
-        </div>
+        <CardActions
+          starting={starting}
+          busy={busy}
+          onStartCampaign={onStartCampaign}
+          onSecondary={onOpen}
+          secondaryLabel="Customize"
+        />
       </div>
       <div className="mt-2.5 flex items-start justify-between gap-2 px-1">
         <div className="min-w-0">
@@ -553,35 +621,45 @@ function SavedTemplateCard({
   template,
   onOpen,
   onDelete,
+  deleting,
   onShare,
   shareCopied,
+  onStartCampaign,
+  starting,
+  busy,
 }: {
   template: SavedTemplate;
   onOpen: () => void;
   onDelete: () => void;
+  deleting: boolean;
   onShare: () => void;
   shareCopied: boolean;
+  onStartCampaign: () => void;
+  starting: boolean;
+  busy: boolean;
 }) {
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.target === event.currentTarget) {
+          onOpen();
+        }
+      }}
       className="group cursor-pointer"
     >
       <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/40 transition-colors duration-300 group-hover:border-muted-foreground/40">
         <SavedTemplateThumb template={template} />
 
-        {/* Hover Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 backdrop-blur-[2px] transition-all duration-300 group-hover:opacity-100">
-          <Button size="sm" onClick={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }} className="shadow-lg transform translate-y-2 transition-transform duration-300 group-hover:translate-y-0">
-            <Edit2Icon className="size-3.5" data-icon="inline-start" />
-            Edit template
-          </Button>
-        </div>
+        <CardActions
+          starting={starting}
+          busy={busy}
+          onStartCampaign={onStartCampaign}
+          onSecondary={onOpen}
+          secondaryLabel="Edit template"
+        />
       </div>
       <div className="mt-2.5 flex items-start justify-between gap-2 px-1">
         <div className="min-w-0">
@@ -603,6 +681,7 @@ function SavedTemplateCard({
             size="icon-sm"
             className="size-7 p-0 text-muted-foreground hover:text-foreground"
             title="Copy share link"
+            aria-label={`Copy share link for ${template.name}`}
             onClick={(e) => {
               e.stopPropagation();
               onShare();
@@ -614,12 +693,19 @@ function SavedTemplateCard({
             variant="ghost"
             size="icon-sm"
             className="hover:bg-destructive/10 hover:text-destructive size-7 p-0 text-muted-foreground"
+            title="Delete template"
+            aria-label={`Delete ${template.name}`}
+            disabled={deleting}
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
           >
-            <Trash2Icon className="size-3.5" />
+            {deleting ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <Trash2Icon className="size-3.5" />
+            )}
           </Button>
         </div>
       </div>
@@ -628,57 +714,130 @@ function SavedTemplateCard({
 }
 
 function SavedTab({
-  loading,
-  templates,
+  state,
   onDelete,
+  deletingId,
   onShare,
   copiedShareId,
   onEditTemplate,
+  onStartCampaign,
+  startingTemplateId,
 }: {
-  loading: boolean;
-  templates: SavedTemplate[];
+  state: AsyncData<SavedTemplate[]>;
   onDelete: (id: string) => void;
+  deletingId: string | null;
   onShare: (id: string) => void;
   copiedShareId: string | null;
   onEditTemplate: (id: string) => void;
+  onStartCampaign: (template: SavedTemplate) => void;
+  startingTemplateId: string | null;
 }) {
   return (
     <div className="flex flex-col gap-6 w-full py-2">
-      {loading ? (
-        <PageLoader className="min-h-0 py-12" label="Loading templates..." />
-      ) : templates.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {templates.map((template) => (
-            <SavedTemplateCard
-              key={template.id}
-              template={template}
-              onOpen={() => onEditTemplate(template.id)}
-              onDelete={() => onDelete(template.id)}
-              onShare={() => onShare(template.id)}
-              shareCopied={copiedShareId === template.id}
-            />
-          ))}
-        </div>
-      ) : (
-        <Card className="border-dashed border-2">
-          <CardContent className="p-0">
-            <Empty className="border-0 py-12">
-              <EmptyHeader>
-                <EmptyMedia>
-                  <IconStack aria-hidden="true" className="h-24 w-22">
-                    <MailIcon className="size-5" />
-                  </IconStack>
-                </EmptyMedia>
-                <EmptyTitle>No saved templates</EmptyTitle>
-                <EmptyDescription>
-                  Create a custom template in the editor, and click &quot;Save
-                  as template&quot; to see it here!
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          </CardContent>
-        </Card>
+      <DataState
+        state={state}
+        loadingLabel="Loading templates..."
+        errorTitle="Couldn't load your saved templates"
+        isEmpty={(templates) => templates.length === 0}
+        empty={
+          <Card className="border-dashed border-2">
+            <CardContent className="p-0">
+              <Empty className="border-0 py-12">
+                <EmptyHeader>
+                  <EmptyMedia>
+                    <IconStack aria-hidden="true" className="h-24 w-22">
+                      <MailIcon className="size-5" />
+                    </IconStack>
+                  </EmptyMedia>
+                  <EmptyTitle>No saved templates</EmptyTitle>
+                  <EmptyDescription>
+                    Create a custom template in the editor, and click &quot;Save
+                    as template&quot; to see it here!
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </CardContent>
+          </Card>
+        }
+      >
+        {(templates) => (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {templates.map((template) => (
+              <SavedTemplateCard
+                key={template.id}
+                template={template}
+                onOpen={() => onEditTemplate(template.id)}
+                onDelete={() => onDelete(template.id)}
+                deleting={deletingId === template.id}
+                onShare={() => onShare(template.id)}
+                shareCopied={copiedShareId === template.id}
+                onStartCampaign={() => onStartCampaign(template)}
+                starting={startingTemplateId === template.id}
+                busy={startingTemplateId !== null}
+              />
+            ))}
+          </div>
+        )}
+      </DataState>
+    </div>
+  );
+}
+
+/**
+ * The overlay on a template tile. The main action starts a campaign from the
+ * template, because that lands on a page that can test and send; the second
+ * opens it in the template editor. It shows on hover, while the tile holds
+ * keyboard focus, and always on touch screens, which have no hover.
+ */
+function CardActions({
+  starting,
+  busy,
+  onStartCampaign,
+  onSecondary,
+  secondaryLabel,
+}: {
+  starting: boolean;
+  busy: boolean;
+  onStartCampaign: () => void;
+  onSecondary: () => void;
+  secondaryLabel: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/60 opacity-0 backdrop-blur-[2px] transition-opacity duration-300 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+        starting && "opacity-100",
       )}
+    >
+      <Button
+        size="sm"
+        disabled={busy}
+        onClick={(event) => {
+          event.stopPropagation();
+          onStartCampaign();
+        }}
+        className="shadow-lg"
+      >
+        {starting ? (
+          <Spinner data-icon="inline-start" />
+        ) : (
+          <SendIcon data-icon="inline-start" />
+        )}
+        {starting ? "Creating campaign…" : "Use in campaign"}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSecondary();
+        }}
+        className="shadow-lg"
+      >
+        <Edit2Icon data-icon="inline-start" />
+        {secondaryLabel}
+      </Button>
     </div>
   );
 }
