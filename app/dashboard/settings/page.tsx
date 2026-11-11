@@ -21,7 +21,15 @@ import { GOOGLE_AUTH_ENABLED } from "@/lib/auth";
 import { limitsFor } from "@/lib/plans/limits";
 import { SettingsShell } from "@/components/settings/settings-shell";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ section?: string | string[] }>;
+}) {
+  // Settings → Domains was a second copy of /dashboard/domains. Old links
+  // land on the one that remains.
+  if ((await searchParams).section === "domains") redirect("/dashboard/domains");
+
   const userId = await currentUserId();
   if (!userId) redirect("/login");
 

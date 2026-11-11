@@ -6,7 +6,6 @@ import {
   BellIcon,
   BuildingIcon,
   CreditCardIcon,
-  GlobeIcon,
   KeyRoundIcon,
   MailIcon,
   PaletteIcon,
@@ -21,7 +20,6 @@ import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
-import { DomainsPanel } from "@/components/settings/domains-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
 import { SecurityPanel } from "@/components/settings/security-panel";
@@ -42,7 +40,6 @@ const SETTINGS_NAV: SettingsSection[] = [
   { id: "account", label: "Account", icon: UserIcon },
   { id: "organization", label: "Organization", icon: BuildingIcon },
   { id: "sending", label: "Sending", icon: MailIcon },
-  { id: "domains", label: "Domains", icon: GlobeIcon },
   { id: "notifications", label: "Notifications", icon: BellIcon },
   { id: "appearance", label: "Appearance", icon: PaletteIcon },
   { id: "security", label: "Security", icon: ShieldIcon },
@@ -64,7 +61,6 @@ const SECTIONS_WITH_PANELS = new Set([
   "account",
   "organization",
   "sending",
-  "domains",
   "notifications",
   "appearance",
   "security",
@@ -152,6 +148,12 @@ export function SettingsShell({
   const canManage = organization.role === "owner" || organization.role === "admin";
 
   function selectSection(id: string) {
+    // Domains live at /dashboard/domains (one implementation, reachable from
+    // the icon rail). Panels that point at "domains" go there.
+    if (id === "domains") {
+      router.push("/dashboard/domains");
+      return;
+    }
     setActiveSection(id);
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", id);
@@ -275,7 +277,6 @@ export function SettingsShell({
               onNavigate={selectSection}
             />
           )}
-          {activeSection === "domains" && <DomainsPanel canManage={canManage} />}
           {activeSection === "notifications" && (
             <NotificationsPanel userEmail={profile.email} />
           )}
