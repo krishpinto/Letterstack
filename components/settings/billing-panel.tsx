@@ -30,11 +30,14 @@ function UsageRow({
   label,
   used,
   limit,
+  hint,
 }: {
   icon: React.ElementType;
   label: string;
   used: number;
   limit: number;
+  /** A short line under the meter, e.g. when the allowance resets. */
+  hint?: string;
 }) {
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const near = pct >= 90;
@@ -52,6 +55,7 @@ function UsageRow({
         </span>
       </div>
       <Progress value={pct} className="h-1.5" />
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
@@ -330,7 +334,17 @@ export function BillingPanel({
           </Link>
         </div>
         <UsageRow icon={UsersIcon} label="Contacts" used={contacts.used} limit={contacts.limit} />
-        <UsageRow icon={MailIcon} label="Emails this month" used={sends.used} limit={sends.limit} />
+        {/* The counter rolls over with the UTC calendar month (see
+            tryReserveSendQuota), which is 05:30 on the 1st in India. Stated
+            rather than implied, so a send refused late on the 31st isn't a
+            mystery. */}
+        <UsageRow
+          icon={MailIcon}
+          label="Emails this month"
+          used={sends.used}
+          limit={sends.limit}
+          hint="Resets on the 1st of each month at 5:30 AM IST."
+        />
         <UsageRow icon={GlobeIcon} label="Sending domains" used={domains.used} limit={domains.limit} />
       </div>
 
