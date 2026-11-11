@@ -179,6 +179,8 @@ export function EditorShell({
   onExit,
   onSaveAsTemplate,
   mode = "campaign",
+  readOnly = false,
+  banner,
   renderAssistant,
 }: {
   initialDocument?: EmailDocument
@@ -197,6 +199,14 @@ export function EditorShell({
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
+  /**
+   * Show the document without allowing edits: opens on the preview, hides
+   * the canvas, Save and undo, and ignores every change. Used for campaigns
+   * that were sent, whose design is the record of what went out.
+   */
+  readOnly?: boolean
+  /** Shown under the header, e.g. why the document is read-only. */
+  banner?: React.ReactNode
   /**
    * Optional assistant, rendered as a tab in the left sidebar beside the block
    * library. A render prop rather than a built-in so /studio can host the agent
@@ -219,7 +229,7 @@ export function EditorShell({
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
   const [dockFlash, setDockFlash] = React.useState<DockFlash>(null)
-  const [view, setView] = React.useState<EditorView>("editor")
+  const [view, setView] = React.useState<EditorView>(readOnly ? "preview" : "editor")
   const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
   const saveStatusTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -308,8 +318,15 @@ export function EditorShell({
     })
   )
 
+  // Read through a ref so the edit callbacks below stay stable.
+  const readOnlyRef = React.useRef(readOnly)
+  React.useEffect(() => {
+    readOnlyRef.current = readOnly
+  }, [readOnly])
+
   const updateDocument = React.useCallback(
     (updater: (current: EmailDocument) => EmailDocument) => {
+      if (readOnlyRef.current) return
       const current = documentRef.current
       const next = updater(current)
       if (next === current) return
@@ -331,6 +348,7 @@ export function EditorShell({
   )
 
   const undo = React.useCallback(() => {
+    if (readOnlyRef.current) return
     const history = historyRef.current
     const previous = history.past[history.past.length - 1]
     if (!previous) return
@@ -344,6 +362,7 @@ export function EditorShell({
   }, [saveQueue])
 
   const redo = React.useCallback(() => {
+    if (readOnlyRef.current) return
     const history = historyRef.current
     const next = history.future[history.future.length - 1]
     if (!next) return
@@ -731,6 +750,7 @@ export function EditorShell({
           flash={dockFlash}
           onRetry={saveNow}
           onReload={() => window.location.reload()}
+          readOnly={readOnly}
           mode={mode}
           onSaveAndExit={() => void leaveEditor()}
           onSaveAsTemplate={() => {
@@ -749,7 +769,8 @@ export function EditorShell({
             setView("preview")
           }}
         />
-        
+        {banner}
+
         <div className="flex-1 min-h-0 flex relative">
           <DndContext
             id="editor-dnd"
@@ -968,6 +989,7 @@ function EditorHeader({
   flash,
   onRetry,
   onReload,
+  readOnly,
   mode,
   onSaveAndExit,
   onSaveAsTemplate,
@@ -990,6 +1012,7 @@ function EditorHeader({
   flash: DockFlash
   onRetry: () => void
   onReload: () => void
+  readOnly: boolean
   mode: "campaign" | "template-creator" | "template-editor"
   onSaveAndExit: () => void
   onSaveAsTemplate: () => void
@@ -1000,11 +1023,13 @@ function EditorHeader({
   viewport: PreviewViewport
   onViewportChange: (viewport: PreviewViewport) => void
 }) {
-  const views = [
+  const allViews = [
     { id: "editor", label: "Editor", icon: PencilIcon },
     { id: "html", label: "HTML", icon: CodeIcon },
     { id: "preview", label: "Preview", icon: EyeIcon },
   ] as const
+  // A read-only document has nothing to edit, so the canvas view is hidden.
+  const views = readOnly ? allViews.filter((v) => v.id !== "editor") : allViews
   return (
     <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
       {/* Left: Back chevron + Title */}
@@ -1018,7 +1043,13 @@ function EditorHeader({
         >
           <ChevronLeftIcon className="size-4" />
         </button>
-        <HeaderTitle name={documentName} onRename={onRename} />
+        {readOnly ? (
+          <span className="px-1.5 py-0.5 text-sm font-semibold tracking-tight text-foreground">
+            {documentName || "Untitled Email"}
+          </span>
+        ) : (
+          <HeaderTitle name={documentName} onRename={onRename} />
+        )}
       </div>
 
       {/* Center: Switcher (Editor / HTML / Preview) */}
@@ -1051,6 +1082,7 @@ function EditorHeader({
         />
 
         {/* Undo/Redo Buttons */}
+        {!readOnly && (
         <div className="flex items-center gap-1">
           <button
             onClick={onUndo}
@@ -1073,6 +1105,7 @@ function EditorHeader({
             <Redo2Icon className="size-3.5" />
           </button>
         </div>
+        )}
 
         {/* Vertical Divider */}
         <div className="h-4 w-px bg-border" />
@@ -1115,7 +1148,7 @@ function EditorHeader({
         {/* Action Buttons. In template-creator mode the only real persist
             path is "save as template", so that takes the primary slot. */}
         <div className="flex items-center gap-1">
-          {mode === "template-creator" ? (
+          {readOnly ? null : mode === "template-creator" ? (
             <Button
               onClick={onSaveAsTemplate}
               variant="default"
@@ -1150,11 +1183,13 @@ function EditorHeader({
                 <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
                 Copy JSON
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onPasteJson}>
-                <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
-                Paste JSON
-              </DropdownMenuItem>
-              {mode !== "template-creator" && (
+              {!readOnly && (
+                <DropdownMenuItem onClick={onPasteJson}>
+                  <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
+                  Paste JSON
+                </DropdownMenuItem>
+              )}
+              {mode !== "template-creator" && !readOnly && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onSaveAndExit}>

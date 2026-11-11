@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { initialEmailDocument, type EmailDocument } from "@/lib/email/document";
+import { isCampaignEditable } from "@/lib/editor/campaign-editable";
 import {
   changedCampaignFields,
   pickCampaignFields,
@@ -121,6 +123,21 @@ export default function CampaignEditorPage() {
     );
   }
 
+  // A campaign that has started sending is the record of what went out, and
+  // the PATCH refuses it. It used to open fully editable anyway, so every
+  // edit autosaved into a request that failed. Open it read-only instead,
+  // with the way forward.
+  if (!isCampaignEditable(campaign.status)) {
+    return (
+      <EditorShell
+        initialDocument={initialDoc}
+        readOnly
+        banner={<SentCampaignBanner campaignId={campaign.id} status={campaign.status} />}
+        onExit={handleExit}
+      />
+    );
+  }
+
   return (
     <EditorShell
       initialDocument={initialDoc}
@@ -128,5 +145,52 @@ export default function CampaignEditorPage() {
       onSaveOnUnload={handleSaveOnUnload}
       onExit={handleExit}
     />
+  );
+}
+
+// Uses the campaign page's "Reuse campaign" action (POST /reuse), which
+// copies the design, subject, sender and audience into a new draft.
+function SentCampaignBanner({ campaignId, status }: { campaignId: string; status: string }) {
+  const router = useRouter();
+  const [duplicating, setDuplicating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function duplicate() {
+    setDuplicating(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/campaigns/${campaignId}/reuse`, { method: "POST" });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok || typeof data.id !== "string") {
+        setError(data?.error || "Could not duplicate this campaign.");
+        setDuplicating(false);
+        return;
+      }
+      router.push(`/editor/${data.id}`);
+    } catch {
+      setError("Could not reach the server.");
+      setDuplicating(false);
+    }
+  }
+
+  const message =
+    status === "sending"
+      ? "This campaign is being sent, so its design can no longer change. Duplicate it to make changes."
+      : status === "failed"
+        ? "This campaign's send failed, so its design is kept as it went out. Duplicate it to make changes."
+        : "This campaign was sent — duplicate it to make changes.";
+
+  return (
+    <div
+      role="status"
+      className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-y border-border bg-muted/60 px-4 py-2 text-sm"
+    >
+      <span className="text-muted-foreground">{message}</span>
+      <Button size="sm" variant="outline" className="h-7" onClick={duplicate} disabled={duplicating}>
+        {duplicating ? <Spinner data-icon="inline-start" /> : null}
+        {duplicating ? "Duplicating…" : "Duplicate campaign"}
+      </Button>
+      {error ? <span className="text-destructive">{error}</span> : null}
+    </div>
   );
 }
