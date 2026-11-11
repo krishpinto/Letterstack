@@ -12,6 +12,7 @@ import {
 } from "@/db/campaigns";
 import { countRecipientsForCampaign } from "@/db/campaign-recipients";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "@/lib/send/qstash";
+import { assertCampaignCanSend, SendRefusedError } from "@/lib/send/dispatch-campaign";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -59,6 +60,17 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
         { ok: false, error: "Campaign has already been sent" },
         { status: 400 },
       );
+    }
+    // Refuse now, while someone is looking, a schedule that would only fail
+    // when it fires: an unverified From address, a Gmail account that needs
+    // reconnecting or belongs to another member.
+    try {
+      await assertCampaignCanSend(campaign, userId);
+    } catch (err) {
+      if (err instanceof SendRefusedError) {
+        return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+      }
+      throw err;
     }
     if ((await countRecipientsForCampaign(id)) === 0) {
       return NextResponse.json(

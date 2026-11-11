@@ -24,12 +24,14 @@ import {
   releaseMailboxQuota,
   tryReserveMailboxQuota,
 } from "@/db/connected-mailboxes";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { notifyAdminsOfCampaignSend } from "@/lib/admin-notify";
 import { notifyCampaignFailed } from "@/lib/notifications/campaign-notifications";
 import { publishSesBatches, type FrozenContent, type QueueResult } from "./send-campaign";
 import { publishGmailRun } from "./gmail-campaign";
 import { settleCampaign } from "./qstash-worker";
 import { RESUME_COOLDOWN_MS } from "./send-policy";
+import { isAllowedFromEmail } from "./sender-identity";
 
 /**
  * A send the user has to fix before it can go: no recipients, not enough
@@ -93,7 +95,19 @@ async function reserveOrgQuota(organizationId: string, count: number) {
   throw new SendRefusedError(overQuotaMessage(count, usage.used, usage.limit));
 }
 
-function sesChannel(campaign: Campaign): Channel {
+async function sesChannel(campaign: Campaign): Promise<Channel> {
+  // The From address has to be one SES will send for: the shared address
+  // or one on this org's verified domains. A Gmail address here (a reused
+  // Gmail campaign that lost its sender type) would be rejected by SES for
+  // every recipient, one quota unit at a time, so refuse before reserving.
+  const verifiedDomains = await listVerifiedSendingDomains(campaign.organizationId);
+  if (!isAllowedFromEmail(campaign.fromEmail, verifiedDomains)) {
+    throw new SendRefusedError(
+      `This campaign sends from ${campaign.fromEmail}, which isn't a verified sender for this workspace. ` +
+        `Choose a sender on the campaign, then send again.`,
+    );
+  }
+
   const content: FrozenContent = {
     subject: campaign.subject,
     html: campaign.htmlSnapshot,
@@ -116,7 +130,7 @@ function sesChannel(campaign: Campaign): Channel {
   };
 }
 
-async function gmailChannel(campaign: Campaign): Promise<Channel> {
+async function gmailChannel(campaign: Campaign, actingUserId?: string): Promise<Channel> {
   if (!campaign.mailboxId) {
     throw new SendRefusedError("This campaign isn't set to send through a connected Gmail account");
   }
@@ -129,6 +143,20 @@ async function gmailChannel(campaign: Campaign): Promise<Channel> {
       mailbox.status === "revoked"
         ? "This Gmail account is no longer connected. Reconnect it or choose a different sender."
         : "This Gmail account needs to be reconnected before it can send.",
+    );
+  }
+  // A connected mailbox belongs to the member who connected it (the
+  // campaign create and edit routes only offer a member their own), unlike
+  // a verified domain, which is org-wide. Checked here too, at the moment
+  // of sending, because the editor only checks when the From address
+  // changes: a teammate opening someone else's Gmail campaign could
+  // otherwise send through that person's account. The schedule route makes
+  // the same check when the schedule is set; the scheduled dispatch itself
+  // has no acting user.
+  if (actingUserId && mailbox.userId !== actingUserId) {
+    throw new SendRefusedError(
+      `This campaign sends through ${mailbox.email}, which another member connected. ` +
+        `Only they can send it. Choose a different sender to send it yourself.`,
     );
   }
 
@@ -180,8 +208,25 @@ async function gmailChannel(campaign: Campaign): Promise<Channel> {
   };
 }
 
-function channelFor(campaign: Campaign): Promise<Channel> | Channel {
-  return campaign.senderType === "mailbox" ? gmailChannel(campaign) : sesChannel(campaign);
+/**
+ * The channel a campaign sends through, after checking it can: throws
+ * SendRefusedError if the sender is unusable or not the acting user's to
+ * use. `actingUserId` is the member who pressed Send, Resume or Schedule;
+ * unset for QStash-driven steps, which have no user.
+ */
+function channelFor(campaign: Campaign, actingUserId?: string): Promise<Channel> {
+  return campaign.senderType === "mailbox"
+    ? gmailChannel(campaign, actingUserId)
+    : sesChannel(campaign);
+}
+
+/**
+ * Check, without reserving or queueing anything, that this member could
+ * send this campaign as it is set up now. For the schedule route, so a
+ * schedule that is bound to fail says so when it is set, not when it fires.
+ */
+export async function assertCampaignCanSend(campaign: Campaign, actingUserId: string) {
+  await channelFor(campaign, actingUserId);
 }
 
 /** The key that names a dispatch round in QStash deduplication ids. */
@@ -205,6 +250,7 @@ function dispatchKeyOf(dispatchedAt: Date): string {
 export async function dispatchCampaign(
   campaignId: string,
   trigger: DispatchTrigger,
+  actingUserId?: string,
 ): Promise<DispatchResult> {
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
@@ -216,7 +262,7 @@ export async function dispatchCampaign(
   const from = trigger === "schedule" ? ["scheduled"] : ["draft", "scheduled", "failed"];
   if (!from.includes(campaign.status)) return { outcome: "already_sending" };
 
-  const channel = await channelFor(campaign);
+  const channel = await channelFor(campaign, actingUserId);
 
   const { allowed, suppressed } = await readSendableAudience(campaignId, campaign.organizationId);
   if (allowed.length === 0) {
@@ -289,7 +335,10 @@ export type ResumeResult =
  *     first claims each row and the other skips it.
  *   - Two Resumes in a row start one round, not two (claimDispatchRound).
  */
-export async function resumeCampaign(campaignId: string): Promise<ResumeResult> {
+export async function resumeCampaign(
+  campaignId: string,
+  actingUserId?: string,
+): Promise<ResumeResult> {
   const campaign = await getCampaign(campaignId);
   if (!campaign || campaign.status !== "sending") return { outcome: "not_sending" };
 
@@ -301,7 +350,7 @@ export async function resumeCampaign(campaignId: string): Promise<ResumeResult> 
 
   // Validate the sender before starting a round: a Gmail account that still
   // needs reconnecting should say so, not queue a run that halts at once.
-  const channel = await channelFor(campaign);
+  const channel = await channelFor(campaign, actingUserId);
 
   const dispatchedAt = await claimDispatchRound(campaignId, RESUME_COOLDOWN_MS);
   if (!dispatchedAt) return { outcome: "too_soon" };

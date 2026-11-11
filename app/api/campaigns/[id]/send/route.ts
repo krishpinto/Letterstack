@@ -35,7 +35,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     }
 
     if (campaign.status === "sending") {
-      const result = await resumeCampaign(id);
+      const result = await resumeCampaign(id, userId);
       switch (result.outcome) {
         case "resumed":
           return NextResponse.json({ ok: true, id, ...result });
@@ -74,7 +74,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
       );
     }
 
-    const result = await dispatchCampaign(id, "now");
+    const result = await dispatchCampaign(id, "now", userId);
     if (result.outcome === "already_sending") {
       return NextResponse.json(
         { ok: false, error: "This campaign is already sending" },

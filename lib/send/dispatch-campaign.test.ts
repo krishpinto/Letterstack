@@ -30,6 +30,7 @@ vi.mock("@/db/connected-mailboxes", () => ({
   tryReserveMailboxQuota: vi.fn(),
 }));
 vi.mock("@/lib/admin-notify", () => ({ notifyAdminsOfCampaignSend: vi.fn() }));
+vi.mock("@/db/sending-domains", () => ({ listVerifiedSendingDomains: vi.fn() }));
 vi.mock("@/lib/notifications/campaign-notifications", () => ({ notifyCampaignFailed: vi.fn() }));
 vi.mock("./send-campaign", () => ({ publishSesBatches: vi.fn() }));
 vi.mock("./gmail-campaign", () => ({ publishGmailRun: vi.fn() }));
@@ -52,7 +53,13 @@ import { getSendUsage, releaseSendQuota, tryReserveSendQuota } from "@/db/organi
 import { publishSesBatches } from "./send-campaign";
 import { settleCampaign } from "./qstash-worker";
 import { notifyCampaignFailed } from "@/lib/notifications/campaign-notifications";
-import { releaseMailboxQuota } from "@/db/connected-mailboxes";
+import {
+  getMailbox,
+  releaseMailboxQuota,
+  tryReserveMailboxQuota,
+} from "@/db/connected-mailboxes";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
+import { publishGmailRun } from "./gmail-campaign";
 import {
   dispatchCampaign,
   ensureCampaignQueued,
@@ -105,6 +112,7 @@ beforeEach(() => {
   vi.mocked(claimCampaignForSending).mockResolvedValue(dispatchedAt);
   vi.mocked(publishSesBatches).mockResolvedValue({ queued: 1, total: 1 });
   vi.mocked(settleCampaign).mockResolvedValue({ inFlight: 0 });
+  vi.mocked(listVerifiedSendingDomains).mockResolvedValue(["acme.test"]);
 });
 
 describe("dispatchCampaign", () => {
@@ -301,5 +309,54 @@ describe("failCampaign", () => {
 
     expect(result.outcome).toBe("started");
     expect(claimCampaignForSending).toHaveBeenCalledWith("c1", ["draft", "scheduled", "failed"]);
+  });
+});
+
+describe("sender checks", () => {
+  const gmailCampaign = { ...campaign, senderType: "mailbox", mailboxId: "m1", fromEmail: "me@gmail.test" };
+  const mailbox = {
+    id: "m1",
+    organizationId: "org1",
+    userId: "u1",
+    email: "me@gmail.test",
+    status: "active",
+  };
+
+  beforeEach(() => {
+    vi.mocked(getMailbox).mockResolvedValue(mailbox as never);
+    vi.mocked(tryReserveMailboxQuota).mockResolvedValue(true);
+    vi.mocked(publishGmailRun).mockResolvedValue({ queued: 1, total: 1 });
+  });
+
+  it("refuses an SES send from an address that is not a verified sender, before reserving", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({ ...campaign, fromEmail: "me@gmail.test" } as never);
+
+    await expect(dispatchCampaign("c1", "now", "u1")).rejects.toThrow("isn't a verified sender");
+    expect(tryReserveSendQuota).not.toHaveBeenCalled();
+  });
+
+  it("lets the member who connected the mailbox send through it", async () => {
+    vi.mocked(getCampaign).mockResolvedValue(gmailCampaign as never);
+
+    const result = await dispatchCampaign("c1", "now", "u1");
+
+    expect(result.outcome).toBe("started");
+    expect(publishGmailRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses another member's mailbox, before reserving", async () => {
+    vi.mocked(getCampaign).mockResolvedValue(gmailCampaign as never);
+
+    await expect(dispatchCampaign("c1", "now", "u2")).rejects.toThrow("another member connected");
+    expect(tryReserveMailboxQuota).not.toHaveBeenCalled();
+    expect(claimCampaignForSending).not.toHaveBeenCalled();
+  });
+
+  it("refuses another member's mailbox on Resume too", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({ ...gmailCampaign, status: "sending" } as never);
+    vi.mocked(recipientStatusCounts).mockResolvedValue(counts({ pending: 3 }));
+
+    await expect(resumeCampaign("c1", "u2")).rejects.toBeInstanceOf(SendRefusedError);
+    expect(claimDispatchRound).not.toHaveBeenCalled();
   });
 });
