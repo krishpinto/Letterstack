@@ -204,7 +204,12 @@ export async function claimCampaignForSending(
 ): Promise<Date | null> {
   const [row] = await db
     .update(campaigns)
-    .set({ status: "sending", sentAt: new Date(), lastDispatchedAt: sql`now()` })
+    .set({
+      status: "sending",
+      sentAt: new Date(),
+      lastDispatchedAt: sql`now()`,
+      failureReason: null,
+    })
     .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
     .returning({ dispatchedAt: campaigns.lastDispatchedAt });
   return row?.dispatchedAt ?? null;
@@ -263,6 +268,24 @@ export async function markCampaignSent(id: string): Promise<boolean> {
     .update(campaigns)
     .set({ status: "sent" })
     .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")))
+    .returning({ id: campaigns.id });
+  return rows.length > 0;
+}
+
+/**
+ * Mark a campaign failed, with a reason its owner can act on, if it is still
+ * in one of `from`. Returns whether THIS call made the move, so the failure
+ * notification goes out once even when QStash delivers twice.
+ */
+export async function markCampaignFailed(
+  id: string,
+  reason: string,
+  from: readonly string[],
+): Promise<boolean> {
+  const rows = await db
+    .update(campaigns)
+    .set({ status: "failed", failureReason: reason })
+    .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
     .returning({ id: campaigns.id });
   return rows.length > 0;
 }

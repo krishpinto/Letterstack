@@ -36,12 +36,20 @@ export type RecipientCounts = {
 
 /**
  * Whether a campaign is finished, and how. Nothing pending and nothing in
- * flight means no worker will ever touch it again.
+ * flight means no worker will ever touch it again. A finished campaign that
+ * reached nobody is "failed", so its owner hears that it did not go out
+ * rather than a cheerful "sent to 0 recipients".
  */
-export function decideCampaignOutcome(counts: RecipientCounts): "in_progress" | "sent" {
+export function decideCampaignOutcome(
+  counts: RecipientCounts,
+): "in_progress" | "sent" | "failed" {
   if (counts.pending > 0 || counts.sending > 0) return "in_progress";
+  if (counts.sent === 0 && counts.failed > 0) return "failed";
   return "sent";
 }
+
+export const ALL_RECIPIENTS_FAILED =
+  "No recipient could be sent to. The campaign report lists each address and why.";
 
 /** One recipient row, as the batch planner needs it. */
 export type RecipientState = { id: string; status: string };

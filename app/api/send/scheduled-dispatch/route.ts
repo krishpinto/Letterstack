@@ -8,7 +8,12 @@
 import { NextResponse } from "next/server";
 import { Receiver } from "@upstash/qstash";
 import { getCampaign } from "@/db/campaigns";
-import { dispatchCampaign, ensureCampaignQueued } from "@/lib/send/dispatch-campaign";
+import {
+  dispatchCampaign,
+  ensureCampaignQueued,
+  failCampaign,
+  SendRefusedError,
+} from "@/lib/send/dispatch-campaign";
 import {
   appBaseUrl,
   publishQstashJSON,
@@ -87,7 +92,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, hopped: true });
     }
 
-    const result = await dispatchCampaign(campaignId, "schedule");
+    let result;
+    try {
+      result = await dispatchCampaign(campaignId, "schedule");
+    } catch (err) {
+      // Over quota, no one to send to, an unusable sender: retrying will not
+      // change any of these, and nobody is watching to fix them. Record the
+      // failure on the campaign, tell the owner, and answer 2xx so QStash
+      // stops. Anything else (a database blip) still answers 500 and is
+      // retried.
+      if (err instanceof SendRefusedError) {
+        await failCampaign(campaignId, err.message, ["scheduled"]);
+        console.log(`scheduled-dispatch: campaign ${campaignId} failed - ${err.message}`);
+        return NextResponse.json({ ok: true, failed: err.message });
+      }
+      throw err;
+    }
     if (result.outcome === "already_sending") {
       // "Send now" claimed it between our read and our claim.
       return NextResponse.json({ ok: true, skipped: "already sending" });

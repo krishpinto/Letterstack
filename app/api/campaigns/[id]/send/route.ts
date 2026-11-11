@@ -64,8 +64,10 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     }
 
     // "scheduled" is sendable too — Send now overrides the schedule, and the
-    // delayed dispatch message loses the claim when it arrives.
-    if (campaign.status !== "draft" && campaign.status !== "scheduled") {
+    // delayed dispatch message loses the claim when it arrives. So is
+    // "failed": a send refused when its schedule fired can be retried once
+    // the cause is fixed, and only still-pending rows go out.
+    if (!["draft", "scheduled", "failed"].includes(campaign.status)) {
       return NextResponse.json(
         { ok: false, error: "Campaign has already been sent" },
         { status: 400 },

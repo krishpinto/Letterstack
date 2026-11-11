@@ -2,9 +2,11 @@ import {
   claimCampaignForSending,
   claimDispatchRound,
   getCampaign,
+  markCampaignFailed,
   revertCampaignClaim,
 } from "@/db/campaigns";
 import {
+  failAllPendingForCampaign,
   failPendingRecipients,
   listRecipientStates,
   readSendableAudience,
@@ -23,6 +25,7 @@ import {
   tryReserveMailboxQuota,
 } from "@/db/connected-mailboxes";
 import { notifyAdminsOfCampaignSend } from "@/lib/admin-notify";
+import { notifyCampaignFailed } from "@/lib/notifications/campaign-notifications";
 import { publishSesBatches, type FrozenContent, type QueueResult } from "./send-campaign";
 import { publishGmailRun } from "./gmail-campaign";
 import { settleCampaign } from "./qstash-worker";
@@ -206,7 +209,11 @@ export async function dispatchCampaign(
   const campaign = await getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
 
-  const from = trigger === "schedule" ? ["scheduled"] : ["draft", "scheduled"];
+  // "failed" is startable by hand: a scheduled send refused at fire time
+  // (over quota, say) keeps its pending rows, and once the owner has fixed
+  // the cause, Send now should just work. Only pending rows are sent, so a
+  // campaign whose recipients all failed has nothing to resend.
+  const from = trigger === "schedule" ? ["scheduled"] : ["draft", "scheduled", "failed"];
   if (!from.includes(campaign.status)) return { outcome: "already_sending" };
 
   const channel = await channelFor(campaign);
@@ -319,8 +326,52 @@ export async function ensureCampaignQueued(campaignId: string): Promise<QueueRes
   if (!campaign || campaign.status !== "sending" || !campaign.lastDispatchedAt) {
     return { queued: 0, total: 0 };
   }
-  const channel = await channelFor(campaign);
+  let channel: Channel;
+  try {
+    channel = await channelFor(campaign);
+  } catch (err) {
+    // The sender stopped being usable between the claim and this retry
+    // (the Gmail account was disconnected). Nothing will ever send the
+    // rest, so end the campaign instead of retrying forever.
+    if (err instanceof SendRefusedError) {
+      await failCampaign(campaignId, err.message, ["sending"]);
+      return { queued: 0, total: 0 };
+    }
+    throw err;
+  }
   const queued = await channel.queue(dispatchKeyOf(campaign.lastDispatchedAt));
   if (queued.queued < queued.total) throw new QueueIncompleteError(queued);
   return queued;
+}
+
+/**
+ * End a campaign as "failed" with a reason its owner can act on, and tell
+ * them. Returns whether this call made the transition; only that call
+ * notifies, so a QStash redelivery cannot mail twice.
+ *
+ * From "sending", rows no worker has claimed are failed with the same
+ * reason and their quota is handed back: they were reserved when the send
+ * started and will now never reach the provider. Rows a worker holds right
+ * now finish normally; no new row can be claimed once the campaign is not
+ * "sending".
+ */
+export async function failCampaign(
+  campaignId: string,
+  reason: string,
+  from: readonly string[],
+): Promise<boolean> {
+  const campaign = await getCampaign(campaignId);
+  if (!campaign) return false;
+  if (!(await markCampaignFailed(campaignId, reason, from))) return false;
+
+  if (campaign.status === "sending") {
+    const unsent = await failAllPendingForCampaign(campaignId, reason);
+    await releaseSendQuota(campaign.organizationId, unsent);
+    if (campaign.senderType === "mailbox" && campaign.mailboxId) {
+      await releaseMailboxQuota(campaign.mailboxId, unsent);
+    }
+  }
+
+  await notifyCampaignFailed(campaignId, reason);
+  return true;
 }

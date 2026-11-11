@@ -325,6 +325,7 @@ export const campaigns = pgTable("campaigns", {
   document: jsonb("document").$type<EmailDocument>(),
   htmlSnapshot: text("html_snapshot").notNull(),
   textSnapshot: text("text_snapshot").notNull(),
+  // draft | scheduled | sending | sent | failed
   status: text("status").notNull().default("draft"),
   // Where replies land. Optional — most sends use the recipient's normal
   // reply-to-sender behavior; set this to route replies to a real inbox
@@ -349,6 +350,10 @@ export const campaigns = pgTable("campaigns", {
   // is what stops Resume from queueing the same rows twice in a minute. See
   // claimDispatchRound in db/campaigns.ts.
   lastDispatchedAt: timestamp("last_dispatched_at"),
+  // Why the campaign ended in status "failed", in words for its owner: over
+  // quota or no recipients when the schedule fired, an unusable sender,
+  // every recipient failed. Cleared when it is claimed for sending again.
+  failureReason: text("failure_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),

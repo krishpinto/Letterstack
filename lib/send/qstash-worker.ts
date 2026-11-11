@@ -1,9 +1,12 @@
 import { Receiver } from "@upstash/qstash";
 import { failStaleClaims, recipientStatusCounts } from "@/db/campaign-recipients";
-import { markCampaignSent } from "@/db/campaigns";
-import { notifyCampaignFinished } from "@/lib/notifications/campaign-notifications";
+import { markCampaignFailed, markCampaignSent } from "@/db/campaigns";
+import {
+  notifyCampaignFailed,
+  notifyCampaignFinished,
+} from "@/lib/notifications/campaign-notifications";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
-import { CLAIM_TIMEOUT_MS, decideCampaignOutcome } from "./send-policy";
+import { ALL_RECIPIENTS_FAILED, CLAIM_TIMEOUT_MS, decideCampaignOutcome } from "./send-policy";
 
 /**
  * Shared by every QStash worker route (campaign-worker, gmail-campaign-worker,
@@ -33,9 +36,10 @@ export async function verifyQstashRequest(request: Request): Promise<string | nu
  *
  * First it settles claims whose worker is gone (see CLAIM_TIMEOUT_MS), so a
  * worker that died mid-send cannot hold the campaign in "sending" forever.
- * Then, once nothing is pending or in flight, it marks the campaign sent.
+ * Then, once nothing is pending or in flight, it marks the campaign sent —
+ * or failed, when not one recipient could be sent to.
  *
- * The notification hangs off markCampaignSent's return value rather than off
+ * The notification hangs off the guarded UPDATE's return value rather than off
  * the counts. At-least-once delivery means this runs more than once, and the
  * last few workers of a large campaign can all see the end together; only one
  * of them wins the guarded UPDATE, so only one of them mails.
@@ -47,9 +51,13 @@ export async function verifyQstashRequest(request: Request): Promise<string | nu
 export async function settleCampaign(campaignId: string): Promise<{ inFlight: number }> {
   await failStaleClaims(campaignId, CLAIM_TIMEOUT_MS);
   const counts = await recipientStatusCounts(campaignId);
-  if (decideCampaignOutcome(counts) === "sent") {
+  const outcome = decideCampaignOutcome(counts);
+  if (outcome === "sent") {
     const justFinished = await markCampaignSent(campaignId);
     if (justFinished) await notifyCampaignFinished(campaignId);
+  } else if (outcome === "failed") {
+    const justFailed = await markCampaignFailed(campaignId, ALL_RECIPIENTS_FAILED, ["sending"]);
+    if (justFailed) await notifyCampaignFailed(campaignId, ALL_RECIPIENTS_FAILED);
   }
   return { inFlight: counts.sending };
 }

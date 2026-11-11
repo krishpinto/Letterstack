@@ -9,3 +9,6 @@ alter table campaign_recipients add column if not exists claimed_at timestamp;
 -- When the campaign's current dispatch round (first send or latest Resume)
 -- started. Keys QStash deduplication ids and throttles Resume.
 alter table campaigns add column if not exists last_dispatched_at timestamp;
+
+-- Why a campaign ended in status 'failed', shown to its owner.
+alter table campaigns add column if not exists failure_reason text;

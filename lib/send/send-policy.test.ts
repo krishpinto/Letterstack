@@ -18,6 +18,11 @@ describe("decideCampaignOutcome", () => {
   it("closes a campaign once every recipient has an outcome", () => {
     expect(decideCampaignOutcome(counts({ sent: 5, failed: 1 }))).toBe("sent");
   });
+
+  it("calls a campaign that reached nobody failed", () => {
+    expect(decideCampaignOutcome(counts({ failed: 3 }))).toBe("failed");
+    expect(decideCampaignOutcome(counts({ sent: 1, failed: 3 }))).toBe("sent");
+  });
 });
 
 const rows = (spec: string): RecipientState[] =>

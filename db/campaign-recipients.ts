@@ -120,6 +120,22 @@ export async function failPendingRecipients(ids: string[], error: string): Promi
 }
 
 /**
+ * Fail every row of a campaign that no worker has claimed, when the
+ * campaign itself has failed and nothing will ever send them. Returns how
+ * many rows it failed, so the caller can release their quota.
+ */
+export async function failAllPendingForCampaign(campaignId: string, error: string): Promise<number> {
+  const rows = await db
+    .update(campaignRecipients)
+    .set({ status: "failed", sentAt: null, error })
+    .where(
+      and(eq(campaignRecipients.campaignId, campaignId), eq(campaignRecipients.status, "pending")),
+    )
+    .returning({ id: campaignRecipients.id });
+  return rows.length;
+}
+
+/**
  * Claim one recipient for sending: pending → sending, in one guarded UPDATE.
  * Returns the row only to the caller that made the move, so two workers
  * holding the same id (a QStash retry, a duplicate delivery, a Resume) can

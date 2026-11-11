@@ -7,9 +7,11 @@ vi.mock("@/db/campaigns", () => ({
   getCampaign: vi.fn(),
   claimCampaignForSending: vi.fn(),
   claimDispatchRound: vi.fn(),
+  markCampaignFailed: vi.fn(),
   revertCampaignClaim: vi.fn(),
 }));
 vi.mock("@/db/campaign-recipients", () => ({
+  failAllPendingForCampaign: vi.fn(),
   readSendableAudience: vi.fn(),
   failPendingRecipients: vi.fn(),
   listRecipientStates: vi.fn(),
@@ -28,6 +30,7 @@ vi.mock("@/db/connected-mailboxes", () => ({
   tryReserveMailboxQuota: vi.fn(),
 }));
 vi.mock("@/lib/admin-notify", () => ({ notifyAdminsOfCampaignSend: vi.fn() }));
+vi.mock("@/lib/notifications/campaign-notifications", () => ({ notifyCampaignFailed: vi.fn() }));
 vi.mock("./send-campaign", () => ({ publishSesBatches: vi.fn() }));
 vi.mock("./gmail-campaign", () => ({ publishGmailRun: vi.fn() }));
 vi.mock("./qstash-worker", () => ({ settleCampaign: vi.fn() }));
@@ -36,9 +39,11 @@ import {
   claimCampaignForSending,
   claimDispatchRound,
   getCampaign,
+  markCampaignFailed,
   revertCampaignClaim,
 } from "@/db/campaigns";
 import {
+  failAllPendingForCampaign,
   failPendingRecipients,
   readSendableAudience,
   recipientStatusCounts,
@@ -46,9 +51,12 @@ import {
 import { getSendUsage, releaseSendQuota, tryReserveSendQuota } from "@/db/organizations";
 import { publishSesBatches } from "./send-campaign";
 import { settleCampaign } from "./qstash-worker";
+import { notifyCampaignFailed } from "@/lib/notifications/campaign-notifications";
+import { releaseMailboxQuota } from "@/db/connected-mailboxes";
 import {
   dispatchCampaign,
   ensureCampaignQueued,
+  failCampaign,
   QueueIncompleteError,
   resumeCampaign,
   SendRefusedError,
@@ -104,7 +112,7 @@ describe("dispatchCampaign", () => {
     const result = await dispatchCampaign("c1", "now");
 
     expect(result).toEqual({ outcome: "started", total: 2, batches: 1 });
-    expect(claimCampaignForSending).toHaveBeenCalledWith("c1", ["draft", "scheduled"]);
+    expect(claimCampaignForSending).toHaveBeenCalledWith("c1", ["draft", "scheduled", "failed"]);
     expect(publishSesBatches).toHaveBeenCalledWith(
       expect.objectContaining({ dispatchKey: String(dispatchedAt.getTime()) }),
     );
@@ -251,5 +259,47 @@ describe("ensureCampaignQueued", () => {
     );
     expect(claimDispatchRound).not.toHaveBeenCalled();
     expect(tryReserveSendQuota).not.toHaveBeenCalled();
+  });
+});
+
+describe("failCampaign", () => {
+  it("fails a scheduled campaign and tells the owner once", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({ ...campaign, status: "scheduled" } as never);
+    vi.mocked(markCampaignFailed).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    expect(await failCampaign("c1", "Over quota", ["scheduled"])).toBe(true);
+    expect(await failCampaign("c1", "Over quota", ["scheduled"])).toBe(false);
+
+    expect(markCampaignFailed).toHaveBeenCalledWith("c1", "Over quota", ["scheduled"]);
+    expect(notifyCampaignFailed).toHaveBeenCalledTimes(1);
+    // Nothing was reserved for a campaign that never started.
+    expect(failAllPendingForCampaign).not.toHaveBeenCalled();
+    expect(releaseSendQuota).not.toHaveBeenCalled();
+  });
+
+  it("fails the unsent rows of a sending campaign and releases their quota", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({
+      ...campaign,
+      status: "sending",
+      senderType: "mailbox",
+      mailboxId: "m1",
+    } as never);
+    vi.mocked(markCampaignFailed).mockResolvedValue(true);
+    vi.mocked(failAllPendingForCampaign).mockResolvedValue(7);
+
+    await failCampaign("c1", "Gmail disconnected", ["sending"]);
+
+    expect(failAllPendingForCampaign).toHaveBeenCalledWith("c1", "Gmail disconnected");
+    expect(releaseSendQuota).toHaveBeenCalledWith("org1", 7);
+    expect(releaseMailboxQuota).toHaveBeenCalledWith("m1", 7);
+  });
+
+  it("lets Send now restart a failed campaign", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({ ...campaign, status: "failed" } as never);
+
+    const result = await dispatchCampaign("c1", "now");
+
+    expect(result.outcome).toBe("started");
+    expect(claimCampaignForSending).toHaveBeenCalledWith("c1", ["draft", "scheduled", "failed"]);
   });
 });
