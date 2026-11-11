@@ -67,8 +67,8 @@ export const BASE_BLOCKS: BlockEntry[] = [
 
 /**
  * Composites — several elements arranged together with placeholder copy. They
- * are a starting layout rather than a primitive, so they live behind `/` in the
- * assistant instead of sitting in the palette pretending to be a base block.
+ * are a starting layout rather than a primitive, so they stay out of the editor
+ * palette instead of pretending to be a base block.
  */
 export const TEMPLATE_BLOCKS: BlockEntry[] = [
   { type: "text",        label: "Text section", icon: News01Icon },
