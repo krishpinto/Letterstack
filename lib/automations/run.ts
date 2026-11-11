@@ -5,6 +5,12 @@
 // re-enqueues the continuation with QStash's notBefore and stops. All of the
 // heavy lifting (compile, suppression, unsubscribe links) reuses the campaign
 // send path.
+//
+// QStash delivers at least once, so a message can arrive twice and a failed
+// one is replayed from its first node. Each (automation, contact) pass is one
+// run with a runId carried through every delay; steps with an outside effect
+// (send_email, the publish behind a delay) are claimed once per run in
+// automation_step_runs, and a replay skips what an earlier delivery did.
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -15,8 +21,10 @@ import {
   recipients,
 } from "@/db/schema";
 import {
+  claimAutomationStep,
   getAutomationById,
   listEnabledAutomationsForOrganization,
+  releaseAutomationStep,
 } from "@/db/automations";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { tryReserveSendQuota } from "@/db/organizations";
@@ -47,6 +55,13 @@ import {
   type AddCategoryConfig,
 } from "./flow";
 import { isAllowedAutomationSender, normalizeSender } from "./senders";
+import {
+  delayStepKey,
+  hopStepKey,
+  newRunId,
+  qstashDedupeId,
+  sendStepKey,
+} from "./steps";
 
 /** Guard against cycles / runaway flows. */
 const MAX_STEPS = 25;
@@ -63,8 +78,16 @@ export type AutomationWorkerPayload = {
   organizationId: string;
   nodeId: string;
   contact: AutomationContact;
+  /**
+   * One contact's pass through one automation, minted when the trigger fires
+   * and carried through every delay. Keys the step claims. Missing only on
+   * messages queued before it existed; the worker fills those in.
+   */
+  runId?: string;
   /** Set by Delay nodes: don't run nodeId before this time (enables hops past QStash's max delay). */
   resumeAtMs?: number;
+  /** How many hops of a long delay this message has already made. */
+  hop?: number;
 };
 
 /**
@@ -101,6 +124,7 @@ export async function enqueueAutomationsForEvent(
               organizationId,
               nodeId: firstNodeId,
               contact,
+              runId: newRunId(),
             } satisfies AutomationWorkerPayload,
           }),
         );
@@ -116,9 +140,10 @@ export async function enqueueAutomationsForEvent(
 
 /** Walk the flow from a node. Returns a short trace for logging. */
 export async function runAutomationFromNode(
-  payload: AutomationWorkerPayload,
+  payload: AutomationWorkerPayload & { runId: string },
 ): Promise<string[]> {
   const trace: string[] = [];
+  const { runId } = payload;
   const automation = await getAutomationById(payload.automationId);
 
   if (!automation) return ["automation missing — skipped"];
@@ -130,13 +155,20 @@ export async function runAutomationFromNode(
   // Delay resumption that arrived early (delays longer than QStash's max
   // delay hop in stretches): sleep another stretch and come back.
   if (payload.resumeAtMs && payload.resumeAtMs - Date.now() > 5_000) {
-    await publishQstashJSON({
-      url: `${appBaseUrl()}/api/send/automation-worker`,
-      notBefore: qstashNotBefore(payload.resumeAtMs),
-      body: payload,
-    });
+    const hop = (payload.hop ?? 0) + 1;
+    const published = await publishOnce(
+      automation.id,
+      runId,
+      hopStepKey(payload.nodeId, hop),
+      {
+        notBefore: qstashNotBefore(payload.resumeAtMs),
+        body: { ...payload, hop } satisfies AutomationWorkerPayload,
+      },
+    );
     return [
-      `delay: not due yet — hopped toward ${new Date(payload.resumeAtMs).toISOString()}`,
+      published
+        ? `delay: not due yet — hopped toward ${new Date(payload.resumeAtMs).toISOString()}`
+        : "delay: hop already published by an earlier delivery — stopped",
     ];
   }
 
@@ -163,6 +195,7 @@ export async function runAutomationFromNode(
           automation.organizationId,
           automation.id,
           contact,
+          { runId, stepKey: sendStepKey(node.id) },
         );
         trace.push(`send_email: ${result}`);
         nodeId = node.next;
@@ -184,18 +217,22 @@ export async function runAutomationFromNode(
         }
         const ms = delayToMs(node.config as DelayConfig);
         const resumeAtMs = Date.now() + ms;
-        await publishQstashJSON({
-          url: `${appBaseUrl()}/api/send/automation-worker`,
+        const published = await publishOnce(automation.id, runId, delayStepKey(node.id), {
           notBefore: qstashNotBefore(resumeAtMs),
           body: {
             automationId: automation.id,
             organizationId: automation.organizationId,
             nodeId: node.next,
             contact,
+            runId,
             resumeAtMs,
           } satisfies AutomationWorkerPayload,
         });
-        trace.push(`delay: resuming in ${Math.round(ms / 60000)} min`);
+        trace.push(
+          published
+            ? `delay: resuming in ${Math.round(ms / 60000)} min`
+            : "delay: continuation already published by an earlier delivery — stopped",
+        );
         return trace;
       }
 
@@ -239,6 +276,34 @@ export async function runAutomationFromNode(
   return trace;
 }
 
+/**
+ * Publish a continuation of this run at most once. Returns false when an
+ * earlier delivery already claimed the step: that delivery published (or is
+ * publishing) the same continuation, and a second one would walk the rest of
+ * the flow twice. If QStash rejects the publish the claim is given back and
+ * the error rethrown, so the worker returns 500 and QStash retries.
+ */
+async function publishOnce(
+  automationId: string,
+  runId: string,
+  stepKey: string,
+  message: { notBefore: number; body: AutomationWorkerPayload },
+): Promise<boolean> {
+  if (!(await claimAutomationStep(automationId, runId, stepKey))) return false;
+  try {
+    await publishQstashJSON({
+      url: `${appBaseUrl()}/api/send/automation-worker`,
+      notBefore: message.notBefore,
+      body: message.body,
+      deduplicationId: qstashDedupeId(runId, stepKey),
+    });
+  } catch (err) {
+    await releaseAutomationStep(runId, stepKey);
+    throw err;
+  }
+  return true;
+}
+
 function evaluateCondition(config: ConditionConfig, contact: AutomationContact) {
   const raw = config.field === "email" ? contact.email : contact.name ?? "";
   const value = raw.toLowerCase();
@@ -265,6 +330,7 @@ async function executeSendEmail(
   organizationId: string,
   automationId: string,
   contact: AutomationContact,
+  step: { runId: string; stepKey: string },
 ): Promise<string> {
   if (!config.templateId || !config.fromEmail) {
     return "not configured — skipped";
@@ -289,17 +355,13 @@ async function executeSendEmail(
     return "template missing — skipped";
   }
 
-  // Reserve last, after every reason to skip, so a skipped step doesn't
-  // spend the workspace's monthly allowance.
-  if (!(await tryReserveSendQuota(organizationId, 1))) {
-    return `monthly send allowance reached — skipped ${contact.email}`;
-  }
-
   const [organization] = await db
     .select({ name: organizations.name })
     .from(organizations)
     .where(eq(organizations.id, organizationId));
 
+  // Build the whole message before claiming the step, so nothing between the
+  // claim and the SES call can fail except SES itself.
   const doc = normalizeDocument(
     JSON.parse(JSON.stringify(template.document)) as EmailDocument,
   );
@@ -314,16 +376,42 @@ async function executeSendEmail(
     unsubscribePageUrl(base, organizationId, contact.userId, contact.email),
   );
 
-  await sendEmail({
-    to: contact.email,
-    subject: doc.subject || template.subject || template.name,
-    html: personalized.html,
-    text: personalized.text,
-    fromName: config.fromName || "LetterStack",
-    fromEmail,
-    listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, contact.userId, contact.email),
-    tags: [{ name: "automationId", value: automationId }],
-  });
+  // At most once per run: a redelivery of this message (QStash retries after
+  // a later step threw, or delivers twice) finds the claim and skips, so the
+  // contact is not mailed twice and quota is not spent twice.
+  if (!(await claimAutomationStep(automationId, step.runId, step.stepKey))) {
+    return `already sent to ${contact.email} by an earlier delivery — skipped`;
+  }
+
+  // Reserve last, after every reason to skip, so a skipped step doesn't
+  // spend the workspace's monthly allowance.
+  if (!(await tryReserveSendQuota(organizationId, 1))) {
+    // Nothing was sent. Give the claim back; a replay hits the same limit
+    // unless the allowance has grown since.
+    await releaseAutomationStep(step.runId, step.stepKey);
+    return `monthly send allowance reached — skipped ${contact.email}`;
+  }
+
+  try {
+    await sendEmail({
+      to: contact.email,
+      subject: doc.subject || template.subject || template.name,
+      html: personalized.html,
+      text: personalized.text,
+      fromName: config.fromName || "LetterStack",
+      fromEmail,
+      listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, contact.userId, contact.email),
+      tags: [{ name: "automationId", value: automationId }],
+    });
+  } catch (err) {
+    // SES refused the message, so QStash's retry should try again. If the
+    // function dies before this line instead, the claim stays and the step
+    // is skipped on replay: at most once, as for campaign sends. The unit of
+    // quota reserved above is not returned (there is no refund path yet), so
+    // a retry after an SES error reserves another.
+    await releaseAutomationStep(step.runId, step.stepKey);
+    throw err;
+  }
 
   return `sent to ${contact.email}`;
 }

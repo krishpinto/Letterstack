@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "./client";
-import { automations } from "./schema";
+import { automations, automationStepRuns } from "./schema";
 import type { AutomationFlow } from "@/lib/automations/flow";
 
 export async function createAutomation(
@@ -83,5 +83,40 @@ export async function listEnabledAutomationsForOrganization(organizationId: stri
         eq(automations.organizationId, organizationId),
         eq(automations.status, "enabled"),
       ),
+    );
+}
+
+/**
+ * Claim one step of one automation run (stepKey from lib/automations/steps).
+ * Returns true if this call is the first to claim it, so the caller should
+ * perform the step, and false if an earlier delivery already did. A single
+ * INSERT ... ON CONFLICT DO NOTHING, so two concurrent deliveries of the same
+ * message can't both win (neon-http has no transactions; this doesn't need
+ * one).
+ */
+export async function claimAutomationStep(
+  automationId: string,
+  runId: string,
+  stepKey: string,
+): Promise<boolean> {
+  const rows = await db
+    .insert(automationStepRuns)
+    .values({ automationId, runId, nodeId: stepKey })
+    .onConflictDoNothing({
+      target: [automationStepRuns.runId, automationStepRuns.nodeId],
+    })
+    .returning({ id: automationStepRuns.id });
+  return rows.length > 0;
+}
+
+/**
+ * Give a claim back when the step failed before taking effect (SES or QStash
+ * rejected the call), so QStash's retry can try it again.
+ */
+export async function releaseAutomationStep(runId: string, stepKey: string) {
+  await db
+    .delete(automationStepRuns)
+    .where(
+      and(eq(automationStepRuns.runId, runId), eq(automationStepRuns.nodeId, stepKey)),
     );
 }

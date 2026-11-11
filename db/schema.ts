@@ -407,6 +407,33 @@ export const automations = pgTable("automations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// One row per (automation run, step) that has a side effect we must not
+// repeat: a send_email, or the QStash publish behind a delay. QStash delivers
+// at least once and replays a whole message from its first node when the
+// worker fails, so without this a throw after a send step re-sent the email
+// (and spent quota again). The worker claims the step with an
+// insert-if-absent before acting; a replay finds the row and skips. runId is
+// minted when the trigger fires and carried through every delay, so one
+// contact's pass through one flow is one run. nodeId holds a step key from
+// lib/automations/steps.ts, not always a bare node id.
+export const automationStepRuns = pgTable(
+  "automation_step_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    automationId: uuid("automation_id")
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("automation_step_runs_run_node_unq").on(table.runId, table.nodeId),
+    // For the ON DELETE CASCADE when an automation is deleted.
+    index("automation_step_runs_automation_id_idx").on(table.automationId),
+  ],
+);
+
 export const emailTemplates = pgTable("email_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id")
