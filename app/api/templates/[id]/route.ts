@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { getTemplateWithVersion, templateVersion } from "@/db/content-version";
 import { uniqueTemplateName } from "@/db/email-templates";
 import { emailTemplates } from "@/db/schema";
 import { currentOrganizationId } from "@/lib/auth-helpers";
@@ -12,6 +13,12 @@ export const runtime = "nodejs";
 type TemplateBody = {
   name?: unknown;
   document?: EmailDocument;
+  /**
+   * The version the editor loaded (db/content-version.ts). When present, the
+   * save only applies if the design has not changed since; otherwise 409, so
+   * a stale tab can't overwrite a newer save.
+   */
+  baseVersion?: unknown;
 };
 
 function errorMessage(error: unknown) {
@@ -29,21 +36,13 @@ export async function GET(
   }
 
   try {
-    const [template] = await db
-      .select()
-      .from(emailTemplates)
-      .where(
-        and(
-          eq(emailTemplates.id, id),
-          eq(emailTemplates.organizationId, organizationId),
-        ),
-      );
+    const found = await getTemplateWithVersion(id, organizationId);
 
-    if (!template) {
+    if (!found) {
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, template });
+    return NextResponse.json({ ok: true, template: found.template, version: found.version });
   } catch (error: unknown) {
     return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
   }
@@ -84,22 +83,36 @@ export async function PATCH(
     }
     patchData.updatedAt = new Date();
 
-    const [updated] = await db
+    const baseVersion =
+      typeof body?.baseVersion === "string" ? body.baseVersion : undefined;
+    const [row] = await db
       .update(emailTemplates)
       .set(patchData)
       .where(
         and(
           eq(emailTemplates.id, id),
           eq(emailTemplates.organizationId, organizationId),
+          baseVersion !== undefined ? sql`${templateVersion} = ${baseVersion}` : undefined,
         ),
       )
-      .returning();
+      .returning({ ...getTableColumns(emailTemplates), version: templateVersion });
 
-    if (!updated) {
+    if (!row) {
+      if (baseVersion !== undefined && (await getTemplateWithVersion(id, organizationId))) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "conflict",
+            error: "This template was changed somewhere else. Reload to get the latest version.",
+          },
+          { status: 409 },
+        );
+      }
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, template: updated });
+    const { version, ...updated } = row;
+    return NextResponse.json({ ok: true, template: updated, version });
   } catch (error: unknown) {
     return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
   }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndClearDrafts } from "@/lib/editor/sign-out";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,7 @@ export function AccountPanel({ initialProfile }: { initialProfile: Profile }) {
       const response = await fetch("/api/account/profile", { method: "DELETE" });
       const data = await response.json().catch(() => null);
       if (!data?.ok) throw new Error(data?.error || "Could not delete account");
-      await signOut({ callbackUrl: "/login" });
+      await signOutAndClearDrafts({ callbackUrl: "/login" });
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Could not delete account");
       setDeleting(false);
