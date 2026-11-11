@@ -6,7 +6,6 @@ import {
   CloudUploadIcon,
   DatabaseIcon,
   MailIcon,
-  SparklesIcon,
   ZapIcon,
 } from "lucide-react";
 
@@ -73,26 +72,6 @@ export type InfraPayload = {
     emailsSent: number;
     suppressed: number;
     automations: number;
-  }>;
-  gemini: Block<{
-    models: Array<{
-      id: string;
-      label: string;
-      requestsToday: number;
-      dailyRequestLimit: number;
-      tokensToday: number;
-      dailyTokenLimit: number;
-      requestsLastMinute: number;
-      rpmLimit: number;
-      monthCalls: number;
-      monthTokens: number;
-      exhausted: boolean;
-      exhaustedBy: "requests" | "tokens" | null;
-    }>;
-    monthCalls: number;
-    monthTokens: number;
-    avgTokensPerCall: number;
-    failuresThisMonth: number;
   }>;
 };
 
@@ -507,81 +486,6 @@ export function AnalyticsTab({ data }: { data: InfraPayload }) {
           )}
         </BlockCard>
       </div>
-
-      {/* Gemini / AI assistant usage */}
-      <BlockCard title="Gemini — this month" icon={SparklesIcon} block={data.gemini}>
-        {data.gemini.ok && (
-          <div className="flex flex-col gap-4">
-            {/* Per model, because Google meters each one separately — when
-                the assistant stops, the question is which model ran out and
-                which still has room. */}
-            <div className="flex flex-col gap-4">
-              {data.gemini.data.models.map((model) => (
-                <div key={model.id} className="flex flex-col gap-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      {model.label}
-                      {model.exhausted && (
-                        <Badge variant="destructive" className="text-[10px]">
-                          Out of {model.exhaustedBy}
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {model.requestsLastMinute}/{model.rpmLimit} per min
-                    </span>
-                  </div>
-                  {/* Tokens first: on an agent workload it's the ceiling that
-                      actually runs out, while request count stays near zero. */}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[11px] text-muted-foreground">Tokens today</p>
-                      <LimitBar used={model.tokensToday} limit={model.dailyTokenLimit} />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[11px] text-muted-foreground">Requests today</p>
-                      <LimitBar used={model.requestsToday} limit={model.dailyRequestLimit} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 border-t pt-3 sm:grid-cols-4">
-              {[
-                { label: "Tokens", value: data.gemini.data.monthTokens.toLocaleString() },
-                { label: "Calls", value: data.gemini.data.monthCalls.toLocaleString() },
-                {
-                  label: "Avg / call",
-                  value: data.gemini.data.avgTokensPerCall.toLocaleString(),
-                  // Rising average means conversation context is growing
-                  // faster than history trimming is cutting it back.
-                  sub: "context health",
-                },
-                { label: "Failed", value: data.gemini.data.failuresThisMonth.toLocaleString() },
-              ].map((stat) => (
-                <div key={stat.label}>
-                  <p className="text-lg font-semibold tabular-nums">{stat.value}</p>
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  {stat.sub && (
-                    <p className="text-[10px] text-muted-foreground/70">{stat.sub}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Quotas are per model and reset at midnight UTC, so an exhausted
-              model doesn&apos;t block the others — switch in the
-              assistant&apos;s model picker. Token ceilings are estimates
-              calibrated from observed refusals (3.6 Flash was cut off around
-              142k tokens in a day, at only 19 requests), not published
-              figures. Google&apos;s own 429 is the real authority; tune the
-              estimates as you watch more days.
-            </p>
-          </div>
-        )}
-      </BlockCard>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export function HtmlCodeField({
   const [draft, setDraft] = React.useState(value);
   const [warnings, setWarnings] = React.useState<string[]>([]);
 
-  // Adopt outside edits (agent writes, undo) unless the user is mid-edit.
+  // Adopt outside edits (such as undo) unless the user is mid-edit.
   const dirty = React.useRef(false);
   React.useEffect(() => {
     if (!dirty.current) setDraft(value);

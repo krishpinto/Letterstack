@@ -1,6 +1,5 @@
 // Normalizer for the `rawHtml` block — the one place arbitrary HTML enters an
-// email. Used by the inspector's code editor and by the agent's setCustomHtml
-// tool, so both surfaces get identical treatment.
+// email. Used by the inspector's code editor.
 //
 // Three jobs:
 //   1. Unwrap full documents. The compiler drops this html straight into a <td>
@@ -52,7 +51,7 @@ export type NormalizeRawHtmlResult = {
   html: string;
   /** Plain-text equivalent for the text/plain part of the email. */
   text: string;
-  /** Human-readable problems. Shown in the inspector, fed back to the agent. */
+  /** Human-readable problems. Shown in the inspector. */
   warnings: string[];
 };
 
