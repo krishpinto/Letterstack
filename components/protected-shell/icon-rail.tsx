@@ -23,7 +23,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
-type RailNavItem = {
+export type RailNavItem = {
   href: string;
   icon: React.ElementType;
   label: string;
@@ -38,7 +38,7 @@ type RailNavItem = {
   tourId: string;
 };
 
-const NAV_ITEMS: RailNavItem[] = [
+export const NAV_ITEMS: RailNavItem[] = [
   {
     href: "/dashboard/campaigns",
     tourId: "tour-rail-campaigns",
@@ -84,7 +84,7 @@ const NAV_ITEMS: RailNavItem[] = [
   },
 ];
 
-const BOTTOM_ITEMS: RailNavItem[] = [
+export const BOTTOM_ITEMS: RailNavItem[] = [
   {
     href: "/dashboard/settings",
     tourId: "tour-rail-settings",
@@ -125,20 +125,22 @@ function RailButton({
   );
 }
 
+/** Whether a rail item is the module the current page belongs to. */
+export function isRailItemActive(item: RailNavItem, pathname: string) {
+  if (item.extraPrefixes?.some((prefix) => pathname.startsWith(prefix))) {
+    return true;
+  }
+  if (item.matchPrefix) return pathname.startsWith(item.href);
+  return pathname === item.href || pathname.startsWith(item.href + "/");
+}
+
 export function IconRail() {
   const pathname = usePathname();
-
-  function isActive(item: RailNavItem) {
-    if (item.extraPrefixes?.some((prefix) => pathname.startsWith(prefix))) {
-      return true;
-    }
-    if (item.matchPrefix) return pathname.startsWith(item.href);
-    return pathname === item.href || pathname.startsWith(item.href + "/");
-  }
+  const isActive = (item: RailNavItem) => isRailItemActive(item, pathname);
 
   return (
     <TooltipProvider delayDuration={400}>
-      <aside className="flex w-11 shrink-0 flex-col items-center py-2">
+      <aside className="hidden w-11 shrink-0 flex-col items-center py-2 md:flex">
         {/* Dashboard home */}
         <Tooltip>
           <TooltipTrigger asChild>

@@ -2,10 +2,13 @@
 
 import { NextResponse } from "next/server";
 import { listEvents } from "@/db/events";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   try {
     const events = await listEvents();
     return NextResponse.json({ ok: true, events });

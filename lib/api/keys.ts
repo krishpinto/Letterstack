@@ -82,3 +82,20 @@ export function bearerToken(request: Request): string | null {
 export function maskedKey(prefix: string, lastFour: string): string {
   return `${prefix}_…${lastFour}`;
 }
+
+/**
+ * Whether a key found by its hash may authenticate. A key acts with its
+ * creator's authority (they're the actorUserId on everything it writes), so
+ * it dies with their membership as well as on explicit revocation —
+ * otherwise someone removed from a workspace keeps standing access to its
+ * audience through a key they minted while they belonged.
+ *
+ * `creatorRole` is the creator's current role in the key's workspace, or
+ * null when they are no longer a member.
+ */
+export function isApiKeyUsable(row: {
+  revokedAt: Date | null;
+  creatorRole: string | null;
+}): boolean {
+  return !row.revokedAt && row.creatorRole !== null;
+}

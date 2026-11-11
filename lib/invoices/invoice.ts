@@ -40,16 +40,24 @@ export type Invoice = {
   paidAt: Date | null;
 };
 
+/** India has no daylight saving, so IST is a fixed offset from UTC. */
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
 /**
  * The Indian financial year a date falls in, as "2026-27".
  *
  * April to March, so anything before April belongs to the year that started the
  * previous calendar year. Invoice serials restart each financial year, which is
  * what an accountant expects to see.
+ *
+ * Decided on the India calendar, not the server's: the server runs on UTC, so
+ * reading the date there put a payment made between 00:00 and 05:30 IST on
+ * 1 April into the previous year's series.
  */
 export function financialYear(date: Date): string {
-  const year = date.getFullYear();
-  const startYear = date.getMonth() >= 3 ? year : year - 1;
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const year = ist.getUTCFullYear();
+  const startYear = ist.getUTCMonth() >= 3 ? year : year - 1;
   return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
 }
 

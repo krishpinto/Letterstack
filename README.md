@@ -100,8 +100,12 @@ token, and will tell you what is missing rather than failing quietly.
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm run db:push` | Push schema changes with Drizzle |
+| `npm run db:generate` | Draft SQL for a `db/schema.ts` change (never applied as is) |
+| `npm run db:push` | Create the schema on a new, empty database. Refuses production; see [docs/database.md](docs/database.md) |
 | `npm run db:studio` | Open Drizzle Studio |
+
+Schema changes to an existing database are hand-written SQL. See
+[docs/database.md](docs/database.md).
 
 ## Deployment
 
@@ -109,7 +113,10 @@ LetterStack is deployed on [Vercel](https://vercel.com) with Neon and Upstash.
 Any host that runs Next.js with Node serverless functions works. Point
 `APP_URL` at your deployment so QStash can reach the worker routes, and add your
 webhook endpoint as an HTTPS subscriber to the SNS topic behind your SES
-configuration set.
+configuration set. Set `SES_EVENTS_TOPIC_ARN` to that topic's ARN before you
+subscribe: the webhook verifies every SNS signature, and only confirms
+subscriptions to allow-listed topics. Leave raw message delivery off on the
+subscription, because raw messages carry no signature and are rejected.
 
 ## Contributing
 

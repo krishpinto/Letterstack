@@ -1,8 +1,9 @@
 // Public, unauthenticated, cross-origin subscribe endpoint — the target of every
 // embedded/hosted signup form. Single opt-in: a valid submission is added to the
-// org's audience immediately (no confirmation email). The honeypot + rate limit
-// are the only bot guards, so a bad address that gets past them lands directly
-// in the send list — re-introduce a confirm step if bounces ever climb.
+// org's audience immediately (no confirmation email). The honeypot + rate limits
+// (lib/forms/subscribe-limits.ts) are the only bot guards, so a bad address that
+// gets past them lands directly in the send list — re-introduce a confirm step
+// if bounces ever climb.
 //
 // CORS is wide open (Access-Control-Allow-Origin: *) on purpose — the form runs
 // on the customer's own domain.
@@ -15,6 +16,9 @@ import {
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { addRecipient } from "@/db/recipients";
 import { checkContactHeadroom } from "@/lib/plans/guards";
+import { enqueueAutomationsForEvent } from "@/lib/automations/run";
+import { subscribeRateLimitChecks } from "@/lib/forms/subscribe-limits";
+import { clientIp, rateLimitAll } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -26,22 +30,8 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 } as const;
 
-// Best-effort in-memory flood guard. Serverless instances are ephemeral and not
-// shared, so this only blunts a burst hitting one warm instance. Keyed by IP+form.
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 10;
-const hits = new Map<string, number[]>();
-
-function rateLimited(key: string): boolean {
-  const now = Date.now();
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-  recent.push(now);
-  hits.set(key, recent);
-  return recent.length > RATE_MAX;
-}
-
-function json(data: unknown, status = 200) {
-  return NextResponse.json(data, { status, headers: CORS_HEADERS });
+function json(data: unknown, status = 200, headers?: Record<string, string>) {
+  return NextResponse.json(data, { status, headers: { ...CORS_HEADERS, ...headers } });
 }
 
 export function OPTIONS() {
@@ -68,10 +58,18 @@ export async function POST(request: Request) {
     return json({ ok: false, error: "Enter a valid email address" }, 400);
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (rateLimited(`${ip}:${key}`)) {
-    return json({ ok: false, error: "Too many attempts — try again shortly" }, 429);
+  // Counted in Postgres so every serverless instance shares the counters (the
+  // old in-memory map only saw requests that hit the same warm instance).
+  // Checked before the form lookup so a flood of junk keys is cut off too.
+  const limited = await rateLimitAll(
+    subscribeRateLimitChecks(key, clientIp(request.headers)),
+  );
+  if (!limited.ok) {
+    return json(
+      { ok: false, error: "Too many attempts — try again shortly" },
+      429,
+      { "Retry-After": String(limited.retryAfterSeconds) },
+    );
   }
 
   const form = await getSignupFormByPublicKey(key);
@@ -96,12 +94,25 @@ export async function POST(request: Request) {
   }
 
   // Add straight to the audience. onConflictDoNothing returns null when the
-  // address is already present, so we only bump the tally on a new subscriber.
+  // address is already present, so only a new subscriber bumps the tally and
+  // fires "contact added" automations (the welcome flow). Someone already on
+  // the list re-submitting the form must not get the welcome email again.
   const inserted = await addRecipient(form.organizationId, form.userId, {
     email,
     name,
   });
-  if (inserted) await incrementSubscriberCount(form.id);
+  if (inserted) {
+    await incrementSubscriberCount(form.id);
+    // Never throws: an automation failure must not fail the signup.
+    await enqueueAutomationsForEvent(form.organizationId, "contact.added", [
+      {
+        id: inserted.id,
+        email: inserted.email,
+        name: inserted.name,
+        userId: inserted.userId,
+      },
+    ]);
+  }
 
   return json({ ok: true });
 }

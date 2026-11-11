@@ -1,5 +1,15 @@
+// Every table, column, index and constraint here matches the live database
+// as introspected on a Neon branch of production (2026-11-11), including
+// constraint names. Many tables were created by hand-written SQL with inline
+// REFERENCES / UNIQUE clauses, so Postgres named those constraints itself
+// (<table>_<column>_fkey, <table>_<column>_key). Where that happened the name
+// is spelled out below (foreignKey({ name }) / .unique(name)) instead of
+// letting drizzle derive its own: a name that differs from the database is a
+// drop-and-recreate in every drizzle-kit diff. docs/database.md has the
+// process for changing any of this.
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -7,6 +17,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { EmailDocument } from "@/lib/email/document";
@@ -23,26 +34,75 @@ export const users = pgTable("users", {
   // rather than dropped so the change needed no migration against the live
   // database; drop them in a dedicated one whenever that's convenient.
   accessStatus: text("access_status").notNull().default("pending"),
-  accessDecidedAt: timestamp("access_decided_at"),
+  // timestamptz and a real FK (to users, see below): that is what migration
+  // 0006 created.
+  accessDecidedAt: timestamp("access_decided_at", { withTimezone: true }),
   accessDecidedByUserId: uuid("access_decided_by_user_id"),
-  waitlistAppliedEmailSentAt: timestamp("waitlist_applied_email_sent_at"),
+  waitlistAppliedEmailSentAt: timestamp("waitlist_applied_email_sent_at", {
+    withTimezone: true,
+  }),
   // Set when this person dismisses the "you've got Pro free for 2 months"
   // announcement. Per-user rather than per-org so a second teammate still
   // gets told, and so dismissing it never hides it from someone else.
   planNoticeSeenAt: timestamp("plan_notice_seen_at"),
+  // When this person proved they own `email`: by the emailed verification
+  // link, a password reset, or a Google sign-in. Null means unproven, which
+  // blocks sending and admin access (see lib/auth-rules.ts). Accounts that
+  // existed before verification shipped were backfilled to created_at.
+  emailVerifiedAt: timestamp("email_verified_at"),
+  // Compared against the copy inside every session JWT on each request.
+  // Bumping it signs out every existing session for this account, which is
+  // the only revocation stateless JWTs allow. Bumped on password reset,
+  // password change, and a Google sign-in that claims an unverified account.
+  sessionVersion: integer("session_version").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "users_access_decided_by_user_id_fkey",
+    columns: [table.accessDecidedByUserId],
+    foreignColumns: [table.id],
+  }).onDelete("set null"),
+]);
 
 export const passwordResets = pgTable("password_resets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull(),
   // sha256 of the raw token — the raw value only ever exists in the email link.
-  tokenHash: text("token_hash").notNull().unique(),
+  tokenHash: text("token_hash").notNull().unique("password_resets_token_hash_key"),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    name: "password_resets_user_id_fkey",
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete("cascade"),
+]);
+
+// Email verification tokens: the same shape as passwordResets, for the same
+// reasons. Only the sha256 is stored; the raw token lives in the email link.
+export const emailVerifications = pgTable(
+  "email_verifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("email_verifications_user_id_idx").on(table.userId)],
+);
+
+// Fixed-window request counters shared by every serverless instance (see
+// lib/rate-limit.ts). One row per limited key, e.g. "login:email:a@b.com".
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
 });
 
 export const organizations = pgTable("organizations", {
@@ -110,23 +170,35 @@ export const trialGrants = pgTable(
     /** The user id, or the lowercased domain. */
     value: text("value").notNull(),
     /** The organization that first claimed it. Kept for support questions. */
-    organizationId: uuid("organization_id").references(() => organizations.id, {
-      onDelete: "set null",
-    }),
+    organizationId: uuid("organization_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [unique("trial_grants_kind_value_unq").on(t.kind, t.value)],
+  (t) => [
+    // A unique INDEX rather than a constraint: that is what the script that
+    // created this table made (CREATE UNIQUE INDEX). ON CONFLICT (kind, value)
+    // works the same against either.
+    uniqueIndex("trial_grants_kind_value_unq").on(t.kind, t.value),
+    foreignKey({
+      name: "trial_grants_organization_id_fkey",
+      columns: [t.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("set null"),
+  ],
 );
 
 export const sendingDomains = pgTable("sending_domains", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  domain: text("domain").notNull().unique(),
+  organizationId: uuid("organization_id").notNull(),
+  domain: text("domain").notNull().unique("sending_domains_domain_key"),
   verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "sending_domains_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("cascade"),
+]);
 
 // A personal Gmail account connected via OAuth, used as an alternative
 // sending channel for anyone without a verified domain — see
@@ -139,12 +211,8 @@ export const connectedMailboxes = pgTable(
   "connected_mailboxes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").notNull(),
+    userId: uuid("user_id").notNull(),
     provider: text("provider").notNull().default("gmail"),
     email: text("email").notNull(),
     displayName: text("display_name"),
@@ -155,18 +223,31 @@ export const connectedMailboxes = pgTable(
     refreshTokenIv: text("refresh_token_iv").notNull(),
     refreshTokenTag: text("refresh_token_tag").notNull(),
     accessToken: text("access_token"),
-    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    // timestamptz throughout this table: that is what migration 0007 created.
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
     scope: text("scope").notNull(),
     // Flat v1 limit — see the Gmail Sending plan's "Deferred to v2" for the
     // gradual warm-up ramp this intentionally does not implement yet.
     dailyLimit: integer("daily_limit").notNull().default(450),
     sentToday: integer("sent_today").notNull().default(0),
-    quotaResetAt: timestamp("quota_reset_at").notNull().defaultNow(),
+    quotaResetAt: timestamp("quota_reset_at", { withTimezone: true }).notNull().defaultNow(),
     status: text("status").notNull().default("active"), // active | error | revoked
     lastError: text("last_error"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [unique("connected_mailboxes_org_email_unq").on(t.organizationId, t.email)],
+  (t) => [
+    unique("connected_mailboxes_org_email_unq").on(t.organizationId, t.email),
+    foreignKey({
+      name: "connected_mailboxes_organization_id_fkey",
+      columns: [t.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "connected_mailboxes_user_id_fkey",
+      columns: [t.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
+  ],
 );
 
 // Razorpay order/payment lifecycle. One row per checkout attempt — created
@@ -177,13 +258,15 @@ export const connectedMailboxes = pgTable(
 // plan structure lands.
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
+  // Null once the workspace is deleted: payments are financial records and
+  // are kept when the workspace goes (SET NULL, not CASCADE).
+  organizationId: uuid("organization_id"),
+  // Who paid. A payment is a financial record and outlives the account that
+  // made it: deleting the user nulls this rather than deleting the row.
+  userId: uuid("user_id"),
+  razorpayOrderId: text("razorpay_order_id")
     .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  razorpayOrderId: text("razorpay_order_id").notNull().unique(),
+    .unique("payments_razorpay_order_id_key"),
   razorpayPaymentId: text("razorpay_payment_id"),
   // Catalog key this order was for. Recorded at creation so settlement knows
   // what was bought without trusting anything the client says at that point.
@@ -191,25 +274,53 @@ export const payments = pgTable("payments", {
   amount: integer("amount").notNull(), // paise
   currency: text("currency").notNull().default("INR"),
   receipt: text("receipt").notNull(),
-  status: text("status").notNull().default("created"), // created | paid | failed
+  status: text("status").notNull().default("created"), // created | paid | failed | refunded
   createdAt: timestamp("created_at").defaultNow().notNull(),
   paidAt: timestamp("paid_at"),
-});
+  // Settlement steps, each recorded on its own so a retry finishes whatever a
+  // failed pass left undone, and never repeats what it finished. See
+  // lib/payments/settle.ts.
+  //
+  // Set once the plan grant for this payment has been applied (or ruled out,
+  // for items that grant nothing). Written in the same statement that moves
+  // the workspace's expiry, so the extension happens exactly once.
+  planGrantedAt: timestamp("plan_granted_at"),
+  // The tier this payment's days landed on, and how many. Usually the tier
+  // bought; differs when a downgrade that slipped past checkout was converted
+  // into time on the higher tier. A full refund takes back exactly these days.
+  planGrantedPlan: text("plan_granted_plan"),
+  planGrantedDays: integer("plan_granted_days"),
+  // Running total refunded, in paise. A full refund also sets status
+  // 'refunded'; a partial one is recorded here and changes nothing else.
+  amountRefunded: integer("amount_refunded").notNull().default(0),
+  refundedAt: timestamp("refunded_at"),
+  // Set once a full refund has taken this payment's days back.
+  planRevokedAt: timestamp("plan_revoked_at"),
+}, (table) => [
+  foreignKey({
+    name: "payments_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "payments_user_id_fkey",
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete("set null"),
+]);
 
 // One row per invoice actually issued. The serial is stored in parts as well
 // as formatted, so "next number this financial year" is a MAX() over an
 // integer rather than parsing LS/2026-27/0001 back apart. See db/invoices.ts.
 export const invoices = pgTable("invoices", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
+  // Null once the workspace is deleted. Issued invoices are kept for the
+  // books (SET NULL, not CASCADE).
+  organizationId: uuid("organization_id"),
   // Unique in the database: settlement can run twice (browser callback racing
   // the webhook, plus webhook retries) and the second pass must find this row,
   // not mint a second invoice with a fresh serial.
-  paymentId: uuid("payment_id")
-    .notNull()
-    .references(() => payments.id, { onDelete: "cascade" }),
+  paymentId: uuid("payment_id").notNull(),
   financialYear: text("financial_year").notNull(),
   sequence: integer("sequence").notNull(),
   number: text("number").notNull(),
@@ -221,7 +332,29 @@ export const invoices = pgTable("invoices", {
   sentTo: text("sent_to"),
   sentAt: timestamp("sent_at"),
   sesMessageId: text("ses_message_id"),
-});
+  // Claimed by the settlement call that is sending the email right now, so
+  // the browser callback and the webhook settling the same payment at once
+  // don't both mail it. Released on failure; a stale claim (a crashed send)
+  // expires and can be taken again. See claimInvoiceEmail.
+  emailClaimedAt: timestamp("email_claimed_at"),
+}, (table) => [
+  uniqueIndex("invoices_payment_unq").on(table.paymentId),
+  // Backstop for the allocate-then-insert race in db/invoices.ts.
+  uniqueIndex("invoices_serial_unq").on(table.financialYear, table.sequence),
+  index("invoices_organization_idx").on(table.organizationId),
+  foreignKey({
+    name: "invoices_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("set null"),
+  // Restrict: nothing deletes payments, and nothing should be able to take
+  // an issued invoice with it.
+  foreignKey({
+    name: "invoices_payment_id_fkey",
+    columns: [table.paymentId],
+    foreignColumns: [payments.id],
+  }).onDelete("restrict"),
+]);
 
 export const organizationMembers = pgTable(
   "organization_members",
@@ -241,6 +374,7 @@ export const organizationMembers = pgTable(
       table.organizationId,
       table.userId,
     ),
+    index("organization_members_user_id_idx").on(table.userId),
   ],
 );
 
@@ -249,19 +383,27 @@ export const organizationMembers = pgTable(
 // leaked table can't be replayed into a membership.
 export const organizationInvites = pgTable("organization_invites", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").notNull(),
   email: text("email").notNull(),
   role: text("role").notNull().default("member"),
-  invitedByUserId: uuid("invited_by_user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  tokenHash: text("token_hash").notNull().unique(),
+  invitedByUserId: uuid("invited_by_user_id").notNull(),
+  tokenHash: text("token_hash").notNull().unique("organization_invites_token_hash_key"),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("organization_invites_org_email_idx").on(table.organizationId, table.email),
+  foreignKey({
+    name: "organization_invites_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "organization_invites_invited_by_user_id_fkey",
+    columns: [table.invitedByUserId],
+    foreignColumns: [users.id],
+  }).onDelete("cascade"),
+]);
 
 export const recipients = pgTable(
   "recipients",
@@ -270,9 +412,11 @@ export const recipients = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    // Who added the contact. Restrict, not cascade: the contact belongs to
+    // the workspace, and deleteUserAccount hands it to the owner first.
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     email: text("email").notNull(),
     name: text("name"),
     sentAt: timestamp("sent_at"),
@@ -280,6 +424,7 @@ export const recipients = pgTable(
   },
   (table) => [
     unique("recipients_org_email_unq").on(table.organizationId, table.email),
+    index("recipients_organization_id_idx").on(table.organizationId),
   ],
 );
 
@@ -287,18 +432,22 @@ export const suppressedEmails = pgTable(
   "suppressed_emails",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    // Null once the workspace is deleted. The row is kept (SET NULL, not
+    // CASCADE): the Terms promise suppression records survive termination.
+    // Sends do not consult these orphaned rows; see docs/database.md.
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    // Who added it. Nulled, never cascaded, when that account is deleted:
+    // losing the row would make a bounced or complained address mailable.
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     email: text("email").notNull(),
     reason: text("reason").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     unique("suppressed_org_email_unq").on(table.organizationId, table.email),
+    index("suppressed_emails_organization_id_idx").on(table.organizationId),
   ],
 );
 
@@ -308,16 +457,21 @@ export const emailEvents = pgTable("email_events", {
   type: text("type").notNull(),
   campaignId: uuid("campaign_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Every analytics read joins this table to campaigns on campaign_id and
+  // groups by type (db/events.ts, db/dashboard.ts).
+  index("email_events_campaign_id_type_idx").on(table.campaignId, table.type),
+]);
 
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
+  // Restrict: deleteUserAccount hands the campaign to the workspace owner.
   userId: uuid("user_id")
     .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "restrict" }),
   name: text("name").notNull(),
   subject: text("subject").notNull(),
   fromName: text("from_name").notNull(),
@@ -325,6 +479,7 @@ export const campaigns = pgTable("campaigns", {
   document: jsonb("document").$type<EmailDocument>(),
   htmlSnapshot: text("html_snapshot").notNull(),
   textSnapshot: text("text_snapshot").notNull(),
+  // draft | scheduled | sending | sent | failed
   status: text("status").notNull().default("draft"),
   // Where replies land. Optional — most sends use the recipient's normal
   // reply-to-sender behavior; set this to route replies to a real inbox
@@ -336,18 +491,35 @@ export const campaigns = pgTable("campaigns", {
   // sends need their own channel (fixed From address, a daily cap, no
   // delivery telemetry) rather than reusing the SES path.
   senderType: text("sender_type").notNull().default("shared"), // shared | domain | mailbox
-  mailboxId: uuid("mailbox_id").references(() => connectedMailboxes.id, {
-    onDelete: "set null",
-  }),
+  mailboxId: uuid("mailbox_id"),
   // Set the first (and only) time a deliverability alert goes out for this
   // campaign. The alert fires from the SES webhook, which sees one bounce at
   // a time — without a stamp it would mail on every bounce past the
   // threshold instead of once. See lib/notifications/deliverability.ts.
-  deliverabilityAlertSentAt: timestamp("deliverability_alert_sent_at"),
+  // timestamptz: that is what migration 0009 created.
+  deliverabilityAlertSentAt: timestamp("deliverability_alert_sent_at", {
+    withTimezone: true,
+  }),
+  // When the current dispatch round started: the first send, or the latest
+  // Resume. Its value keys the round's QStash deduplication ids, and its age
+  // is what stops Resume from queueing the same rows twice in a minute. See
+  // claimDispatchRound in db/campaigns.ts.
+  lastDispatchedAt: timestamp("last_dispatched_at"),
+  // Why the campaign ended in status "failed", in words for its owner: over
+  // quota or no recipients when the schedule fired, an unusable sender,
+  // every recipient failed. Cleared when it is claimed for sending again.
+  failureReason: text("failure_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),
-});
+}, (table) => [
+  index("campaigns_organization_id_idx").on(table.organizationId),
+  foreignKey({
+    name: "campaigns_mailbox_id_fkey",
+    columns: [table.mailboxId],
+    foreignColumns: [connectedMailboxes.id],
+  }).onDelete("set null"),
+]);
 
 export const campaignRecipients = pgTable("campaign_recipients", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -358,10 +530,24 @@ export const campaignRecipients = pgTable("campaign_recipients", {
     .references(() => recipients.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   name: text("name"),
+  // pending → sending → sent | failed. "sending" means a worker has claimed
+  // the row and may be talking to the provider right now; see
+  // claimCampaignRecipient in db/campaign-recipients.ts.
   status: text("status").notNull().default("pending"),
   sentAt: timestamp("sent_at"),
   error: text("error"),
-}, (table) => [unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email)]);
+  // When a worker claimed the row (status "sending"). A claim older than
+  // CLAIM_TIMEOUT_MS belongs to a worker that died mid-send.
+  claimedAt: timestamp("claimed_at"),
+}, (table) => [
+  unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email),
+  index("campaign_recipients_campaign_id_idx").on(table.campaignId),
+  // Bounce, complaint and unsubscribe handling look rows up by email alone
+  // (db/campaign-recipients.ts); the unique above has email second.
+  index("campaign_recipients_email_idx").on(table.email),
+  // Deleting a contact cascades here.
+  index("campaign_recipients_recipient_id_idx").on(table.recipientId),
+]);
 
 export const categories = pgTable("categories", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -391,12 +577,8 @@ export const recipientCategories = pgTable(
 
 export const automations = pgTable("automations", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").notNull(),
+  userId: uuid("user_id").notNull(),
   name: text("name").notNull(),
   // "enabled" automations run on trigger events; "disabled" ones are drafts.
   status: text("status").notNull().default("disabled"),
@@ -405,7 +587,46 @@ export const automations = pgTable("automations", {
   flow: jsonb("flow").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "automations_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("cascade"),
+  // Restrict: deleteUserAccount hands the automation to the workspace owner.
+  foreignKey({
+    name: "automations_user_id_fkey",
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete("restrict"),
+]);
+
+// One row per (automation run, step) that has a side effect we must not
+// repeat: a send_email, or the QStash publish behind a delay. QStash delivers
+// at least once and replays a whole message from its first node when the
+// worker fails, so without this a throw after a send step re-sent the email
+// (and spent quota again). The worker claims the step with an
+// insert-if-absent before acting; a replay finds the row and skips. runId is
+// minted when the trigger fires and carried through every delay, so one
+// contact's pass through one flow is one run. nodeId holds a step key from
+// lib/automations/steps.ts, not always a bare node id.
+export const automationStepRuns = pgTable(
+  "automation_step_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    automationId: uuid("automation_id")
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("automation_step_runs_run_node_unq").on(table.runId, table.nodeId),
+    // For the ON DELETE CASCADE when an automation is deleted.
+    index("automation_step_runs_automation_id_idx").on(table.automationId),
+  ],
+);
 
 export const emailTemplates = pgTable("email_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -419,7 +640,7 @@ export const emailTemplates = pgTable("email_templates", {
   document: jsonb("document").$type<EmailDocument>(),
   // Unguessable token backing the public share link (/templates/shared/<token>).
   // Null = not shared.
-  shareToken: text("share_token").unique(),
+  shareToken: text("share_token").unique("email_templates_share_token_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -434,14 +655,10 @@ export const emailTemplates = pgTable("email_templates", {
 // subscribers, for the dashboard — attribution beyond that isn't tracked.
 export const signupForms = pgTable("signup_forms", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").notNull(),
+  userId: uuid("user_id").notNull(),
   // Unguessable id in the embed/hosted URLs. Unique globally.
-  publicKey: text("public_key").notNull().unique(),
+  publicKey: text("public_key").notNull().unique("signup_forms_public_key_key"),
   // Internal label shown only in the dashboard ("Website footer form").
   name: text("name").notNull(),
   headline: text("headline").notNull().default("Subscribe to our newsletter"),
@@ -449,9 +666,12 @@ export const signupForms = pgTable("signup_forms", {
     .notNull()
     .default("Get our latest updates straight to your inbox."),
   buttonLabel: text("button_label").notNull().default("Subscribe"),
+  // The database default is still the double-opt-in wording the creating
+  // script used. Nothing relies on it: db/signup-forms.ts always writes this
+  // column. Declared as it is so drizzle-kit sees no difference.
   successMessage: text("success_message")
     .notNull()
-    .default("You're subscribed — thanks for joining!"),
+    .default("Almost there — check your inbox to confirm your subscription."),
   // Hex accent for the button/link on the rendered widget.
   accentColor: text("accent_color").notNull().default("#4f46e5"),
   // Whether the widget asks for a name alongside the email.
@@ -468,7 +688,20 @@ export const signupForms = pgTable("signup_forms", {
   subscriberCount: integer("subscriber_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "signup_forms_organization_id_fkey",
+    columns: [table.organizationId],
+    foreignColumns: [organizations.id],
+  }).onDelete("cascade"),
+  // Restrict: deleteUserAccount hands the form to the workspace owner, so a
+  // live embed on a customer's site keeps working.
+  foreignKey({
+    name: "signup_forms_user_id_fkey",
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete("restrict"),
+]);
 
 // Append-only ledger of every model call the agent makes. This is both the
 // billing record and the rate limiter: the daily, per-user and per-minute
@@ -481,12 +714,8 @@ export const aiUsage = pgTable(
   "ai_usage",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").notNull(),
+    userId: uuid("user_id").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     promptTokens: integer("prompt_tokens").notNull().default(0),
@@ -501,18 +730,31 @@ export const aiUsage = pgTable(
   (table) => [
     index("ai_usage_created_at_idx").on(table.createdAt),
     index("ai_usage_user_created_at_idx").on(table.userId, table.createdAt),
+    foreignKey({
+      name: "ai_usage_organization_id_fkey",
+      columns: [table.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ai_usage_user_id_fkey",
+      columns: [table.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
   ],
 );
 
 export const aiBudgets = pgTable("ai_budgets", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().unique("ai_budgets_user_id_key"),
   monthlyTokenLimit: integer("monthly_token_limit").notNull().default(200_000),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: "ai_budgets_user_id_fkey",
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete("cascade"),
+]);
 
 // API keys let a customer's own server talk to LetterStack: sync contacts
 // from their CRM, read campaign results. Deliberately NOT the same auth as
@@ -528,12 +770,8 @@ export const apiKeys = pgTable(
   "api_keys",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    createdByUserId: uuid("created_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").notNull(),
+    createdByUserId: uuid("created_by_user_id").notNull(),
     /** What it's for ("Zapier", "billing cron"), so it can be revoked knowingly. */
     name: text("name").notNull(),
     /**
@@ -543,7 +781,7 @@ export const apiKeys = pgTable(
      * authentication a single indexed lookup instead of a bcrypt compare
      * against every row in the table.
      */
-    keyHash: text("key_hash").notNull().unique(),
+    keyHash: text("key_hash").notNull().unique("api_keys_key_hash_key"),
     /** Display only — enough to recognise a key, useless for calling the API. */
     prefix: text("prefix").notNull(),
     lastFour: text("last_four").notNull(),
@@ -554,12 +792,28 @@ export const apiKeys = pgTable(
      * "is anything still using this key" six months later, which is the
      * question people actually ask before revoking one.
      */
-    lastUsedAt: timestamp("last_used_at"),
+    // timestamptz throughout this table: that is what migration 0008 created.
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     /** Revocation is a tombstone, not a delete, so the audit trail survives. */
-    revokedAt: timestamp("revoked_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("api_keys_organization_idx").on(table.organizationId)],
+  (table) => [
+    index("api_keys_organization_idx").on(table.organizationId),
+    foreignKey({
+      name: "api_keys_organization_id_fkey",
+      columns: [table.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("cascade"),
+    // Restrict: deleteUserAccount hands the key to the workspace owner, so a
+    // member deleting their account can't break the workspace's
+    // integrations (the key belongs to the org, as above).
+    foreignKey({
+      name: "api_keys_created_by_user_id_fkey",
+      columns: [table.createdByUserId],
+      foreignColumns: [users.id],
+    }).onDelete("restrict"),
+  ],
 );
 
 // The monthly API allowance, counted per workspace rather than per key, so
@@ -569,14 +823,17 @@ export const apiKeyUsage = pgTable(
   "api_key_usage",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").notNull(),
     period: text("period").notNull(),
     requests: integer("requests").notNull().default(0),
   },
   (table) => [
     unique("api_key_usage_org_period_unq").on(table.organizationId, table.period),
+    foreignKey({
+      name: "api_key_usage_organization_id_fkey",
+      columns: [table.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -597,12 +854,8 @@ export const notificationPreferences = pgTable(
   "notification_preferences",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id").notNull(),
+    userId: uuid("user_id").notNull(),
     /** A summary email when one of this workspace's campaigns finishes sending. */
     campaignFinished: boolean("campaign_finished").notNull().default(true),
     /**
@@ -612,13 +865,37 @@ export const notificationPreferences = pgTable(
      * 10% bounces or 0.5% complaints, and a suspension is account-wide.
      */
     deliverabilityAlerts: boolean("deliverability_alerts").notNull().default(true),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    // timestamptz: that is what migration 0009 created.
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    unique("notification_preferences_org_user_unq").on(
+    // 0009 created this constraint without a name; this is the one Postgres
+    // gave it.
+    unique("notification_preferences_organization_id_user_id_key").on(
       table.organizationId,
       table.userId,
     ),
     index("notification_preferences_user_idx").on(table.userId),
+    foreignKey({
+      name: "notification_preferences_organization_id_fkey",
+      columns: [table.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "notification_preferences_user_id_fkey",
+      columns: [table.userId],
+      foreignColumns: [users.id],
+    }).onDelete("cascade"),
   ],
 );
+
+// Left over from the early-access waitlist. Nothing in the app reads or
+// writes it and it is empty (0 rows on 2026-11-11); it was created outside
+// this repository. Declared only so drizzle-kit does not offer to drop it.
+// Drop it with a dedicated migration, then delete this.
+export const waitlistSignups = pgTable("waitlist_signups", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique("waitlist_signups_email_key"),
+  name: text("name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

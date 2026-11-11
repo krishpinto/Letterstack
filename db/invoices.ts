@@ -11,7 +11,7 @@
 // as settlement happens — the first call issues, every later one returns what
 // was issued.
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "./client";
 import { invoices } from "./schema";
@@ -121,6 +121,44 @@ export async function markInvoiceSent(
     .update(invoices)
     .set({ sentTo, sesMessageId, sentAt: new Date() })
     .where(eq(invoices.id, invoiceId));
+}
+
+/**
+ * How long a claimed-but-unfinished send blocks another attempt. Long enough
+ * to cover rendering the PDF and the SES call; short enough that a send lost
+ * to a crashed function is retried by the next settlement call.
+ */
+const EMAIL_CLAIM_TTL = sql`interval '15 minutes'`;
+
+/**
+ * Claim the right to email this invoice. True for exactly one caller while
+ * the invoice is unsent: the browser callback and the webhook settling the
+ * same payment at once would otherwise both mail the customer.
+ */
+export async function claimInvoiceEmail(invoiceId: string): Promise<boolean> {
+  const [row] = await db
+    .update(invoices)
+    .set({ emailClaimedAt: new Date() })
+    .where(
+      and(
+        eq(invoices.id, invoiceId),
+        isNull(invoices.sentAt),
+        or(
+          isNull(invoices.emailClaimedAt),
+          lt(invoices.emailClaimedAt, sql`now() - ${EMAIL_CLAIM_TTL}`),
+        ),
+      ),
+    )
+    .returning({ id: invoices.id });
+  return Boolean(row);
+}
+
+/** Give a failed send's claim back, so the next settlement call retries it. */
+export async function releaseInvoiceEmail(invoiceId: string): Promise<void> {
+  await db
+    .update(invoices)
+    .set({ emailClaimedAt: null })
+    .where(and(eq(invoices.id, invoiceId), isNull(invoices.sentAt)));
 }
 
 function toRecord(row: typeof invoices.$inferSelect): InvoiceRecord {

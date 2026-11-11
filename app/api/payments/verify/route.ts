@@ -59,9 +59,24 @@ export async function POST(request: NextRequest) {
   }
 
   // The webhook may well have settled this already — that's the expected
-  // race, not an error. settlePaymentPaid returns null when someone else got
-  // there first, and either way the payer sees the same success.
-  const result = await settlePaidOrder(orderId, paymentId);
+  // race, not an error. Settlement finishes whatever is still missing and
+  // either way the payer sees the same success.
+  let result;
+  try {
+    result = await settlePaidOrder(orderId, paymentId);
+  } catch (err) {
+    // The charge went through; only activating it failed. The webhook
+    // retries settlement until it succeeds, so the payer must not pay again.
+    console.error(`Settling order ${orderId} from the browser failed`, err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Your payment was received — please don't pay again. Your plan is still being activated; refresh in a minute, and contact us if it hasn't changed.",
+      },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({
     ok: true,
     status: "paid",

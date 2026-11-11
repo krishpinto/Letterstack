@@ -1,7 +1,9 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaignRecipients, campaigns } from "./schema";
+import { automations, campaignRecipients, campaigns } from "./schema";
 import { listSuppressedSetForOrganization } from "./suppression";
+import { UNKNOWN_DELIVERY_STATE, type RecipientCounts } from "@/lib/send/send-policy";
+import { uniqueByOrganization, type SuppressionTarget } from "@/lib/webhooks/ses-event";
 
 const INSERT_BATCH_SIZE = 1_000;
 
@@ -11,13 +13,19 @@ type AudiencePerson = {
   name?: string | null;
 };
 
-export async function prepareCampaignAudience(
-  campaignId: string,
-  organizationId: string,
-) {
+/**
+ * The audience a send would go to right now: the campaign's pending rows,
+ * split into those we may send to and those on the suppression list.
+ *
+ * Read-only on purpose. It runs before the campaign is claimed, and a
+ * request that then loses the claim (or is refused for quota) must not have
+ * changed anything; the caller fails the suppressed rows with
+ * failPendingRecipients only after it has won.
+ */
+export async function readSendableAudience(campaignId: string, organizationId: string) {
   const [rows, blocked] = await Promise.all([
     db
-      .select()
+      .select({ id: campaignRecipients.id, email: campaignRecipients.email })
       .from(campaignRecipients)
       .where(
         and(
@@ -28,21 +36,22 @@ export async function prepareCampaignAudience(
     listSuppressedSetForOrganization(organizationId),
   ]);
 
-  const allowed = rows.filter((row) => !blocked.has(row.email));
-  const suppressed = rows.filter((row) => blocked.has(row.email));
-
-  await Promise.all(
-    suppressed.map((row) =>
-      markCampaignRecipient(row.id, "failed", "suppressed"),
-    ),
-  );
-
-  return allowed;
+  return {
+    allowed: rows.filter((row) => !blocked.has(row.email)),
+    suppressed: rows.filter((row) => blocked.has(row.email)),
+  };
 }
 
-/** @deprecated Existing callers should use prepareCampaignAudience. */
-export async function freezeAudience(campaignId: string, organizationId: string) {
-  return prepareCampaignAudience(campaignId, organizationId);
+/**
+ * Every row of a campaign with its status, ordered by id. The batch planner
+ * cuts batches over this list; see planBatches in lib/send/send-policy.ts.
+ */
+export async function listRecipientStates(campaignId: string) {
+  return db
+    .select({ id: campaignRecipients.id, status: campaignRecipients.status })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId))
+    .orderBy(campaignRecipients.id);
 }
 
 export async function addCampaignRecipient(
@@ -98,66 +107,195 @@ export async function addCampaignRecipientsBulk(
   return inserted;
 }
 
-export async function listPendingByIds(ids: string[]) {
-  if (ids.length === 0) return [];
-
-  return db
-    .select()
-    .from(campaignRecipients)
-    .where(
-      and(
-        inArray(campaignRecipients.id, ids),
-        eq(campaignRecipients.status, "pending"),
-      ),
-    );
+/**
+ * Fail recipients that no worker has claimed yet — addresses found on the
+ * suppression list when the send starts. Guarded on "pending" so it can
+ * never overwrite a row a worker is sending or has sent.
+ */
+export async function failPendingRecipients(ids: string[], error: string): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(campaignRecipients)
+    .set({ status: "failed", sentAt: null, error })
+    .where(and(inArray(campaignRecipients.id, ids), eq(campaignRecipients.status, "pending")));
 }
 
-export async function markCampaignRecipient(
+/**
+ * Fail every row of a campaign that no worker has claimed, when the
+ * campaign itself has failed and nothing will ever send them. Returns how
+ * many rows it failed, so the caller can release their quota.
+ */
+export async function failAllPendingForCampaign(campaignId: string, error: string): Promise<number> {
+  const rows = await db
+    .update(campaignRecipients)
+    .set({ status: "failed", sentAt: null, error })
+    .where(
+      and(eq(campaignRecipients.campaignId, campaignId), eq(campaignRecipients.status, "pending")),
+    )
+    .returning({ id: campaignRecipients.id });
+  return rows.length;
+}
+
+/**
+ * Claim one recipient for sending: pending → sending, in one guarded UPDATE.
+ * Returns the row only to the caller that made the move, so two workers
+ * holding the same id (a QStash retry, a duplicate delivery, a Resume) can
+ * never both send to it.
+ *
+ * Also refuses unless the campaign itself is "sending". A batch that outlived
+ * its campaign — reverted to draft, or marked failed — sends nothing.
+ *
+ * The campaign check is hand-written SQL with fixed table names: drizzle
+ * renders interpolated columns unqualified inside raw subqueries, which would
+ * correlate against the wrong table (see listCampaignsForOrganization).
+ */
+export async function claimCampaignRecipient(
+  id: string,
+): Promise<{ id: string; email: string } | null> {
+  const [row] = await db
+    .update(campaignRecipients)
+    .set({ status: "sending", claimedAt: sql`now()`, error: null })
+    .where(
+      and(
+        eq(campaignRecipients.id, id),
+        eq(campaignRecipients.status, "pending"),
+        sql`exists (select 1 from campaigns c where c.id = campaign_recipients.campaign_id and c.status = 'sending')`,
+      ),
+    )
+    .returning({ id: campaignRecipients.id, email: campaignRecipients.email });
+  return row ?? null;
+}
+
+/**
+ * Record what happened to a claimed recipient: sending → sent | failed.
+ * Returns whether this call made the move. Guarded on "sending", so a late
+ * or repeated write can never turn "sent" into "failed" or back.
+ */
+export async function finishCampaignRecipient(
   id: string,
   status: "sent" | "failed",
   error?: string,
-) {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(campaignRecipients)
     .set({
       status,
       sentAt: status === "sent" ? new Date() : null,
       error: error ?? null,
     })
-    .where(eq(campaignRecipients.id, id));
+    .where(and(eq(campaignRecipients.id, id), eq(campaignRecipients.status, "sending")))
+    .returning({ id: campaignRecipients.id });
+  return rows.length > 0;
 }
 
-export async function userIdsForEmail(email: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ userId: campaigns.userId })
+/**
+ * Put a claimed recipient back to "pending" — only for rows we know never
+ * reached the provider (the provider refused with a retryable error, or the
+ * worker failed before calling it), so the next attempt may send to them.
+ */
+export async function returnCampaignRecipientToPending(id: string): Promise<void> {
+  await db
+    .update(campaignRecipients)
+    .set({ status: "pending", claimedAt: null })
+    .where(and(eq(campaignRecipients.id, id), eq(campaignRecipients.status, "sending")));
+}
+
+/**
+ * Settle rows whose claim is older than `timeoutMs`: the worker holding them
+ * is gone, and we do not know whether the provider got the message.
+ *
+ * Rows SES has since reported on (any email_events row for this campaign
+ * and address — Send, Delivery, Bounce, Open…) did reach SES, so they become
+ * "sent". The event is our record of SES's message: the campaignId tag rides
+ * on the message and SES echoes it back. Everything else becomes "failed"
+ * with UNKNOWN_DELIVERY_STATE, never "pending" — see CLAIM_TIMEOUT_MS for
+ * why this side of the trade-off. Gmail sends produce no events, so a
+ * stale Gmail row always lands in the second group.
+ *
+ * Returns how many rows it settled each way. `timeoutMs` is our own
+ * constant, rendered as a literal so Postgres can type the interval. The
+ * event check is hand-written SQL for the same reason as
+ * claimCampaignRecipient.
+ */
+export async function settleStaleClaims(
+  campaignId: string,
+  timeoutMs: number,
+): Promise<{ sent: number; failed: number }> {
+  const seconds = Math.max(1, Math.floor(timeoutMs / 1000));
+  const stale = and(
+    eq(campaignRecipients.campaignId, campaignId),
+    eq(campaignRecipients.status, "sending"),
+    sql`(${campaignRecipients.claimedAt} is null or ${campaignRecipients.claimedAt} < now() - interval '${sql.raw(String(seconds))} seconds')`,
+  );
+
+  const sent = await db
+    .update(campaignRecipients)
+    .set({ status: "sent", sentAt: sql`coalesce(claimed_at, now())`, error: null })
+    .where(
+      and(
+        stale,
+        sql`exists (select 1 from email_events e where e.campaign_id = campaign_recipients.campaign_id and lower(e.email) = lower(campaign_recipients.email))`,
+      ),
+    )
+    .returning({ id: campaignRecipients.id });
+
+  const failed = await db
+    .update(campaignRecipients)
+    .set({ status: "failed", sentAt: null, error: UNKNOWN_DELIVERY_STATE })
+    .where(stale)
+    .returning({ id: campaignRecipients.id });
+
+  return { sent: sent.length, failed: failed.length };
+}
+
+/** How many of these recipients are claimed right now. */
+export async function countSendingAmong(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
     .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
-
-  return rows.map((row) => row.userId);
+    .where(and(inArray(campaignRecipients.id, ids), eq(campaignRecipients.status, "sending")));
+  return row?.count ?? 0;
 }
 
-export async function organizationIdsForEmail(email: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ organizationId: campaigns.organizationId })
-    .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
-
-  return rows.map((row) => row.organizationId);
-}
-
+/**
+ * Every workspace a bounce or complaint for this address should be recorded
+ * in: each one whose campaigns have mailed it (an address that hard-bounces
+ * for one sender is dead for all of them on the shared SES account), plus the
+ * workspace behind the automation that sent this message, if it was one.
+ *
+ * Automation sends leave no campaign_recipients row, so without the
+ * automation lookup a bounce from an automation-only contact was never
+ * suppressed and the automation kept mailing it. The automation id comes from
+ * the SES message tag, which only counts as trustworthy because the webhook
+ * verifies the SNS signature first.
+ */
 export async function suppressionTargetsForEmail(
   email: string,
-): Promise<{ organizationId: string; userId: string }[]> {
-  return db
-    .selectDistinct({
-      organizationId: campaigns.organizationId,
-      userId: campaigns.userId,
-    })
-    .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
+  options: { automationId?: string | null } = {},
+): Promise<SuppressionTarget[]> {
+  const [fromCampaigns, fromAutomation] = await Promise.all([
+    db
+      .selectDistinct({
+        organizationId: campaigns.organizationId,
+        userId: campaigns.userId,
+      })
+      .from(campaignRecipients)
+      .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
+      .where(eq(campaignRecipients.email, email)),
+    options.automationId
+      ? db
+          .select({
+            organizationId: automations.organizationId,
+            userId: automations.userId,
+          })
+          .from(automations)
+          .where(eq(automations.id, options.automationId))
+          .limit(1)
+      : Promise.resolve([] as SuppressionTarget[]),
+  ]);
+
+  return uniqueByOrganization([...fromAutomation, ...fromCampaigns]);
 }
 
 export async function listCampaignRecipients(campaignId: string) {
@@ -198,21 +336,8 @@ export async function countRecipientsForCampaign(campaignId: string): Promise<nu
   return row?.count ?? 0;
 }
 
-export async function countPendingForCampaign(campaignId: string): Promise<number> {
-  const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(campaignRecipients)
-    .where(
-      and(
-        eq(campaignRecipients.campaignId, campaignId),
-        eq(campaignRecipients.status, "pending"),
-      ),
-    );
-
-  return row?.count ?? 0;
-}
-
-export async function campaignProgress(campaignId: string) {
+/** Recipient rows of one campaign by status. */
+export async function recipientStatusCounts(campaignId: string): Promise<RecipientCounts> {
   const rows = await db
     .select({
       status: campaignRecipients.status,
@@ -224,9 +349,29 @@ export async function campaignProgress(campaignId: string) {
 
   const byStatus = (status: string) =>
     rows.find((row) => row.status === status)?.count ?? 0;
-  const sent = byStatus("sent");
-  const failed = byStatus("failed");
-  const pending = byStatus("pending");
+  return {
+    pending: byStatus("pending"),
+    sending: byStatus("sending"),
+    sent: byStatus("sent"),
+    failed: byStatus("failed"),
+  };
+}
 
-  return { total: sent + failed + pending, sent, failed, pending };
+/**
+ * Progress for the live monitor and the public API.
+ *
+ * `pending` keeps meaning "not finished yet" and so includes rows a worker
+ * is sending right now; every existing reader treats pending > 0 as "still
+ * going". `sending` is reported separately for readers that want it.
+ */
+export async function campaignProgress(campaignId: string) {
+  const counts = await recipientStatusCounts(campaignId);
+  const pending = counts.pending + counts.sending;
+  return {
+    total: counts.sent + counts.failed + pending,
+    sent: counts.sent,
+    failed: counts.failed,
+    pending,
+    sending: counts.sending,
+  };
 }

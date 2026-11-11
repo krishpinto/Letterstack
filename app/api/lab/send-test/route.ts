@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { initialEmailDocument } from "@/lib/email/document";
 import { sendEmail } from "@/lib/send/ses";
+import { labGuard } from "@/lib/lab/dev-only";
 
 // The AWS SDK needs the full Node.js runtime (not Vercel's lighter "edge"
 // runtime), so we ask Next.js for Node explicitly.
@@ -19,6 +20,8 @@ export const runtime = "nodejs";
 // "POST" = this endpoint does an action (sending), as opposed to just reading.
 // The browser will fetch("/api/lab/send-test", { method: "POST" }).
 export async function POST() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const to = process.env.TEST_TO;
   const fromEmail = process.env.MAIL_FROM;
 

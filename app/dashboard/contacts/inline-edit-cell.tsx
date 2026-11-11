@@ -80,7 +80,7 @@ function DiffText({ from, to }: { from: string; to: string }) {
             {segment.text}
           </span>
         ) : (
-          <span key={index} className="rounded-sm bg-red-500/15 text-red-500 line-through">
+          <span key={index} className="rounded-sm bg-destructive/15 text-destructive line-through">
             {segment.text}
           </span>
         ),
@@ -93,7 +93,7 @@ function ScoreBar({ value, tone }: { value: number; tone: "good" | "warn" | "bad
   const toneClass = {
     good: "bg-emerald-500",
     warn: "bg-amber-500",
-    bad: "bg-red-500",
+    bad: "bg-destructive",
     muted: "bg-muted-foreground/50",
   }[tone];
   return (

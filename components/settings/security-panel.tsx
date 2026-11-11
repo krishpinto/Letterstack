@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { CheckCircle2Icon, KeyRoundIcon, MailIcon } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -18,15 +19,12 @@ import { Spinner } from "@/components/ui/spinner";
  * Three things, and only one of them is a form, because only one of them is
  * something this app can actually do.
  *
- * What is NOT here, and why: a list of active sessions, and a "sign out
- * everywhere" button. Sessions are stateless JWTs — lib/auth.ts runs NextAuth
- * with strategy: "jwt" and no adapter, on purpose, because the users table is
- * ours — so there is no server-side record of a session to display or revoke.
- * A button claiming to end other sessions would end nothing. Making it real
- * needs a token-version column compared in the jwt callback, which costs a
- * database read on every session refresh; that is a trade worth making
- * deliberately, not smuggling in behind a switch. Until then this panel says
- * what is true.
+ * What is NOT here, and why: a list of active sessions. Sessions are
+ * stateless JWTs — lib/auth.ts runs NextAuth with strategy: "jwt" and no
+ * adapter, on purpose, because the users table is ours — so there is no
+ * server-side record of a session to display. What does exist is a
+ * per-account session version checked on every request: changing the
+ * password bumps it, which signs every browser out at once.
  */
 
 const MIN_LENGTH = 8;
@@ -65,6 +63,17 @@ export function SecurityPanel({
       });
       const data = await response.json().catch(() => null);
       if (!data?.ok) throw new Error(data?.error || "Could not update your password");
+      // The change signed out every session, this one included. Sign this
+      // browser back in with the new password so the person stays here.
+      const relogin = await signIn("credentials", {
+        email,
+        password: next,
+        redirect: false,
+      });
+      if (relogin?.error) {
+        router.push("/login");
+        return;
+      }
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -224,12 +233,9 @@ export function SecurityPanel({
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
           We cannot show you a list of signed-in devices, and we would rather
-          say so than show you one that is not real. Sessions here are
-          self-contained tokens held by your browser — nothing about them is
-          stored on our side, which is also why changing your password does not
-          sign other browsers out. If you think someone else has access, change
-          your password and then sign out of the browser you are worried about
-          directly.
+          say so than show you one that is not real. Changing or resetting
+          your password signs out every other browser and device at once, so
+          if you think someone else has access, change it.
         </p>
         <p className="text-xs text-muted-foreground">
           A signed-in session lasts 30 days from sign-in unless you sign out.

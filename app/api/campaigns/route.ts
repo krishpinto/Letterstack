@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { emailTemplates } from "@/db/schema";
 import { compileEmailDocument } from "@/lib/email/compiler";
+import { sanitizeEmailDocument } from "@/lib/email/sanitize";
 import { normalizeDocument } from "@/lib/email/document";
 import {
   PREBUILT_TEMPLATES,
@@ -124,7 +125,8 @@ export async function POST(request: Request) {
         doc = normalizeDocument(JSON.parse(JSON.stringify(saved.document)));
       }
     }
-    doc ??= blankDocument();
+    // A saved template may predate write-time sanitizing; store a clean copy.
+    doc = sanitizeEmailDocument(doc ?? blankDocument());
     resolveTemplateVariables(doc, {
       organization: organization?.name ?? "our team",
     });

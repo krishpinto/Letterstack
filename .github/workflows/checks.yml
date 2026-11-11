@@ -26,10 +26,17 @@ jobs:
       # ones a deploy will use.
       - run: npm ci
 
+      # The full-project type check needs more than Node's default heap on
+      # the hosted runner (7GB RAM) and dies with "heap out of memory".
       - name: Typecheck
         run: npm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
-      # Warnings are fine and there are currently 16 of them; this fails only
-      # on errors, which the repo has none of.
+      # Warnings are fine; this fails only on errors.
       - name: Lint
         run: npm run lint
+
+      # Unit tests. They never reach a database or the network.
+      - name: Test
+        run: npm test

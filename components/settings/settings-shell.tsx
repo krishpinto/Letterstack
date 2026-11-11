@@ -6,7 +6,6 @@ import {
   BellIcon,
   BuildingIcon,
   CreditCardIcon,
-  GlobeIcon,
   KeyRoundIcon,
   MailIcon,
   PaletteIcon,
@@ -14,14 +13,12 @@ import {
   UserIcon,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { type PlanKey } from "@/lib/plans/limits";
 import { AccountPanel } from "@/components/settings/account-panel";
 import { OrganizationPanel } from "@/components/settings/organization-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { ApiPanel } from "@/components/settings/api-panel";
-import { DomainsPanel } from "@/components/settings/domains-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
 import { SecurityPanel } from "@/components/settings/security-panel";
@@ -35,19 +32,17 @@ type SettingsSection = {
   id: string;
   label: string;
   icon: React.ElementType;
-  badge?: string;
 };
 
 const SETTINGS_NAV: SettingsSection[] = [
   { id: "account", label: "Account", icon: UserIcon },
   { id: "organization", label: "Organization", icon: BuildingIcon },
   { id: "sending", label: "Sending", icon: MailIcon },
-  { id: "domains", label: "Domains", icon: GlobeIcon },
   { id: "notifications", label: "Notifications", icon: BellIcon },
   { id: "appearance", label: "Appearance", icon: PaletteIcon },
   { id: "security", label: "Security", icon: ShieldIcon },
   { id: "api", label: "API & Integrations", icon: KeyRoundIcon },
-  { id: "billing", label: "Billing & Plans", icon: CreditCardIcon, badge: "Beta" },
+  { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
 ];
 
 function SettingsIcon({ className }: { className?: string }) {
@@ -64,7 +59,6 @@ const SECTIONS_WITH_PANELS = new Set([
   "account",
   "organization",
   "sending",
-  "domains",
   "notifications",
   "appearance",
   "security",
@@ -152,6 +146,12 @@ export function SettingsShell({
   const canManage = organization.role === "owner" || organization.role === "admin";
 
   function selectSection(id: string) {
+    // Domains live at /dashboard/domains (one implementation, reachable from
+    // the icon rail). Panels that point at "domains" go there.
+    if (id === "domains") {
+      router.push("/dashboard/domains");
+      return;
+    }
     setActiveSection(id);
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", id);
@@ -159,9 +159,42 @@ export function SettingsShell({
   }
 
   return (
-    <div className="flex h-full">
-      {/* ── Settings left nav ── */}
-      <aside className="flex w-52 shrink-0 flex-col border-r border-border bg-background">
+    <div className="flex h-full flex-col md:flex-row">
+      {/* ── Phone: sections as a horizontally scrolling tab strip ── */}
+      <nav
+        aria-label="Settings sections"
+        className="scrollbar-none flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-background px-2 py-2 md:hidden"
+      >
+        {SETTINGS_NAV.map((section) => {
+          const Icon = section.icon;
+          const isActive = section.id === activeSection;
+          return (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => selectSection(section.id)}
+              aria-current={isActive ? "page" : undefined}
+              ref={(node) => {
+                // Keep the active tab in view when the page opens on a
+                // section further along the strip.
+                if (node && isActive) node.scrollIntoView({ block: "nearest", inline: "nearest" });
+              }}
+              className={cn(
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap transition-colors",
+                isActive
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+            >
+              <Icon className="size-3.5 shrink-0" />
+              {section.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* ── Settings left nav (md and up) ── */}
+      <aside className="hidden w-52 shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="flex h-10 shrink-0 items-center border-b border-border px-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Settings
@@ -184,11 +217,6 @@ export function SettingsShell({
               >
                 <Icon className="size-3.5 shrink-0" />
                 <span className="flex-1 truncate text-left">{section.label}</span>
-                {section.badge && (
-                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                    {section.badge}
-                  </Badge>
-                )}
               </button>
             );
           })}
@@ -196,15 +224,15 @@ export function SettingsShell({
       </aside>
 
       {/* ── Settings content ── */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="hidden h-10 shrink-0 items-center border-b border-border px-6 md:flex">
           <div className="flex items-center gap-2">
             <active.icon className="size-3.5 text-muted-foreground" />
             <span className="text-xs font-medium">{active.label}</span>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-6 pb-24">
+        <div className="flex-1 overflow-auto p-4 pb-24 md:p-6 md:pb-24">
           {activeSection === "account" && <AccountPanel initialProfile={profile} />}
           {activeSection === "organization" && (
             <OrganizationPanel
@@ -242,7 +270,6 @@ export function SettingsShell({
               onNavigate={selectSection}
             />
           )}
-          {activeSection === "domains" && <DomainsPanel canManage={canManage} />}
           {activeSection === "notifications" && (
             <NotificationsPanel userEmail={profile.email} />
           )}

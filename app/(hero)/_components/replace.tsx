@@ -1,83 +1,43 @@
 "use client";
 
+import {
+  BarChart3Icon,
+  LayoutTemplateIcon,
+  MailPlusIcon,
+  SendIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+  WorkflowIcon,
+} from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
-// ─── High Fidelity SVG Logos for Email Services ────────────────────────────────
+// ─── Floating job cards ──────────────────────────────────────────────────────
 
-function SendGridLogo() {
+// The jobs LetterStack does, drawn as the cards floating around the heading.
+// These used to be other companies' logos (including Amazon SES, which
+// LetterStack sends through rather than replaces), which read as a claim of
+// replacing transactional email APIs that the product does not offer.
+const JOBS = [
+  { icon: LayoutTemplateIcon, label: "Block editor", color: "text-[#5D5FEF]" },
+  { icon: UsersIcon, label: "Contacts", color: "text-[#0284C7]" },
+  { icon: MailPlusIcon, label: "Signup forms", color: "text-[#D97706]" },
+  { icon: SendIcon, label: "Sending", color: "text-[#059669]" },
+  { icon: ShieldCheckIcon, label: "Bounce handling", color: "text-[#DC2626]" },
+  { icon: BarChart3Icon, label: "Analytics", color: "text-[#7C3AED]" },
+  { icon: WorkflowIcon, label: "Automations", color: "text-[#0A0A0A]" },
+] as const;
+
+function JobIcon({ index }: { index: number }) {
+  const job = JOBS[index];
+  const Icon = job.icon;
   return (
-    <svg className="size-8 text-[#009BDE]" viewBox="0 0 24 24" fill="currentColor">
-      {/* SendGrid grid block logo representation */}
-      <rect x="2" y="2" width="8" height="8" rx="1.5" />
-      <rect x="14" y="2" width="8" height="8" rx="1.5" />
-      <rect x="2" y="14" width="8" height="8" rx="1.5" />
-      <rect x="14" y="14" width="8" height="8" rx="1.5" />
-      <circle cx="12" cy="12" r="3.5" className="fill-white stroke-[#009BDE] stroke-2" />
-    </svg>
+    <>
+      <Icon className={cn("size-8", job.color)} aria-hidden />
+      <span className="sr-only">{job.label}</span>
+    </>
   );
 }
-
-function PostmarkLogo() {
-  return (
-    <svg className="size-8 text-[#F7A823]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {/* Postmark stamp/envelope logo representation */}
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M3 6l9 6 9-6" />
-      <circle cx="18" cy="14" r="3" strokeWidth="1.5" className="fill-[#F7A823]/10" />
-      <line x1="16.5" y1="12.5" x2="19.5" y2="15.5" />
-    </svg>
-  );
-}
-
-function MailchimpLogo() {
-  return (
-    <svg className="size-8 text-[#FFE01B]" viewBox="0 0 24 24" fill="currentColor">
-      {/* Mailchimp yellow stamp with monkey outline */}
-      <circle cx="12" cy="12" r="10" className="text-[#FFE01B]" />
-      <path d="M12 6a4 4 0 00-4 4c0 1.5.8 2.5 1.5 3a2.5 2.5 0 01-1.5 2.5v.5h8v-.5a2.5 2.5 0 01-1.5-2.5c.7-.5 1.5-1.5 1.5-3a4 4 0 00-4-4zm0 6a2 2 0 110-4 2 2 0 010 4z" className="text-black" />
-    </svg>
-  );
-}
-
-function AmazonSESLogo() {
-  return (
-    <svg className="size-8 text-[#FF9900]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      {/* AWS Database/Queue logo representation */}
-      <rect x="3" y="3" width="18" height="6" rx="1" />
-      <rect x="3" y="11" width="18" height="6" rx="1" />
-      <path d="M7 6h10M7 14h10" />
-      <circle cx="12" cy="20" r="1.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function ResendLogo() {
-  return (
-    <div className="size-8 bg-black rounded flex items-center justify-center text-white font-bold font-sans text-base select-none">
-      R
-    </div>
-  );
-}
-
-function MailgunLogo() {
-  return (
-    <svg className="size-8 text-[#E11D48]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      {/* Target/Shield Mailgun logo representation */}
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
-  );
-}
-
-function SparkPostLogo() {
-  return (
-    <svg className="size-8 text-[#FF5A5F]" viewBox="0 0 24 24" fill="currentColor">
-      {/* SparkPost Flame/Spark representation */}
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 10.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" />
-    </svg>
-  );
-}
-
-// ─── Floating Card component with local animation delay ──────────────────────
 
 interface FloatingCardProps {
   children: React.ReactNode;
@@ -115,37 +75,37 @@ export function ReplaceSection() {
       <div className="hidden md:block absolute inset-0 max-w-screen-xl mx-auto pointer-events-none">
         {/* SendGrid (Top Left) */}
         <FloatingCard className="left-[6%] top-[15%]" delayClass="[animation-delay:0s]">
-          <SendGridLogo />
+          <JobIcon index={0} />
         </FloatingCard>
         
         {/* Mailchimp (Mid Left) */}
         <FloatingCard className="left-[12%] top-[45%]" delayClass="[animation-delay:1.5s]">
-          <MailchimpLogo />
+          <JobIcon index={1} />
         </FloatingCard>
 
         {/* Amazon SES (Bottom Left) */}
         <FloatingCard className="left-[8%] top-[70%]" delayClass="[animation-delay:3s]">
-          <AmazonSESLogo />
+          <JobIcon index={2} />
         </FloatingCard>
 
         {/* Postmark (Top Right) */}
         <FloatingCard className="right-[8%] top-[12%]" delayClass="[animation-delay:0.75s]">
-          <PostmarkLogo />
+          <JobIcon index={3} />
         </FloatingCard>
 
         {/* Resend (Mid Right) */}
         <FloatingCard className="right-[14%] top-[40%]" delayClass="[animation-delay:2.2s]">
-          <ResendLogo />
+          <JobIcon index={4} />
         </FloatingCard>
 
         {/* Mailgun (Bottom Right) */}
         <FloatingCard className="right-[9%] top-[68%]" delayClass="[animation-delay:3.8s]">
-          <MailgunLogo />
+          <JobIcon index={5} />
         </FloatingCard>
 
         {/* SparkPost (Far Right Side) */}
         <FloatingCard className="right-[4%] top-[30%]" delayClass="[animation-delay:1s]">
-          <SparkPostLogo />
+          <JobIcon index={6} />
         </FloatingCard>
       </div>
 
@@ -180,21 +140,21 @@ export function ReplaceSection() {
           className="max-w-3xl mx-auto text-4xl font-bold leading-[1.08] tracking-tight text-[#0A0A0A] sm:text-5xl lg:text-6xl mb-6"
           style={{ fontFamily: "var(--font-bricolage, var(--font-inter))" }}
         >
-          Letterstack replaces your entire email delivery stack.
+          One tool for the newsletter you send every month.
         </h2>
         
         <p className="max-w-xl mx-auto text-lg leading-relaxed text-[#717171]">
-          Stop wiring together different services for marketing campaigns, transactional logs, bounce protection, and template designers. Letterstack does all of it, built on a single robust platform.
+          Design, contacts, signup forms, sending and bounce handling in one place, with delivery through Amazon SES from your own domain.
         </p>
 
         {/* ── Mobile-Only Icon Grid (So they don't get lost on smaller screens) ── */}
         <div className="md:hidden mt-12 flex flex-wrap justify-center gap-4">
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><SendGridLogo /></div>
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><MailchimpLogo /></div>
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><AmazonSESLogo /></div>
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><PostmarkLogo /></div>
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><ResendLogo /></div>
-          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><MailgunLogo /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={0} /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={1} /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={2} /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={3} /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={4} /></div>
+          <div className="rounded-xl bg-[#F4F4F5] border border-[#E4E4E7] p-2"><JobIcon index={5} /></div>
         </div>
 
       </div>

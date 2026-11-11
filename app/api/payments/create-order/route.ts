@@ -13,6 +13,7 @@ import { isAdmin } from "@/lib/admin";
 import { auth } from "@/lib/auth";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 import { getPaymentItem, itemDisplayName } from "@/lib/payments/catalog";
+import { quoteItemForOrganization } from "@/lib/payments/quote";
 import { createOrder } from "@/lib/payments/razorpay";
 
 export const runtime = "nodejs";
@@ -68,8 +69,16 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  if (item.adminOnly && !isAdmin(session?.user?.email)) {
+  if (item.adminOnly && !isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  // Refuse what settlement shouldn't have to absorb — a lower tier while a
+  // higher one runs, or a renewal of a plan with no end date — before the
+  // customer is charged, with the reason and when it becomes possible.
+  const quote = await quoteItemForOrganization(organization, itemKey);
+  if (quote && !quote.allowed) {
+    return NextResponse.json({ ok: false, error: quote.message }, { status: 409 });
   }
 
   // Razorpay caps receipts at 40 characters.

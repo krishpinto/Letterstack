@@ -19,19 +19,69 @@ export type SendGmailMessageInput = {
   listUnsubscribeUrl?: string;
 };
 
-function encodeHeaderWord(value: string): string {
-  // RFC 2047 encoded-word, for subject/display-name values that may contain
-  // non-ASCII — plain ASCII values pass through unchanged (Buffer.from is a
-  // no-op cost either way, and this avoids a separate ASCII-detection pass).
-  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+// One RFC 2047 encoded-word may be at most 75 characters. 45 bytes of
+// UTF-8 is 60 base64 characters, plus 12 for "=?UTF-8?B?" and "?=".
+const ENCODED_WORD_MAX_BYTES = 45;
+
+const PRINTABLE_ASCII = /^[\x20-\x7E]*$/;
+
+/**
+ * A header value safe to put on the wire: unchanged when it is printable
+ * ASCII, otherwise RFC 2047 encoded-words, folded onto continuation lines.
+ *
+ * Long values are split into several words, each cut on a code point
+ * boundary so no character is split across two words; decoders join
+ * adjacent encoded-words back together. Control characters force encoding,
+ * which also keeps a stray CR or LF in a subject from starting a new header.
+ */
+export function encodeHeaderValue(value: string): string {
+  if (PRINTABLE_ASCII.test(value)) return value;
+
+  const words: string[] = [];
+  let current = "";
+  for (const char of value) {
+    if (current && Buffer.byteLength(current + char, "utf8") > ENCODED_WORD_MAX_BYTES) {
+      words.push(current);
+      current = char;
+    } else {
+      current += char;
+    }
+  }
+  if (current) words.push(current);
+
+  return words
+    .map((word) => `=?UTF-8?B?${Buffer.from(word, "utf8").toString("base64")}?=`)
+    .join("\r\n ");
 }
 
-function buildRawMessage(input: SendGmailMessageInput): string {
-  const boundary = `ltrstk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+/** A display name for From: quoted when ASCII, encoded otherwise. */
+function encodeDisplayName(name: string): string {
+  if (PRINTABLE_ASCII.test(name)) return `"${name.replace(/["\\]/g, "\\$&")}"`;
+  return encodeHeaderValue(name);
+}
+
+/** Base64 for a MIME body part, folded to the 76-character lines MIME requires. */
+function base64Body(value: string): string {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/(.{76})/g, "$1\r\n");
+}
+
+/**
+ * The RFC 2822 message Gmail's messages.send takes, before its base64url
+ * wrapping. Exported for tests.
+ *
+ * Both body parts are base64 with charset=UTF-8. They used to be declared
+ * 7bit, which promises pure ASCII in lines of at most 998 characters; any
+ * accented letter, emoji or rupee sign broke that promise, and a long
+ * single-line HTML snapshot broke the line limit, so servers along the way
+ * were free to mangle both.
+ */
+export function buildMimeMessage(input: SendGmailMessageInput, boundary: string): string {
   const headers = [
-    `From: ${encodeHeaderWord(input.fromName)} <${input.fromEmail}>`,
+    `From: ${encodeDisplayName(input.fromName)} <${input.fromEmail}>`,
     `To: ${input.to}`,
-    `Subject: ${encodeHeaderWord(input.subject)}`,
+    `Subject: ${encodeHeaderValue(input.subject)}`,
     `MIME-Version: 1.0`,
     input.replyTo ? `Reply-To: ${input.replyTo}` : null,
     input.listUnsubscribeUrl ? `List-Unsubscribe: <${input.listUnsubscribeUrl}>` : null,
@@ -42,21 +92,25 @@ function buildRawMessage(input: SendGmailMessageInput): string {
   const body = [
     `--${boundary}`,
     `Content-Type: text/plain; charset="UTF-8"`,
-    `Content-Transfer-Encoding: 7bit`,
+    `Content-Transfer-Encoding: base64`,
     ``,
-    input.text,
+    base64Body(input.text),
     ``,
     `--${boundary}`,
     `Content-Type: text/html; charset="UTF-8"`,
-    `Content-Transfer-Encoding: 7bit`,
+    `Content-Transfer-Encoding: base64`,
     ``,
-    input.html,
+    base64Body(input.html),
     ``,
     `--${boundary}--`,
   ].join("\r\n");
 
-  const message = `${headers.join("\r\n")}\r\n\r\n${body}`;
-  return Buffer.from(message, "utf8")
+  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+}
+
+function buildRawMessage(input: SendGmailMessageInput): string {
+  const boundary = `ltrstk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return Buffer.from(buildMimeMessage(input, boundary), "utf8")
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")

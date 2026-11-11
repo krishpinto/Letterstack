@@ -7,6 +7,7 @@ import { DownloadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { EmailDocument } from "@/lib/email/document";
+import { ApiError, errorMessage, fetchJson } from "@/lib/fetch-json";
 
 export function UseSharedTemplateButton({
   token,
@@ -25,29 +26,22 @@ export function UseSharedTemplateButton({
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/templates", {
+      await fetchJson("/api/templates", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, document }),
+        json: { name, document },
       });
-
-      if (response.status === 401) {
+      router.push("/dashboard/templates");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
         // Not signed in (or no workspace yet) — sign in and come back here.
         router.push(
           `/login?callbackUrl=${encodeURIComponent(`/templates/shared/${token}`)}`,
         );
         return;
       }
-
-      const data = await response.json();
-      if (!data.ok) {
-        setError(data.error || "Could not save the template.");
-        setSaving(false);
-        return;
-      }
-      router.push("/dashboard/templates");
-    } catch {
-      setError("Could not reach the server.");
+      // The server's own reason when it gave one; a non-JSON error page or a
+      // dropped connection no longer both read "Could not reach the server".
+      setError(errorMessage(err, "Could not save the template."));
       setSaving(false);
     }
   }
@@ -62,7 +56,11 @@ export function UseSharedTemplateButton({
         )}
         {saving ? "Adding…" : "Use this template"}
       </Button>
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && (
+        <span role="alert" className="text-xs text-destructive">
+          {error}
+        </span>
+      )}
     </div>
   );
 }

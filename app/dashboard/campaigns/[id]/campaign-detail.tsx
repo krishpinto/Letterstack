@@ -9,11 +9,15 @@ import {
   CalendarClockIcon,
   CalendarIcon,
   CheckIcon,
+  CircleAlertIcon,
   Edit3Icon,
+  FlaskConicalIcon,
   FolderIcon,
   PlusIcon,
+  RefreshCwIcon,
   ReplaceIcon,
   RotateCcwIcon,
+  SearchIcon,
   SendIcon,
   Trash2Icon,
   TriangleAlertIcon,
@@ -21,7 +25,10 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { confirmDialog } from "@/components/app-dialogs";
+import { ErrorState, useAsyncData } from "@/components/data-state";
+import { toast } from "@/components/toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Accordion,
   AccordionContent,
@@ -73,13 +80,22 @@ import {
 } from "@/components/ui/select";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
 import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
+import { ApiError, errorMessage, fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { ImportWizard } from "../../contacts/import-wizard";
+import {
+  ConfirmSendDialog,
+  formatWithTimeZone,
+  type SendIntent,
+} from "./confirm-send-dialog";
+import { SendTestDialog, testSentKey } from "./send-test-dialog";
+import { STALL_THRESHOLD_MS, trackStall, type StallTracker } from "./stall";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CampaignData = {
   id: string;
+  organizationId?: string;
   name: string;
   subject: string;
   fromName: string;
@@ -88,9 +104,13 @@ export type CampaignData = {
   senderType?: string;
   status: string;
   scheduledAt?: string | null;
+  /** Set by the send pipeline when status is "failed". */
+  failureReason?: string | null;
   htmlSnapshot: string;
   document: EmailDocument | null;
 };
+
+const RECIPIENT_PAGE_SIZE = 50;
 
 // datetime-local inputs want local wall-clock time, not the UTC ISO string.
 function toLocalInputValue(date: Date) {
@@ -136,6 +156,8 @@ type ProgressState = {
   sent: number;
   failed: number;
   pending: number;
+  /** Claimed by a worker but not finished yet, if the server reports it. */
+  sending?: number;
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -154,12 +176,34 @@ export function CampaignDetail({
   const isEditable = isDraft || isScheduled;
   const initialRef = useRef(initial);
 
+  // The audience can only change while the campaign is a draft — the
+  // recipients routes refuse edits once it is scheduled.
+  const canEditAudience = isDraft;
+
   const [campaign, setCampaign] = useState<CampaignData>(initial);
   const [open, setOpen] = useState<SectionKey | null>(null);
-  const [recipientCount, setRecipientCount] = useState<number | null>(null);
-  const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A synchronous guard: two clicks in the same frame both see sending ===
+  // false, so state alone can't stop a double dispatch.
+  const actionLockRef = useRef(false);
+
+  // Send confirmation + test send
+  const [confirmIntent, setConfirmIntent] = useState<SendIntent | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testSent, setTestSent] = useState(false);
+  useEffect(() => {
+    try {
+      setTestSent(localStorage.getItem(testSentKey(initial.id)) === "1");
+    } catch {
+      // Storage unavailable: the checklist just won't remember the test.
+    }
+  }, [initial.id]);
+
+  // Small screens show either the checklist or the preview.
+  const [mobileView, setMobileView] = useState<"checklist" | "preview">(
+    "checklist",
+  );
 
   // Send-time state
   const [sendMode, setSendMode] = useState<"now" | "schedule">(
@@ -221,7 +265,15 @@ export function CampaignDetail({
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
   const [orgAudienceCount, setOrgAudienceCount] = useState(0);
+  const [foldersError, setFoldersError] = useState<string | null>(null);
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
+
+  // "On this campaign" list: search + paging over the full recipient list.
+  const [recipientQuery, setRecipientQuery] = useState("");
+  const [recipientPage, setRecipientPage] = useState(1);
+  const [removingAll, setRemovingAll] = useState(false);
+
+  const [sendersError, setSendersError] = useState<string | null>(null);
 
   // Send progress (non-draft only)
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -236,23 +288,25 @@ export function CampaignDetail({
 
   useEffect(() => {
     if (!switchOpen) return;
-    fetch("/api/templates")
-      .then((r) => r.json())
+    fetchJson<{ templates?: { id: string; name: string }[] }>("/api/templates")
       .then((data) => {
-        if (data.ok) {
-          setSavedTemplates(
-            (data.templates ?? []).map((t: { id: string; name: string }) => ({
-              id: t.id,
-              name: t.name,
-            })),
-          );
-        }
+        setSavedTemplates(
+          (data.templates ?? []).map((t) => ({ id: t.id, name: t.name })),
+        );
       })
-      .catch(() => {});
+      .catch((err) => {
+        toast.error("Couldn't load your saved templates", {
+          description: errorMessage(err),
+        });
+      });
   }, [switchOpen]);
 
   // Sync if parent re-fetches and passes a new campaign prop
   useEffect(() => {
+    // A send/schedule that succeeded keeps its button disabled until the
+    // refreshed campaign arrives here, so it can't be clicked twice.
+    setSending(false);
+    actionLockRef.current = false;
     setCampaign(initial);
     setFromName(initial.fromName);
     setSubject(initial.subject);
@@ -264,53 +318,79 @@ export function CampaignDetail({
     );
   }, [initial]);
 
-  // Load recipients
-  const loadAudience = useCallback(async () => {
-    try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/recipients`);
-      const data = await r.json();
-      if (data.ok) {
-        setRecipients(data.recipients);
-        setRecipientCount(data.recipients.length);
-        return;
-      }
-    } catch {
-      // swallow
-    }
-    setRecipients([]);
-    setRecipientCount(0);
-  }, [campaign.id]);
+  // Load recipients. A failed load is an error with a retry — never an
+  // empty list, which would read as "this campaign has no audience".
+  const audience = useAsyncData(
+    () =>
+      fetchJson<{ recipients: CampaignRecipient[] }>(
+        `/api/campaigns/${initial.id}/recipients`,
+      ).then((data) => data.recipients),
+    [initial.id],
+  );
+  const recipients = useMemo(() => audience.data ?? [], [audience.data]);
+  const recipientCount = audience.data ? audience.data.length : null;
+  const audienceLoadError =
+    audience.status === "error" && !audience.data ? audience.error : null;
+  const loadAudience = audience.reload;
 
-  useEffect(() => {
-    loadAudience();
-  }, [loadAudience]);
+  const filteredRecipients = useMemo(() => {
+    const q = recipientQuery.trim().toLowerCase();
+    if (!q) return recipients;
+    return recipients.filter((r) =>
+      `${r.name ?? ""} ${r.email}`.toLowerCase().includes(q),
+    );
+  }, [recipients, recipientQuery]);
+  const recipientPageCount = Math.max(
+    1,
+    Math.ceil(filteredRecipients.length / RECIPIENT_PAGE_SIZE),
+  );
+  const safeRecipientPage = Math.min(recipientPage, recipientPageCount);
+  const recipientPageStart = (safeRecipientPage - 1) * RECIPIENT_PAGE_SIZE;
+  const recipientPageItems = filteredRecipients.slice(
+    recipientPageStart,
+    recipientPageStart + RECIPIENT_PAGE_SIZE,
+  );
 
   // Load the sender addresses this org can use (shared + verified custom
   // domains + this user's own connected Gmail accounts), and reflect the
   // campaign's current From address in the picker.
   useEffect(() => {
-    Promise.all([
-      fetch("/api/domains").then((r) => r.json()),
-      fetch("/api/senders/gmail/mailboxes").then((r) => r.json()),
+    Promise.allSettled([
+      fetchJson<{
+        sharedFromEmail?: string;
+        domains?: { domain: string; readyToSend: boolean }[];
+      }>("/api/domains"),
+      fetchJson<{ mailboxes?: { id: string; email: string; status: string }[] }>(
+        "/api/senders/gmail/mailboxes",
+      ),
     ])
-      .then(([domainsData, mailboxesData]) => {
+      .then(([domainsResult, mailboxesResult]) => {
         const current = initialRef.current.fromEmail;
         const at = current.lastIndexOf("@");
 
         let list: { domain: string; readyToSend: boolean }[] = [];
-        if (domainsData.ok) {
-          setSharedFromEmail(domainsData.sharedFromEmail ?? "");
-          list = domainsData.domains ?? [];
+        if (domainsResult.status === "fulfilled") {
+          setSharedFromEmail(domainsResult.value.sharedFromEmail ?? "");
+          list = domainsResult.value.domains ?? [];
           setSenderDomains(list);
         }
 
         let mailboxList: { id: string; email: string; status: string }[] = [];
-        if (mailboxesData.ok) {
-          mailboxList = (mailboxesData.mailboxes ?? []).filter(
-            (m: { status: string }) => m.status === "active",
+        if (mailboxesResult.status === "fulfilled") {
+          mailboxList = (mailboxesResult.value.mailboxes ?? []).filter(
+            (m) => m.status === "active",
           );
           setMailboxes(mailboxList);
         }
+
+        const failed = [domainsResult, mailboxesResult].find(
+          (result) => result.status === "rejected",
+        );
+        setSendersError(
+          failed && failed.status === "rejected"
+            ? `Some sending addresses couldn't be loaded: ${errorMessage(failed.reason)}`
+            : null,
+        );
 
         const mailboxMatch = mailboxList.find(
           (m) => m.email.toLowerCase() === current.toLowerCase(),
@@ -334,41 +414,53 @@ export function CampaignDetail({
   // long sent+failed has gone unchanged — a batch whose QStash retries all
   // failed leaves its recipients "pending" forever with no further updates,
   // and that staleness is the only client-side signal that a send has
-  // actually stalled rather than just being slow.
+  // actually stalled rather than just being slow. See ./stall.ts for why the
+  // threshold is minutes, not seconds.
   const [stalled, setStalled] = useState(false);
-  const lastProgressRef = useRef<{ done: number; at: number } | null>(null);
-  const STALL_THRESHOLD_MS = 45_000;
+  const [pollError, setPollError] = useState<string | null>(null);
+  const stallRef = useRef<StallTracker>(null);
+  // Bumped after a resume so polling restarts even if it had stopped.
+  const [pollKey, setPollKey] = useState(0);
 
   useEffect(() => {
     if (isEditable) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
 
     async function poll() {
       try {
-        const r = await fetch(`/api/campaigns/${campaign.id}/progress`);
-        const data = await r.json();
+        const data = await fetchJson<{
+          campaign: Partial<CampaignData>;
+          progress: ProgressState;
+        }>(`/api/campaigns/${initial.id}/progress`);
         if (!alive) return;
-        if (data.ok) {
-          setCampaign((c) => ({ ...(c ?? initialRef.current), ...data.campaign }));
-          setProgress(data.progress);
+        failures = 0;
+        setPollError(null);
+        setCampaign((c) => ({ ...c, ...data.campaign }));
+        setProgress(data.progress);
 
-          const done = data.progress.sent + data.progress.failed;
-          const now = Date.now();
-          const last = lastProgressRef.current;
-          if (last === null || last.done !== done) {
-            lastProgressRef.current = { done, at: now };
-            setStalled(false);
-          } else if (data.progress.pending > 0 && now - last.at > STALL_THRESHOLD_MS) {
-            setStalled(true);
-          }
+        const remaining = data.progress.pending + (data.progress.sending ?? 0);
+        const next = trackStall(
+          stallRef.current,
+          { sent: data.progress.sent, failed: data.progress.failed, pending: remaining },
+          Date.now(),
+        );
+        stallRef.current = next.tracker;
+        setStalled(next.stalled);
 
-          if (data.progress.pending > 0) {
-            timer = setTimeout(poll, 1500);
-          }
+        // A failed campaign won't move again; anything else with recipients
+        // still outstanding keeps being watched.
+        if (remaining > 0 && data.campaign.status !== "failed") {
+          timer = setTimeout(poll, 3000);
         }
-      } catch {
-        // ignore polling errors
+      } catch (err) {
+        if (!alive) return;
+        // Keep trying with backoff — a dropped request must not freeze the
+        // progress bar at whatever it last showed.
+        failures += 1;
+        setPollError(errorMessage(err));
+        timer = setTimeout(poll, Math.min(30_000, 3000 * 2 ** failures));
       }
     }
 
@@ -377,7 +469,7 @@ export function CampaignDetail({
       alive = false;
       clearTimeout(timer);
     };
-  }, [campaign.id, isEditable]);
+  }, [initial.id, isEditable, pollKey]);
 
   // ─── Derived state ──────────────────────────────────────────────────────────
 
@@ -396,24 +488,28 @@ export function CampaignDetail({
     sendtime: sendMode === "now" || Boolean(scheduleAt),
     content: true,
     unsubscribe: hasUnsubscribe,
+    // Recommended, not required: counted in the checklist so it nudges,
+    // left out of canSend so it never blocks.
+    test: testSent,
   };
   const canSend = ready.to && ready.from && ready.subject && ready.unsubscribe;
   const doneCount = Object.values(ready).filter(Boolean).length;
   const totalItems = Object.keys(ready).length;
+  const viaGmail =
+    campaign.senderType === "mailbox" ||
+    senderSource.startsWith("mailbox:");
 
   // Progress derived values
   const progressTotal = progress?.total ?? 0;
   const progressSent = progress?.sent ?? 0;
   const progressFailed = progress?.failed ?? 0;
   const progressDone = progressSent + progressFailed;
+  const progressRemaining = (progress?.pending ?? 0) + (progress?.sending ?? 0);
   const progressPct =
     progressTotal > 0 ? Math.round((progressDone / progressTotal) * 100) : 0;
+  const isFailed = campaign.status === "failed";
   const isFinished =
-    !isEditable && progressTotal > 0 && (progress?.pending ?? 0) === 0;
-  const deliveryRate =
-    progressTotal > 0
-      ? Math.round((progressSent / progressTotal) * 100)
-      : 0;
+    !isEditable && !isFailed && progressTotal > 0 && progressRemaining === 0;
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -426,24 +522,24 @@ export function CampaignDetail({
     setSavingSection(key);
     setError(null);
     try {
-      const nextDoc: EmailDocument = JSON.parse(
-        JSON.stringify(campaign.document),
+      // Start from the stored design, not the copy this page loaded. The
+      // editor (often open in another tab) saves the whole document, so
+      // patching the page's copy would put back an older design and lose
+      // those edits. Only the fields this section owns are changed.
+      const latest = await fetchJson<{ campaign: CampaignData }>(
+        `/api/campaigns/${campaign.id}`,
       );
+      const base = latest.campaign.document ?? campaign.document;
+      const nextDoc: EmailDocument = JSON.parse(JSON.stringify(base));
       mutate(nextDoc);
-      const r = await fetch(`/api/campaigns/${campaign.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: nextDoc, ...extra }),
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not save");
-        return;
-      }
+      const data = await fetchJson<{ campaign: CampaignData }>(
+        `/api/campaigns/${campaign.id}`,
+        { method: "PATCH", json: { document: nextDoc, ...extra } },
+      );
       setCampaign(data.campaign);
       setOpen(null);
-    } catch {
-      setError("Could not reach the server.");
+    } catch (saveError) {
+      setError(errorMessage(saveError, "Could not save."));
     } finally {
       setSavingSection(null);
     }
@@ -486,15 +582,15 @@ export function CampaignDetail({
       } else if (switchTemplateId === "blank") {
         doc = blankDocument();
       } else {
-        const r = await fetch(`/api/templates/${switchTemplateId}`);
-        const data = await r.json();
-        if (data.ok && data.template?.document) {
+        const data = await fetchJson<{ template?: { document?: EmailDocument } }>(
+          `/api/templates/${switchTemplateId}`,
+        );
+        if (data.template?.document) {
           doc = JSON.parse(JSON.stringify(data.template.document));
         }
       }
       if (!doc) {
-        setError("Could not load that template.");
-        setSwitching(false);
+        setError("That template has no design to use.");
         return;
       }
 
@@ -504,21 +600,15 @@ export function CampaignDetail({
       if (campaign.fromName) doc.fromName = campaign.fromName;
       doc.fromEmail = campaign.fromEmail;
 
-      const r = await fetch(`/api/campaigns/${campaign.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: doc }),
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not switch the template.");
-        setSwitching(false);
-        return;
-      }
+      const data = await fetchJson<{ campaign: CampaignData }>(
+        `/api/campaigns/${campaign.id}`,
+        { method: "PATCH", json: { document: doc } },
+      );
       setCampaign(data.campaign);
       setSwitchOpen(false);
-    } catch {
-      setError("Could not reach the server.");
+      toast.success("Template switched");
+    } catch (err) {
+      setError(errorMessage(err, "Could not switch the template."));
     } finally {
       setSwitching(false);
     }
@@ -528,18 +618,15 @@ export function CampaignDetail({
     setReusing(true);
     setError(null);
     try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/reuse`, {
-        method: "POST",
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not reuse this campaign.");
-        setReusing(false);
-        return;
-      }
+      const data = await fetchJson<{ id: string }>(
+        `/api/campaigns/${campaign.id}/reuse`,
+        { method: "POST" },
+      );
       router.push(`/dashboard/campaigns/${data.id}`);
-    } catch {
-      setError("Could not reach the server.");
+    } catch (err) {
+      const message = errorMessage(err, "Could not reuse this campaign.");
+      setError(message);
+      toast.error(message);
       setReusing(false);
     }
   }
@@ -549,24 +636,15 @@ export function CampaignDetail({
     setAudienceSaving(true);
     setAudienceError(null);
     try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/recipients`, {
+      await fetchJson(`/api/campaigns/${campaign.id}/recipients`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: audienceEmail,
-          name: audienceName || undefined,
-        }),
+        json: { email: audienceEmail, name: audienceName || undefined },
       });
-      const data = await r.json();
-      if (!data.ok) {
-        setAudienceError(data.error || "Could not add recipient");
-        return;
-      }
       setAudienceEmail("");
       setAudienceName("");
       await loadAudience();
-    } catch {
-      setAudienceError("Could not reach the server.");
+    } catch (err) {
+      setAudienceError(errorMessage(err, "Could not add that recipient."));
     } finally {
       setAudienceSaving(false);
     }
@@ -575,91 +653,71 @@ export function CampaignDetail({
   // Load the org's folders (with member counts) and total audience size, so the
   // "To" step can offer "add everyone in this folder".
   const loadFolders = useCallback(async () => {
+    setFoldersError(null);
     try {
       const [catResult, audResult] = await Promise.all([
-        fetch("/api/audience/categories").then((r) => r.json()),
-        fetch("/api/audience").then((r) => r.json()),
+        fetchJson<{
+          categories: { id: string; name: string }[];
+          mappings: { categoryId: string }[];
+        }>("/api/audience/categories"),
+        fetchJson<{ recipients: unknown[] }>("/api/audience"),
       ]);
-      if (catResult.ok) {
-        setFolders(
-          (catResult.categories as { id: string; name: string }[]).map((c) => ({
-            id: c.id,
-            name: c.name,
-          })),
-        );
-        const counts: Record<string, number> = {};
-        (catResult.mappings as { categoryId: string }[]).forEach((m) => {
-          counts[m.categoryId] = (counts[m.categoryId] ?? 0) + 1;
-        });
-        setFolderCounts(counts);
-      }
-      if (audResult.ok) {
-        setOrgAudienceCount((audResult.recipients as unknown[]).length);
-      }
-    } catch {
-      // best-effort — the individual add path still works without folders
+      setFolders(catResult.categories.map((c) => ({ id: c.id, name: c.name })));
+      const counts: Record<string, number> = {};
+      catResult.mappings.forEach((m) => {
+        counts[m.categoryId] = (counts[m.categoryId] ?? 0) + 1;
+      });
+      setFolderCounts(counts);
+      setOrgAudienceCount(audResult.recipients.length);
+    } catch (err) {
+      // The one-off add path below still works without folders.
+      setFoldersError(errorMessage(err));
     }
   }, []);
 
   useEffect(() => {
-    if (isEditable) void loadFolders();
-  }, [isEditable, loadFolders]);
+    if (canEditAudience) void loadFolders();
+  }, [canEditAudience, loadFolders]);
 
-  // Shared handling for a from-audience response (folders or "everyone").
-  async function applyAudienceResult(
-    data: { ok: boolean; error?: string; summary?: { selected: number; imported: number } },
+  // Shared handling for a from-audience request (folders or "everyone").
+  async function addFromAudience(
+    body: { categoryIds: string[] } | undefined,
     clearFolders = false,
   ) {
-    if (!data.ok) {
-      setAudienceError(data.error || "Could not add contacts");
-      return;
-    }
-    if (data.summary && data.summary.imported === 0) {
-      setAudienceError(
-        data.summary.selected === 0
-          ? "No matching contacts to add."
-          : "Everyone here is already on this campaign.",
-      );
-    }
-    if (clearFolders) setSelectedFolders(new Set());
-    await loadAudience();
-  }
-
-  async function addEveryone() {
     setAudienceImporting(true);
     setAudienceError(null);
     try {
-      const r = await fetch(
+      const data = await fetchJson<{ summary?: { selected: number; imported: number } }>(
         `/api/campaigns/${campaign.id}/recipients/from-audience`,
-        { method: "POST" },
+        body ? { method: "POST", json: body } : { method: "POST" },
       );
-      await applyAudienceResult(await r.json());
-    } catch {
-      setAudienceError("Could not reach the server.");
+      if (data.summary && data.summary.imported === 0) {
+        setAudienceError(
+          data.summary.selected === 0
+            ? "No matching contacts to add."
+            : "Everyone here is already on this campaign.",
+        );
+      } else if (data.summary) {
+        toast.success(
+          `Added ${data.summary.imported.toLocaleString()} recipient${data.summary.imported === 1 ? "" : "s"}`,
+        );
+      }
+      if (clearFolders) setSelectedFolders(new Set());
+      await loadAudience();
+    } catch (err) {
+      setAudienceError(errorMessage(err, "Could not add those contacts."));
     } finally {
       setAudienceImporting(false);
     }
   }
 
-  async function addSelectedFolders() {
+  function addEveryone() {
+    return addFromAudience(undefined);
+  }
+
+  function addSelectedFolders() {
     if (selectedFolders.size === 0) return;
-    setAudienceImporting(true);
-    setAudienceError(null);
-    try {
-      const r = await fetch(
-        `/api/campaigns/${campaign.id}/recipients/from-audience`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ categoryIds: Array.from(selectedFolders) }),
-        },
-      );
-      await applyAudienceResult(await r.json(), true);
-    } catch {
-      setAudienceError("Could not reach the server.");
-    } finally {
-      setAudienceImporting(false);
-    }
+    return addFromAudience({ categoryIds: Array.from(selectedFolders) }, true);
   }
 
   function toggleSelectedFolder(id: string) {
@@ -672,12 +730,48 @@ export function CampaignDetail({
   }
 
   async function removeAudienceRecipient(id: string) {
-    const data = await fetch(
-      `/api/campaigns/${campaign.id}/recipients?recipientId=${id}`,
-      { method: "DELETE" },
-    ).then((r) => r.json());
-    if (data.ok) await loadAudience();
-    else setAudienceError(data.error || "Could not remove recipient");
+    setAudienceError(null);
+    try {
+      await fetchJson(
+        `/api/campaigns/${campaign.id}/recipients?recipientId=${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      );
+      audience.setData((list) => list.filter((r) => r.id !== id));
+    } catch (err) {
+      setAudienceError(errorMessage(err, "Could not remove that recipient."));
+    }
+  }
+
+  async function removeAllRecipients() {
+    const total = recipientCount ?? 0;
+    if (total === 0) return;
+    const ok = await confirmDialog({
+      title: `Remove all ${total.toLocaleString()} recipient${total === 1 ? "" : "s"} from this campaign?`,
+      description:
+        "They stay in your audience and folders. This only empties this campaign's recipient list, and you can add them back from a folder.",
+      confirmLabel: "Remove all",
+      destructive: true,
+    });
+    if (!ok) return;
+    setRemovingAll(true);
+    setAudienceError(null);
+    try {
+      const data = await fetchJson<{ removed?: number }>(
+        `/api/campaigns/${campaign.id}/recipients?all=1`,
+        { method: "DELETE" },
+      );
+      const removed = data.removed ?? total;
+      toast.success(
+        `Removed ${removed.toLocaleString()} recipient${removed === 1 ? "" : "s"}`,
+      );
+      setRecipientQuery("");
+      setRecipientPage(1);
+      await loadAudience();
+    } catch (err) {
+      setAudienceError(errorMessage(err, "Could not remove the recipients."));
+    } finally {
+      setRemovingAll(false);
+    }
   }
 
   function editDesign() {
@@ -692,23 +786,52 @@ export function CampaignDetail({
     router.push(`/editor/${campaign.id}`);
   }
 
-  async function send() {
+  function rememberTestSent() {
+    setTestSent(true);
+    try {
+      localStorage.setItem(testSentKey(campaign.id), "1");
+    } catch {
+      // Storage unavailable: the checklist just won't remember it.
+    }
+  }
+
+  // Send now / resume. Runs only from the confirm dialog.
+  async function send(intent: "send" | "resume") {
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
     setSending(true);
     setError(null);
     try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/send`, {
-        method: "POST",
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not send");
-        setSending(false);
+      await fetchJson(`/api/campaigns/${campaign.id}/send`, { method: "POST" });
+      setConfirmIntent(null);
+      toast.success(intent === "resume" ? "Send resumed" : "Your campaign is sending");
+      stallRef.current = null;
+      setStalled(false);
+      setPollKey((key) => key + 1);
+      // `sending` stays true until the refreshed campaign arrives (see the
+      // effect syncing `initial`), so the button can't fire a second time.
+      onRefresh();
+    } catch (err) {
+      setConfirmIntent(null);
+      // 409: the campaign is already sending, or a resume was requested in
+      // the last minute. Nothing went wrong; the send is in progress, so
+      // say so and follow its progress instead of showing an error.
+      if (err instanceof ApiError && err.status === 409) {
+        toast.info(
+          intent === "resume" ? "Already resuming" : "Already sending",
+          { description: err.message },
+        );
+        stallRef.current = null;
+        setStalled(false);
+        setPollKey((key) => key + 1);
+        onRefresh();
         return;
       }
-      onRefresh();
-    } catch {
-      setError("Could not reach the server.");
+      const message = errorMessage(err, "Could not send this campaign.");
+      setError(message);
+      toast.error(message);
       setSending(false);
+      actionLockRef.current = false;
     }
   }
 
@@ -717,45 +840,50 @@ export function CampaignDetail({
       setError("Pick a date and time first.");
       return;
     }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
     setScheduling(true);
     setError(null);
     try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/schedule`, {
+      await fetchJson(`/api/campaigns/${campaign.id}/schedule`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduledAt: new Date(scheduleAt).toISOString(),
-        }),
+        json: { scheduledAt: new Date(scheduleAt).toISOString() },
       });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not schedule");
-        return;
-      }
+      setConfirmIntent(null);
       setOpen(null);
+      toast.success(isScheduled ? "Schedule updated" : "Campaign scheduled");
       onRefresh();
-    } catch {
-      setError("Could not reach the server.");
+    } catch (err) {
+      const message = errorMessage(err, "Could not schedule this campaign.");
+      setError(message);
+      toast.error(message);
+      setConfirmIntent(null);
     } finally {
       setScheduling(false);
+      actionLockRef.current = false;
     }
   }
 
   async function cancelSchedule() {
+    const ok = await confirmDialog({
+      title: "Cancel the scheduled send?",
+      description: "The campaign goes back to being a draft. Nothing is sent.",
+      confirmLabel: "Cancel schedule",
+      cancelLabel: "Keep schedule",
+    });
+    if (!ok) return;
     setCancelingSchedule(true);
     setError(null);
     try {
-      const r = await fetch(`/api/campaigns/${campaign.id}/schedule`, {
+      await fetchJson(`/api/campaigns/${campaign.id}/schedule`, {
         method: "DELETE",
       });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not cancel the schedule");
-        return;
-      }
+      toast.success("Schedule cancelled. The campaign is a draft again.");
       onRefresh();
-    } catch {
-      setError("Could not reach the server.");
+    } catch (err) {
+      const message = errorMessage(err, "Could not cancel the schedule.");
+      setError(message);
+      toast.error(message);
     } finally {
       setCancelingSchedule(false);
     }
@@ -766,10 +894,10 @@ export function CampaignDetail({
   return (
     <div className="flex flex-col gap-5">
       {/* ── Header ── */}
-      <header className="flex items-center justify-between gap-4 border p-3 rounded-lg border-border">
+      <header className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <Button variant="outline" size="icon-sm" asChild>
-            <Link href="/dashboard/campaigns">
+            <Link href="/dashboard/campaigns" aria-label="Back to campaigns">
               <ArrowLeftIcon data-icon="inline-start" />
             </Link>
           </Button>
@@ -779,7 +907,7 @@ export function CampaignDetail({
             isFinished={isFinished}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isEditable && (
             <>
               <Button variant="outline" asChild>
@@ -798,17 +926,30 @@ export function CampaignDetail({
               </Button>
             </>
           )}
+          {isEditable && (
+            <Button
+              variant="outline"
+              onClick={() => setTestOpen(true)}
+              disabled={!campaign.htmlSnapshot}
+            >
+              <FlaskConicalIcon data-icon="inline-start" />
+              Send test
+            </Button>
+          )}
           {isScheduled && (
             <>
               <Button
                 variant="outline"
                 onClick={cancelSchedule}
-                disabled={cancelingSchedule}
+                disabled={cancelingSchedule || sending}
               >
                 {cancelingSchedule && <Spinner data-icon="inline-start" />}
                 Cancel schedule
               </Button>
-              <Button onClick={send} disabled={sending || !canSend}>
+              <Button
+                onClick={() => setConfirmIntent("send")}
+                disabled={sending || !canSend}
+              >
                 {sending ? (
                   <Spinner data-icon="inline-start" />
                 ) : (
@@ -825,7 +966,7 @@ export function CampaignDetail({
               </Button>
               {sendMode === "schedule" ? (
                 <Button
-                  onClick={scheduleCampaign}
+                  onClick={() => setConfirmIntent("schedule")}
                   disabled={scheduling || !canSend || !scheduleAt}
                 >
                   {scheduling ? (
@@ -836,7 +977,10 @@ export function CampaignDetail({
                   {scheduling ? "Scheduling…" : "Schedule"}
                 </Button>
               ) : (
-                <Button onClick={send} disabled={sending || !canSend}>
+                <Button
+                  onClick={() => setConfirmIntent("send")}
+                  disabled={sending || !canSend}
+                >
                   {sending ? (
                     <Spinner data-icon="inline-start" />
                   ) : (
@@ -852,7 +996,20 @@ export function CampaignDetail({
       {/* ── Alerts ── */}
       {error && (
         <Alert variant="destructive">
+          <CircleAlertIcon />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {isFailed && (
+        <Alert variant="destructive">
+          <CircleAlertIcon />
+          <AlertTitle>This send failed</AlertTitle>
+          <AlertDescription>
+            {campaign.failureReason?.trim() ||
+              "No reason was recorded."}{" "}
+            Recipients already sent to stay sent. Use Reuse campaign to
+            start a fresh draft from this one.
+          </AlertDescription>
         </Alert>
       )}
       {gmailClipRisk && (
@@ -873,42 +1030,52 @@ export function CampaignDetail({
           <AlertDescription>
             This campaign is scheduled to send on{" "}
             <span className="font-medium text-foreground">
-              {formatScheduleTime(campaign.scheduledAt)}
+              {formatWithTimeZone(campaign.scheduledAt)}
             </span>
-            . You can still edit it, change the time, or cancel until then.
+            . You can still edit the content, change the time, or cancel
+            until then.
           </AlertDescription>
         </Alert>
       )}
 
       {/* ── Send progress bar — live sends only; finished campaigns show
              their numbers in analytics, not a stuck 100% bar ── */}
-      {!isEditable && progress && !isFinished && (
+      {!isEditable && !isFailed && progress && !isFinished && (
         <Card size="sm">
           <CardContent className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="font-medium">
                 {stalled
-                  ? `Stalled at ${progressDone}/${progressTotal}`
-                  : `Sending… ${progressDone}/${progressTotal}`}
+                  ? `No progress at ${progressDone.toLocaleString()}/${progressTotal.toLocaleString()}`
+                  : `Sending… ${progressDone.toLocaleString()}/${progressTotal.toLocaleString()}`}
               </span>
               <span className="tabular-nums text-muted-foreground">
                 {progressPct}%
               </span>
             </div>
             <Progress value={progressPct} />
+            {pollError && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <RefreshCwIcon className="size-3.5" aria-hidden />
+                Can&apos;t get the latest progress ({pollError}). Retrying…
+              </p>
+            )}
             {stalled && (
-              <div className="flex items-center justify-between gap-3 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+              <div className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between dark:text-amber-300">
                 <span>
-                  No progress for a while — the remaining{" "}
-                  {progress?.pending ?? 0} recipients may be stuck. Safe to
-                  resume: already-sent recipients are never re-sent.
+                  Nothing has been sent for over{" "}
+                  {Math.round(STALL_THRESHOLD_MS / 60_000)} minutes and{" "}
+                  {progressRemaining.toLocaleString()} recipient
+                  {progressRemaining === 1 ? " is" : "s are"} still waiting.
+                  Resume re-queues only those. Anyone already sent to is
+                  never sent again.
                 </span>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={send}
+                  onClick={() => setConfirmIntent("resume")}
                   disabled={sending}
-                  className="shrink-0 border-amber-500/40 text-amber-600 hover:text-amber-600 dark:text-amber-400"
+                  className="shrink-0 self-start border-amber-500/40 sm:self-auto"
                 >
                   {sending && <Spinner data-icon="inline-start" />}
                   {sending ? "Resuming…" : "Resume send"}
@@ -919,18 +1086,53 @@ export function CampaignDetail({
         </Card>
       )}
 
+      {/* ── Small screens: checklist or preview ── */}
+      <div
+        className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1 lg:hidden"
+        role="tablist"
+        aria-label="Campaign view"
+      >
+        {(
+          [
+            ["checklist", "Checklist"],
+            ["preview", "Email preview"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={mobileView === key}
+            onClick={() => setMobileView(key)}
+            className={cn(
+              "cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              mobileView === key
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Main grid ── */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)]">
 
         {/* ── LEFT: Send checklist ── */}
-        <div className="flex min-w-0 flex-col gap-4">
+        <div
+          className={cn(
+            "min-w-0 flex-col gap-4 lg:flex",
+            mobileView === "checklist" ? "flex" : "hidden",
+          )}
+        >
           <Card className="py-0 gap-0">
             <CardHeader className="py-4 px-4 bg-card">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="text-base font-semibold">Send checklist</CardTitle>
                 <div className="flex items-center gap-3">
                   {/* Segmented progress bar as vertical pill indicators */}
-                  <div className="flex gap-[3px] items-center">
+                  <div className="flex gap-[3px] items-center" aria-hidden>
                     {Array.from({ length: 18 }).map((_, i) => {
                       const activeSegments = Math.round((doneCount / totalItems) * 18);
                       return (
@@ -938,7 +1140,7 @@ export function CampaignDetail({
                           key={i}
                           className={cn(
                             "h-3.5 w-[3px] rounded-full transition-colors duration-300",
-                            i < activeSegments ? "bg-emerald-500" : "bg-zinc-800"
+                            i < activeSegments ? "bg-emerald-500" : "bg-muted-foreground/25"
                           )}
                         />
                       );
@@ -981,9 +1183,11 @@ export function CampaignDetail({
                             </span>
                             <span className="mt-0.5 block text-xs">
                               <span className="font-semibold text-foreground">
-                                {recipientCount === null
-                                  ? "…"
-                                  : `${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
+                                {audienceLoadError
+                                  ? "Couldn't load recipients"
+                                  : recipientCount === null
+                                    ? "…"
+                                    : `${recipientCount.toLocaleString()} recipient${recipientCount === 1 ? "" : "s"}`}
                               </span>
                               <span className="text-muted-foreground">
                                 {" "}
@@ -997,7 +1201,18 @@ export function CampaignDetail({
                           content that appears after opening (e.g. the schedule picker) */}
                       <AccordionContent className="h-auto! px-4 pb-4 pt-1">
                         <FieldGroup className="gap-4">
+                          {!canEditAudience && (
+                            <Alert>
+                              <CalendarClockIcon />
+                              <AlertDescription>
+                                Recipients are locked while the campaign is
+                                scheduled. Cancel the schedule to add or
+                                remove people.
+                              </AlertDescription>
+                            </Alert>
+                          )}
                           {/* Primary: pull people in from a folder (or everyone) */}
+                          {canEditAudience && (
                           <Field>
                             <FieldLabel>Add people from your audience</FieldLabel>
                             <FieldDescription>
@@ -1005,6 +1220,23 @@ export function CampaignDetail({
                               whole audience. Suppressed contacts are always
                               skipped.
                             </FieldDescription>
+                            {foldersError ? (
+                              <div className="flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                                <span className="text-destructive">
+                                  Couldn&apos;t load your folders: {foldersError}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="shrink-0 self-start sm:self-auto"
+                                  onClick={() => void loadFolders()}
+                                >
+                                  <RefreshCwIcon data-icon="inline-start" />
+                                  Try again
+                                </Button>
+                              </div>
+                            ) : (
                             <div className="flex flex-col gap-2">
                               {/* Everyone */}
                               <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
@@ -1012,7 +1244,7 @@ export function CampaignDetail({
                                   <UsersRoundIcon className="size-4 shrink-0 text-muted-foreground" />
                                   <span className="font-medium">Everyone</span>
                                   <span className="text-muted-foreground">
-                                    {orgAudienceCount} contact
+                                    {orgAudienceCount.toLocaleString()} contact
                                     {orgAudienceCount === 1 ? "" : "s"}
                                   </span>
                                 </span>
@@ -1053,7 +1285,7 @@ export function CampaignDetail({
                                             {folder.name}
                                           </span>
                                           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                            {folderCounts[folder.id] ?? 0}
+                                            {(folderCounts[folder.id] ?? 0).toLocaleString()}
                                           </span>
                                         </label>
                                       ))}
@@ -1093,12 +1325,15 @@ export function CampaignDetail({
                                 </div>
                               )}
                             </div>
+                            )}
                             {audienceError && (
                               <FieldError>{audienceError}</FieldError>
                             )}
                           </Field>
+                          )}
 
                           {/* Secondary: one-off extras */}
+                          {canEditAudience && (
                           <Field>
                             <FieldLabel>Add a few extra people</FieldLabel>
                             <FieldDescription>
@@ -1112,6 +1347,7 @@ export function CampaignDetail({
                                   setAudienceEmail(e.target.value)
                                 }
                                 placeholder="email@example.com"
+                                aria-label="Recipient email"
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter" && audienceEmail.trim())
                                     addAudienceRecipient();
@@ -1123,6 +1359,7 @@ export function CampaignDetail({
                                   setAudienceName(e.target.value)
                                 }
                                 placeholder="Name"
+                                aria-label="Recipient name"
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter" && audienceEmail.trim())
                                     addAudienceRecipient();
@@ -1155,19 +1392,66 @@ export function CampaignDetail({
                               Import from a file
                             </Button>
                           </Field>
+                          )}
 
                           {/* Who's currently on the campaign */}
                           <Field>
-                            <FieldLabel>
-                              On this campaign
-                              {recipientCount !== null && recipientCount > 0
-                                ? ` · ${recipientCount}`
-                                : ""}
-                            </FieldLabel>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <FieldLabel>
+                                On this campaign
+                                {recipientCount !== null && recipientCount > 0
+                                  ? ` · ${recipientCount.toLocaleString()}`
+                                  : ""}
+                              </FieldLabel>
+                              {canEditAudience && (recipientCount ?? 0) > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={removeAllRecipients}
+                                  disabled={removingAll}
+                                >
+                                  {removingAll ? (
+                                    <Spinner data-icon="inline-start" />
+                                  ) : (
+                                    <Trash2Icon data-icon="inline-start" />
+                                  )}
+                                  Remove all
+                                </Button>
+                              )}
+                            </div>
+                            {recipients.length > RECIPIENT_PAGE_SIZE && (
+                              <div className="relative">
+                                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                  value={recipientQuery}
+                                  onChange={(e) => {
+                                    setRecipientQuery(e.target.value);
+                                    setRecipientPage(1);
+                                  }}
+                                  placeholder="Search recipients…"
+                                  aria-label="Search recipients"
+                                  className="pl-8"
+                                />
+                              </div>
+                            )}
                             <div className="overflow-hidden rounded-lg border border-border">
-                              {recipients.length > 0 ? (
-                                <div className="max-h-64 divide-y divide-border overflow-y-auto">
-                                  {recipients.slice(0, 200).map((r) => (
+                              {audienceLoadError ? (
+                                <ErrorState
+                                  className="py-6"
+                                  title="Couldn't load this campaign's recipients"
+                                  message={audienceLoadError}
+                                  onRetry={() => void loadAudience()}
+                                />
+                              ) : audience.status === "loading" ? (
+                                <div className="flex items-center justify-center gap-2 px-3 py-6 text-sm text-muted-foreground">
+                                  <Spinner />
+                                  Loading recipients…
+                                </div>
+                              ) : recipientPageItems.length > 0 ? (
+                                <div className="max-h-80 divide-y divide-border overflow-y-auto">
+                                  {recipientPageItems.map((r) => (
                                     <div
                                       key={r.id}
                                       className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
@@ -1181,34 +1465,66 @@ export function CampaignDetail({
                                           {r.email}
                                         </span>
                                       </span>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        onClick={() =>
-                                          removeAudienceRecipient(r.id)
-                                        }
-                                        title="Remove recipient"
-                                      >
-                                        <Trash2Icon />
-                                      </Button>
+                                      {canEditAudience && (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          onClick={() =>
+                                            removeAudienceRecipient(r.id)
+                                          }
+                                          aria-label={`Remove ${r.email}`}
+                                          title="Remove recipient"
+                                        >
+                                          <Trash2Icon />
+                                        </Button>
+                                      )}
                                     </div>
                                   ))}
-                                  {recipients.length > 200 && (
-                                    <div className="px-3 py-2 text-xs text-muted-foreground">
-                                      +{recipients.length - 200} more recipient
-                                      {recipients.length - 200 === 1 ? "" : "s"}{" "}
-                                      — all included in the send
-                                    </div>
-                                  )}
                                 </div>
                               ) : (
                                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                                  No recipients yet. Add a folder above to get
-                                  started.
+                                  {recipients.length > 0
+                                    ? "No recipients match that search."
+                                    : "No recipients yet. Add a folder above to get started."}
                                 </div>
                               )}
                             </div>
+                            {filteredRecipients.length > RECIPIENT_PAGE_SIZE && (
+                              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                <span className="tabular-nums">
+                                  {(recipientPageStart + 1).toLocaleString()}–
+                                  {(recipientPageStart + recipientPageItems.length).toLocaleString()}{" "}
+                                  of {filteredRecipients.length.toLocaleString()}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      setRecipientPage(Math.max(1, safeRecipientPage - 1))
+                                    }
+                                    disabled={safeRecipientPage <= 1}
+                                  >
+                                    Previous
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      setRecipientPage(
+                                        Math.min(recipientPageCount, safeRecipientPage + 1),
+                                      )
+                                    }
+                                    disabled={safeRecipientPage >= recipientPageCount}
+                                  >
+                                    Next
+                                  </Button>
+                                </span>
+                              </div>
+                            )}
                           </Field>
 
                           {/* Do not send to */}
@@ -1388,6 +1704,9 @@ export function CampaignDetail({
                                 );
                               })}
                             </div>
+                            {sendersError && (
+                              <FieldError>{sendersError}</FieldError>
+                            )}
                             <FieldDescription>
                               Connect your own domain, or a personal Gmail
                               account, on the{" "}
@@ -1635,8 +1954,8 @@ export function CampaignDetail({
                                 </Select>
                               </div>
                               <FieldDescription>
-                                Uses your local time zone. Must be at least a
-                                few minutes from now.
+                                Uses your time zone ({localTimeZone()}). Must
+                                be at least a few minutes from now.
                               </FieldDescription>
                               {isScheduled && (
                                 <Button
@@ -1661,7 +1980,7 @@ export function CampaignDetail({
                   </Accordion>
 
                   {/* Static: Content */}
-                  <div className="flex items-center gap-3 border-t border-border px-4 py-3.5">
+                  <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3.5">
                     <StepCircle done={ready.content} num={5} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">Content</p>
@@ -1669,22 +1988,24 @@ export function CampaignDetail({
                         Designed in the editor.
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSwitchOpen(true)}
-                    >
-                      <ReplaceIcon data-icon="inline-start" />
-                      Switch template
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={editDesign}
-                    >
-                      <Edit3Icon data-icon="inline-start" />
-                      Edit design
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSwitchOpen(true)}
+                      >
+                        <ReplaceIcon data-icon="inline-start" />
+                        Switch template
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={editDesign}
+                      >
+                        <Edit3Icon data-icon="inline-start" />
+                        Edit design
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Static: Unsubscribe */}
@@ -1700,20 +2021,49 @@ export function CampaignDetail({
                     </div>
                   </div>
 
+                  {/* Static: Test email (recommended, never required) */}
+                  <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3.5">
+                    <StepCircle done={ready.test} num={7} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">
+                        Test email{" "}
+                        <span className="font-normal text-muted-foreground">
+                          (recommended)
+                        </span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {testSent
+                          ? "Test sent. Check it in your inbox before sending."
+                          : "Send yourself a copy to check links, images and layout."}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTestOpen(true)}
+                      disabled={!campaign.htmlSnapshot}
+                    >
+                      <FlaskConicalIcon data-icon="inline-start" />
+                      {testSent ? "Send another" : "Send test"}
+                    </Button>
+                  </div>
+
                   {/* Can't send warning */}
                   {(!canSend || !ready.sendtime) && (
                     <div className="border-t border-border p-4">
                       <Alert>
                         <AlertDescription>
-                          {!ready.to
-                            ? "Add recipients to this campaign before sending."
-                            : !ready.subject
-                              ? "Add a subject before sending."
-                              : !ready.from
-                                ? "Set a from name and email before sending."
-                                : !ready.unsubscribe
-                                  ? "This email has no unsubscribe link, which is required to send."
-                                  : "Pick a date and time in the Send time step to schedule this campaign."}
+                          {audienceLoadError
+                            ? "This campaign's recipients couldn't be loaded, so it can't be sent yet. Retry in the To step."
+                            : !ready.to
+                              ? "Add recipients to this campaign before sending."
+                              : !ready.subject
+                                ? "Add a subject before sending."
+                                : !ready.from
+                                  ? "Set a from name and email before sending."
+                                  : !ready.unsubscribe
+                                    ? "This email has no unsubscribe link, which is required to send."
+                                    : "Pick a date and time in the Send time step to schedule this campaign."}
                         </AlertDescription>
                       </Alert>
                     </div>
@@ -1725,7 +2075,9 @@ export function CampaignDetail({
                   {[
                     {
                       label: "To",
-                      description: `${recipientCount ?? "…"} recipient${recipientCount === 1 ? "" : "s"}`,
+                      description: audienceLoadError
+                        ? "Couldn't load recipients"
+                        : `${recipientCount?.toLocaleString() ?? "…"} recipient${recipientCount === 1 ? "" : "s"}`,
                       done: ready.to,
                     },
                     {
@@ -1783,7 +2135,12 @@ export function CampaignDetail({
         </div>
 
         {/* ── RIGHT: Email preview ── */}
-        <div className="hidden min-w-0 lg:flex">
+        <div
+          className={cn(
+            "min-w-0 lg:flex",
+            mobileView === "preview" ? "flex" : "hidden",
+          )}
+        >
           <Card className="flex flex-1 flex-col p-0 gap-0">
             <CardContent className="flex-1 p-0">
               <div className="overflow-hidden rounded-xl border border-border shadow-sm">
@@ -1807,7 +2164,7 @@ export function CampaignDetail({
                       <span className="text-foreground">
                         {recipientCount === null
                           ? "—"
-                          : `${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
+                          : `${recipientCount.toLocaleString()} recipient${recipientCount === 1 ? "" : "s"}`}
                       </span>
                     </div>
                     <div className="flex items-baseline gap-3 text-xs">
@@ -1820,16 +2177,17 @@ export function CampaignDetail({
                     </div>
                   </div>
                 </div>
-                {/* Email iframe */}
+                {/* Email iframe. The white canvas is deliberate in both
+                    themes: it is what the email looks like in a mail client. */}
                 {campaign.htmlSnapshot ? (
                   <iframe
                     title="Email preview"
                     srcDoc={campaign.htmlSnapshot}
                     sandbox="allow-same-origin"
-                    className="block h-[calc(100vh-280px)] min-h-[480px] w-full bg-white"
+                    className="block h-[70vh] min-h-[420px] w-full bg-white lg:h-[calc(100vh-280px)] lg:min-h-[480px]"
                   />
                 ) : (
-                  <div className="flex h-[calc(100vh-280px)] min-h-[480px] items-center justify-center bg-white text-sm text-muted-foreground">
+                  <div className="flex h-[50vh] min-h-[320px] items-center justify-center bg-muted/30 px-6 text-center text-sm text-muted-foreground lg:h-[calc(100vh-280px)] lg:min-h-[480px]">
                     No email content yet. Design your email in the editor.
                   </div>
                 )}
@@ -1894,6 +2252,46 @@ export function CampaignDetail({
         </DialogPopup>
       </Dialog>
 
+      {/* Test send */}
+      <SendTestDialog
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        campaignId={campaign.id}
+        subject={campaign.subject}
+        onSent={rememberTestSent}
+      />
+
+      {/* Confirm before anything goes to the list */}
+      <ConfirmSendDialog
+        open={confirmIntent !== null}
+        onOpenChange={(next) => {
+          if (!next) setConfirmIntent(null);
+        }}
+        intent={confirmIntent ?? "send"}
+        recipientCount={
+          confirmIntent === "resume" ? progressTotal : (recipientCount ?? 0)
+        }
+        pendingCount={progressRemaining}
+        fromName={campaign.fromName}
+        fromEmail={campaign.fromEmail}
+        subject={campaign.subject}
+        scheduledAt={
+          scheduleAt ? new Date(scheduleAt).toISOString() : campaign.scheduledAt
+        }
+        organizationId={campaign.organizationId}
+        viaGmail={viaGmail}
+        testSent={testSent}
+        onSendTest={() => {
+          setConfirmIntent(null);
+          setTestOpen(true);
+        }}
+        onConfirm={() => {
+          if (confirmIntent === "schedule") void scheduleCampaign();
+          else void send(confirmIntent === "resume" ? "resume" : "send");
+        }}
+        confirming={sending || scheduling}
+      />
+
       {/* Import wizard */}
       {importOpen && (
         <ImportWizard
@@ -1901,7 +2299,7 @@ export function CampaignDetail({
           onClose={() => setImportOpen(false)}
           onDone={() => {
             setImportOpen(false);
-            loadAudience();
+            void loadAudience();
           }}
         />
       )}
@@ -1911,23 +2309,31 @@ export function CampaignDetail({
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function localTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+  } catch {
+    return "local time";
+  }
+}
+
 function StepCircle({ done, num, active }: { done: boolean; num: number; active?: boolean }) {
   if (done) {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-zinc-950 transition-colors duration-200">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition-colors duration-200 dark:bg-emerald-500 dark:text-emerald-950">
         <CheckIcon className="size-4 stroke-[3]" />
       </span>
     );
   }
   if (active) {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-zinc-950 font-bold text-xs transition-colors duration-200">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background font-bold text-xs transition-colors duration-200">
         {num}
       </span>
     );
   }
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700/50 font-semibold text-xs transition-colors duration-200">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground font-semibold text-xs transition-colors duration-200">
       {num}
     </span>
   );
@@ -1957,6 +2363,14 @@ function SaveCancel({
   );
 }
 
+const KNOWN_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  scheduled: "Scheduled",
+  sending: "Sending",
+  sent: "Sent",
+  failed: "Failed",
+};
+
 function CampaignStatusBadge({
   status,
   isFinished,
@@ -1975,18 +2389,33 @@ function CampaignStatusBadge({
       </Badge>
     );
   }
-  if (!isFinished) {
+  if (status === "failed") {
     return (
-      <Badge variant="outline">
-        <span className="size-1.5 animate-pulse rounded-full bg-current" />
-        Sending
+      <Badge variant="destructive">
+        <CircleAlertIcon className="size-3" />
+        Failed
       </Badge>
     );
   }
-  return (
-    <Badge>
-      <span className="size-1.5 rounded-full bg-current" />
-      Sent
-    </Badge>
-  );
+  if (status === "sending" || status === "sent") {
+    if (!isFinished) {
+      return (
+        <Badge variant="outline">
+          <span className="size-1.5 animate-pulse rounded-full bg-current" />
+          Sending
+        </Badge>
+      );
+    }
+    return (
+      <Badge>
+        <span className="size-1.5 rounded-full bg-current" />
+        Sent
+      </Badge>
+    );
+  }
+  // A status this page doesn't know yet: show it rather than guess.
+  const label =
+    KNOWN_STATUS_LABELS[status] ??
+    status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
+  return <Badge variant="outline">{label}</Badge>;
 }

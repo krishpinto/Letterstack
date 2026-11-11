@@ -28,6 +28,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
         name: campaign.name,
         subject: campaign.subject,
         status: campaign.status,
+        // Set when status is "failed": why, in words for the owner.
+        failureReason: campaign.failureReason,
         senderType: campaign.senderType,
       },
       progress,

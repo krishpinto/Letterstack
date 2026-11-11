@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { emailTemplates } from "@/db/schema";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { normalizeDocument } from "@/lib/email/document";
+import { sanitizeEmailDocument } from "@/lib/email/sanitize";
 import { Badge } from "@/components/ui/badge";
 import { UseSharedTemplateButton } from "./use-template-button";
 
@@ -28,8 +29,12 @@ export default async function SharedTemplatePage({
   if (!template || !template.document) notFound();
 
   // Fill any missing settings with defaults so old/partial documents still
-  // compile instead of crashing the public page.
-  const { html } = compileEmailDocument(normalizeDocument(template.document));
+  // compile instead of crashing the public page. Sanitized here as well as on
+  // write: this document came from another workspace, and "Use this template"
+  // copies it into the visitor's own — rows saved before write-time
+  // sanitizing existed must not travel as they are.
+  const document = sanitizeEmailDocument(normalizeDocument(template.document));
+  const { html } = compileEmailDocument(document);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 px-4 py-10">
@@ -44,7 +49,7 @@ export default async function SharedTemplatePage({
           <UseSharedTemplateButton
             token={token}
             name={template.name}
-            document={template.document}
+            document={document}
           />
         </div>
         <p className="text-sm text-muted-foreground">

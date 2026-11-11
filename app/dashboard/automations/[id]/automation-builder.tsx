@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/coss-dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import {
   NODE_CATALOG,
   type AutomationFlow,
@@ -58,6 +59,8 @@ export function AutomationBuilder({ automation }: { automation: AutomationData }
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Leaving with unsaved edits to the flow or name asks first.
+  useUnsavedChangesGuard(dirty);
 
   // Reference data for the config sheet + node summaries
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);

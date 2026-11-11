@@ -284,9 +284,9 @@ export function Pricing02() {
           </div>
           <div className="md:col-span-4 md:col-start-9">
             <p className="max-w-md text-sm leading-6 text-slate-500 dark:text-zinc-400">
-              Plans are sized by contacts, not by how much you send — so
-              emailing your list more often never costs you more. Change plan
-              or cancel whenever you like.
+              Each plan sets how many contacts you can keep and how many
+              emails you can send a month. Change plan or cancel whenever you
+              like.
             </p>
             <div
               className="t-tabs mt-5 border border-slate-200 text-xs shadow-sm dark:border-zinc-700 dark:shadow-none"

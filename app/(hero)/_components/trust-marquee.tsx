@@ -7,6 +7,7 @@ import { useStartCta } from "@/components/start-cta";
 import { Marquee } from "@/components/ui/marquee";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { cn } from "@/lib/utils";
+import { ContactSalesScreen } from "./contact-sales-screen";
 
 // What's actually true about sending through Letterstack, not a features
 // list — the on/off framing makes the trade-offs explicit rather than
@@ -16,8 +17,8 @@ const CLAIMS: Array<{ label: string; on: boolean }> = [
   { label: "Real HTML, not a flattened image", on: true },
   { label: "Vendor lock-in", on: false },
   { label: "Send from your own domain", on: true },
-  { label: "Gmail clipping your layout", on: false },
-  { label: "Amazon SES pricing, no markup", on: true },
+  { label: "Warning before Gmail clips", on: true },
+  { label: "Delivery through Amazon SES", on: true },
   { label: "Hidden per-seat fees", on: false },
   { label: "Bounce & suppression handling", on: true },
   { label: "Manual list cleanup", on: false },
@@ -122,21 +123,27 @@ export function TrustSection() {
             </h2>
 
             <p className="max-w-xl text-lg leading-relaxed text-[#717171]">
-              No flattened screenshots, no clipped layouts, no per-seat pricing
-              tricks — what you design is exactly what lands in the inbox,
-              sent from a domain you own.
+              No flattened screenshots, no per-seat fees.
+              The HTML you design is the HTML that is sent, from a domain you
+              own.
             </p>
 
             {/* Same destination rule as the hero and the navbar: the
                 dashboard once you're signed in, signup before that. */}
-            <ShimmerButton
-              onClick={() => router.push(startCta.href)}
-              background="#5D5FEF"
-              className="mt-2 gap-1.5 px-8 py-3 text-sm font-semibold"
-            >
-              {startCta.label}
-              <ArrowRightIcon className="size-4" />
-            </ShimmerButton>
+            {/* This section is what the pricing page's Business "Talk to us"
+                lands on (/#contact), so it carries the contact form as well
+                as the signup button. */}
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+              <ShimmerButton
+                onClick={() => router.push(startCta.href)}
+                background="#5D5FEF"
+                className="gap-1.5 px-8 py-3 text-sm font-semibold"
+              >
+                {startCta.label}
+                <ArrowRightIcon className="size-4" />
+              </ShimmerButton>
+              <ContactSalesScreen />
+            </div>
           </div>
 
           <EdgeMark icon={SendIcon} side="bottom" />

@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GmailMailboxCard } from "@/components/dashboard/gmail-mailbox-card";
+import { useCanManageWorkspace } from "@/components/protected-shell/workspace-role";
 
 type DnsRecord = {
   type: string;
@@ -77,6 +78,9 @@ export default function DomainsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Connecting and disconnecting are owner/admin actions (the API answers 403
+  // to members). Members still see status, records and re-check.
+  const canManage = useCanManageWorkspace();
 
   const applyResponse = useCallback((data: DomainsState & { ok: boolean }) => {
     setState({
@@ -209,57 +213,61 @@ export default function DomainsPage() {
               <div>
                 <CardTitle>Add domain</CardTitle>
                 <CardDescription>
-                  {atLimit
-                    ? `You've connected ${state?.limit} domains — disconnect one to add another.`
-                    : `Use a domain you own to send branded campaign email. You add a few DNS records at your provider; Amazon verifies them automatically.${state ? ` Up to ${state.limit} domains.` : ""}`}
+                  {!canManage
+                    ? "Only workspace owners and admins can connect or disconnect domains. Ask one of them to add yours."
+                    : atLimit
+                      ? `You've connected ${state?.limit} domains — disconnect one to add another.`
+                      : `Use a domain you own to send branded campaign email. You add a few DNS records at your provider; Amazon verifies them automatically.${state ? ` Up to ${state.limit} domains.` : ""}`}
                 </CardDescription>
               </div>
             </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2Icon className="size-4 animate-spin" />
-                  Loading domains…
-                </div>
-              ) : (
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="domain-name">Domain name</FieldLabel>
-                    <div className="flex gap-2">
-                      <Input
-                        id="domain-name"
-                        value={domainInput}
-                        onChange={(event) => setDomainInput(event.target.value)}
-                        placeholder="example.com"
-                        disabled={atLimit}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && domainInput.trim())
-                            void connect();
-                        }}
-                      />
-                      <Button
-                        onClick={() => void connect()}
-                        disabled={busy !== null || !domainInput.trim() || atLimit}
-                      >
-                        {busy === "connect" ? (
-                          <Loader2Icon
-                            data-icon="inline-start"
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <PlusIcon data-icon="inline-start" />
-                        )}
-                        Connect
-                      </Button>
-                    </div>
-                    <FieldDescription>
-                      The bare domain (no https://). Campaigns can send from any
-                      address on it once it verifies.
-                    </FieldDescription>
-                  </Field>
-                </FieldGroup>
-              )}
-            </CardContent>
+            {(loading || canManage) && (
+              <CardContent>
+                {loading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2Icon className="size-4 animate-spin" />
+                    Loading domains…
+                  </div>
+                ) : (
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel htmlFor="domain-name">Domain name</FieldLabel>
+                      <div className="flex gap-2">
+                        <Input
+                          id="domain-name"
+                          value={domainInput}
+                          onChange={(event) => setDomainInput(event.target.value)}
+                          placeholder="example.com"
+                          disabled={atLimit}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && domainInput.trim())
+                              void connect();
+                          }}
+                        />
+                        <Button
+                          onClick={() => void connect()}
+                          disabled={busy !== null || !domainInput.trim() || atLimit}
+                        >
+                          {busy === "connect" ? (
+                            <Loader2Icon
+                              data-icon="inline-start"
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <PlusIcon data-icon="inline-start" />
+                          )}
+                          Connect
+                        </Button>
+                      </div>
+                      <FieldDescription>
+                        The bare domain (no https://). Campaigns can send from any
+                        address on it once it verifies.
+                      </FieldDescription>
+                    </Field>
+                  </FieldGroup>
+                )}
+              </CardContent>
+            )}
           </Card>
 
           {/* Connected domains */}
@@ -436,14 +444,16 @@ export default function DomainsPage() {
                       {copied === `all-${entry.domain}` ? "Copied!" : "Copy records"}
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    onClick={() => void remove(entry.domain)}
-                    disabled={busy !== null}
-                  >
-                    <Trash2Icon data-icon="inline-start" />
-                    Disconnect
-                  </Button>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      onClick={() => void remove(entry.domain)}
+                      disabled={busy !== null}
+                    >
+                      <Trash2Icon data-icon="inline-start" />
+                      Disconnect
+                    </Button>
+                  )}
                 </div>
                 <Button
                   onClick={() => void check(entry.domain)}

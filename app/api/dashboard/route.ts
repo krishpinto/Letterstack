@@ -12,6 +12,11 @@ import { listAutomationsForOrganization } from "@/db/automations";
 import { listSendingDomains } from "@/db/sending-domains";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 import { baseSendingDomain } from "@/lib/send/sender-identity";
+import { ratio, toPercent } from "@/lib/analytics/rates";
+
+function wholePercent(rate: number | null): number | null {
+  return rate === null ? null : toPercent(rate, 0);
+}
 
 export const runtime = "nodejs";
 
@@ -60,10 +65,9 @@ export async function GET() {
         status: c.status,
         audienceCount: c.audienceCount,
         sentCount: c.sentCount,
-        openRate:
-          e && e.delivered > 0
-            ? Math.round((e.opensUnique / e.delivered) * 100)
-            : null,
+        // Unique opens ÷ delivered, whole percent, null before any delivery
+        // event — the shared definition in lib/analytics/rates.ts.
+        openRate: wholePercent(e ? ratio(e.opensUnique, e.delivered) : null),
         sentAt: c.sentAt,
         createdAt: c.createdAt,
       };

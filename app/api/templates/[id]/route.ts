@@ -1,16 +1,24 @@
 ﻿import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { getTemplateWithVersion, templateVersion } from "@/db/content-version";
 import { uniqueTemplateName } from "@/db/email-templates";
 import { emailTemplates } from "@/db/schema";
 import { currentOrganizationId } from "@/lib/auth-helpers";
-import type { EmailDocument } from "@/lib/email/document";
+import { isEmailDocument, type EmailDocument } from "@/lib/email/document";
+import { sanitizeEmailDocument } from "@/lib/email/sanitize";
 
 export const runtime = "nodejs";
 
 type TemplateBody = {
   name?: unknown;
   document?: EmailDocument;
+  /**
+   * The version the editor loaded (db/content-version.ts). When present, the
+   * save only applies if the design has not changed since; otherwise 409, so
+   * a stale tab can't overwrite a newer save.
+   */
+  baseVersion?: unknown;
 };
 
 function errorMessage(error: unknown) {
@@ -28,21 +36,13 @@ export async function GET(
   }
 
   try {
-    const [template] = await db
-      .select()
-      .from(emailTemplates)
-      .where(
-        and(
-          eq(emailTemplates.id, id),
-          eq(emailTemplates.organizationId, organizationId),
-        ),
-      );
+    const found = await getTemplateWithVersion(id, organizationId);
 
-    if (!template) {
+    if (!found) {
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, template });
+    return NextResponse.json({ ok: true, template: found.template, version: found.version });
   } catch (error: unknown) {
     return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
   }
@@ -61,7 +61,11 @@ export async function PATCH(
   try {
     const body = (await request.json().catch(() => null)) as TemplateBody | null;
     const name = body?.name;
-    const document = body?.document;
+    if (body?.document !== undefined && !isEmailDocument(body.document)) {
+      return NextResponse.json({ ok: false, error: "Valid document required" }, { status: 400 });
+    }
+    // Same rule as POST: what is stored is what other editors will open.
+    const document = body?.document ? sanitizeEmailDocument(body.document) : undefined;
 
     const patchData: Partial<typeof emailTemplates.$inferInsert> = {};
     if (name !== undefined) {
@@ -73,28 +77,42 @@ export async function PATCH(
     }
     if (document !== undefined) {
       patchData.document = document;
-      patchData.subject = document?.subject || "";
-      patchData.fromName = document?.fromName || "";
-      patchData.fromEmail = document?.fromEmail || "";
+      patchData.subject = document.subject || "";
+      patchData.fromName = document.fromName || "";
+      patchData.fromEmail = document.fromEmail || "";
     }
     patchData.updatedAt = new Date();
 
-    const [updated] = await db
+    const baseVersion =
+      typeof body?.baseVersion === "string" ? body.baseVersion : undefined;
+    const [row] = await db
       .update(emailTemplates)
       .set(patchData)
       .where(
         and(
           eq(emailTemplates.id, id),
           eq(emailTemplates.organizationId, organizationId),
+          baseVersion !== undefined ? sql`${templateVersion} = ${baseVersion}` : undefined,
         ),
       )
-      .returning();
+      .returning({ ...getTableColumns(emailTemplates), version: templateVersion });
 
-    if (!updated) {
+    if (!row) {
+      if (baseVersion !== undefined && (await getTemplateWithVersion(id, organizationId))) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "conflict",
+            error: "This template was changed somewhere else. Reload to get the latest version.",
+          },
+          { status: 409 },
+        );
+      }
       return NextResponse.json({ ok: false, error: "Template not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, template: updated });
+    const { version, ...updated } = row;
+    return NextResponse.json({ ok: true, template: updated, version });
   } catch (error: unknown) {
     return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
   }

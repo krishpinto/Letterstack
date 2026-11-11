@@ -1,6 +1,24 @@
-import { eq, sql } from "drizzle-orm";
+import {
+  and,
+  type Column,
+  eq,
+  getTableColumns,
+  getTableName,
+  isNull,
+  sql,
+  type Table,
+} from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
+import type { PgTable } from "drizzle-orm/pg-core";
+
+import {
+  type AccountDeletionPlan,
+  planAccountDeletion,
+  REASSIGNED_TO_OWNER,
+} from "./account-deletion";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
+import { planGoogleClaim, type AuthState, type GoogleClaim } from "@/lib/auth-rules";
 
 /** Thrown when deleting the account would orphan a shared workspace. */
 export class SoleOwnerError extends Error {
@@ -59,11 +77,21 @@ export async function updateUserName(userId: string, name: string) {
 }
 
 /**
- * Delete a user's account. Refuses if the user is the sole owner of a
- * workspace that has other members (that membership can't just vanish —
- * someone else needs to own it first). Workspaces the user owns AND is the
- * only member of are deleted along with everything scoped to them
- * (cascades through organizationId foreign keys).
+ * Delete a user's account.
+ *
+ * Refuses if the user owns a workspace that has other members (someone else
+ * needs to own it first). Workspaces the user owns and is the only member of
+ * are deleted along with everything scoped to them.
+ *
+ * Everything the user created in any other workspace stays there: contacts,
+ * campaigns, signup forms, automations and API keys are handed to that
+ * workspace's owner (REASSIGNED_TO_OWNER), and payments and suppression rows
+ * just stop naming the user (their FKs are SET NULL). That includes
+ * workspaces the user has already left — their rows are still in them.
+ *
+ * All of it runs as one batch, which neon-http executes as a single
+ * transaction: a failure part-way leaves nothing deleted and nothing
+ * reassigned.
  */
 export async function deleteUserAccount(userId: string): Promise<void> {
   const memberships = await db
@@ -82,22 +110,68 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     )
     .where(eq(organizationMembers.userId, userId));
 
-  const blocking = memberships.filter(
-    (m) => m.role === "owner" && m.memberCount > 1,
+  const plan = planAccountDeletion(memberships);
+  if (plan.blockingOrganizationNames.length > 0) {
+    throw new SoleOwnerError(plan.blockingOrganizationNames);
+  }
+
+  const [first, ...rest] = accountDeletionStatements(userId, plan);
+  await db.batch([first, ...rest]);
+}
+
+/**
+ * The statements deleteUserAccount runs, in order. Built without touching
+ * the database, so their SQL can be checked in a unit test.
+ *
+ * Order matters. Solo workspaces go first, so their rows are deleted with
+ * them rather than handed to a successor that doesn't exist; every row still
+ * pointing at the user after that is in somebody else's workspace. The user
+ * row goes last, once nothing RESTRICTs it.
+ */
+export function accountDeletionStatements(
+  userId: string,
+  plan: AccountDeletionPlan,
+): BatchItem<"pg">[] {
+  const deleteSoloWorkspaces = plan.soloOwnedOrganizationIds.map((id) =>
+    db.delete(organizations).where(eq(organizations.id, id)),
   );
-  if (blocking.length > 0) {
-    throw new SoleOwnerError(blocking.map((m) => m.name));
-  }
+  const reassign = REASSIGNED_TO_OWNER.map(({ table, column }) =>
+    db
+      .update(table as PgTable)
+      .set({ [propertyNameOf(table, column)]: workspaceSuccessor(table, userId) } as never)
+      .where(eq(column, userId)),
+  );
+  const deleteUser = db.delete(users).where(eq(users.id, userId));
 
-  const soloOwnedOrgIds = memberships
-    .filter((m) => m.role === "owner" && m.memberCount === 1)
-    .map((m) => m.organizationId);
+  return [...deleteSoloWorkspaces, ...reassign, deleteUser];
+}
 
-  for (const organizationId of soloOwnedOrgIds) {
-    await db.delete(organizations).where(eq(organizations.id, organizationId));
-  }
+/**
+ * The member who inherits a row in its own workspace: the owner, or failing
+ * that the longest-standing other member. Correlated on the outer row's
+ * organization_id, qualified by hand because drizzle leaves column
+ * references in an UPDATE unqualified, which inside this subquery would
+ * resolve to om.organization_id instead.
+ *
+ * If nobody else is in that workspace this is NULL, the NOT NULL column
+ * rejects it, and the whole batch rolls back: better a failed deletion than
+ * rows silently lost.
+ */
+function workspaceSuccessor(table: Table, userId: string) {
+  return sql`(
+    select om.user_id from organization_members om
+    where om.organization_id = ${sql.identifier(getTableName(table))}.organization_id
+      and om.user_id <> ${userId}
+    order by (om.role = 'owner') desc, om.created_at asc
+    limit 1
+  )`;
+}
 
-  await db.delete(users).where(eq(users.id, userId));
+/** drizzle's .set() is keyed by the TypeScript property, not the SQL name. */
+function propertyNameOf(table: Table, column: Column): string {
+  const entry = Object.entries(getTableColumns(table)).find(([, c]) => c === column);
+  if (!entry) throw new Error(`${column.name} is not a column of ${getTableName(table)}`);
+  return entry[0];
 }
 
 /** The account's branded sending subdomain slug, or null if not set yet. */
@@ -143,8 +217,113 @@ export async function getPasswordHash(userId: string): Promise<string | null> {
   return row?.passwordHash ?? null;
 }
 
-/** Replace the password hash. Hashing is the caller's job — this never sees a
- *  plaintext password, so no code path can accidentally log one from here. */
+/**
+ * Replace the password hash and sign out every existing session for the
+ * account (see sessionVersion in db/schema.ts). Hashing is the caller's job —
+ * this never sees a plaintext password, so no code path can accidentally log
+ * one from here.
+ *
+ * Returns the new session version so the caller's own session can be
+ * re-issued at it.
+ */
 export async function setPasswordHash(userId: string, passwordHash: string) {
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  const [row] = await db
+    .update(users)
+    .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning({ sessionVersion: users.sessionVersion });
+  return row?.sessionVersion ?? null;
+}
+
+/**
+ * Finish a password reset. Redeeming the emailed token proves the person
+ * owns the mailbox, so the email counts as verified from here on. Every
+ * existing session is revoked: a reset is what someone does when they think
+ * another person has their password.
+ */
+export async function resetPassword(userId: string, passwordHash: string) {
+  await db
+    .update(users)
+    .set({
+      passwordHash,
+      emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
+      sessionVersion: sql`${users.sessionVersion} + 1`,
+    })
+    .where(eq(users.id, userId));
+}
+
+/** What the jwt callback re-checks on every request. Null if the user is gone. */
+export async function getAuthState(userId: string): Promise<AuthState | null> {
+  const [row] = await db
+    .select({
+      email: users.email,
+      emailVerifiedAt: users.emailVerifiedAt,
+      sessionVersion: users.sessionVersion,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Mark the email proven, keeping the first proof's timestamp. */
+export async function markEmailVerified(userId: string) {
+  await db
+    .update(users)
+    .set({ emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Find-or-create our own user row for a Google sign-in. We don't use a
+ * NextAuth adapter (the users table is ours), so a Google identity is linked
+ * to an account by its Google-verified email. See planGoogleClaim for what
+ * happens when that account never proved it owns the address.
+ */
+export async function claimAccountForGoogle(
+  email: string,
+  googleName: string | null,
+): Promise<{ id: string; kind: GoogleClaim["kind"] }> {
+  const normalized = email.toLowerCase().trim();
+  const [existing] = await db
+    .select({ id: users.id, name: users.name, emailVerifiedAt: users.emailVerifiedAt })
+    .from(users)
+    .where(eq(users.email, normalized))
+    .limit(1);
+
+  const plan = planGoogleClaim(existing ?? null, googleName);
+
+  if (plan.kind === "create" || !existing) {
+    const [created] = await db
+      .insert(users)
+      .values({
+        email: normalized,
+        name: googleName,
+        passwordHash: null,
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    return { id: created.id, kind: "create" };
+  }
+
+  const name = plan.backfillName ? { name: googleName } : {};
+
+  if (plan.kind === "takeover") {
+    // The emailVerifiedAt IS NULL guard makes this a no-op if the account was
+    // verified between the read above and now, so a verified password is
+    // never wiped by a race.
+    await db
+      .update(users)
+      .set({
+        ...name,
+        emailVerifiedAt: new Date(),
+        passwordHash: null,
+        sessionVersion: sql`${users.sessionVersion} + 1`,
+      })
+      .where(and(eq(users.id, existing.id), isNull(users.emailVerifiedAt)));
+  } else if (plan.backfillName) {
+    await db.update(users).set(name).where(eq(users.id, existing.id));
+  }
+
+  return { id: existing.id, kind: plan.kind };
 }

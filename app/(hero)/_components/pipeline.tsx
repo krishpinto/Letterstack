@@ -27,7 +27,7 @@ export function PipelineSection() {
             Simple two-step delivery
           </h2>
           <p className="mt-3 text-base text-[#717171] leading-relaxed">
-            Draft your layout templates, assign your subscriber lists, and dispatch campaigns to millions of inboxes instantly.
+            Design the email, pick the folder of contacts it goes to, and send. Delivery runs in batches through Amazon SES, and opens, clicks and bounces come back to the campaign.
           </p>
         </div>
 
@@ -61,43 +61,32 @@ export function PipelineSection() {
               <div className="flex flex-wrap items-center gap-1.5 border-b border-[#F4F4F5] pb-3">
                 <span className="w-8 text-[#717170] shrink-0">To:</span>
                 <span className="rounded bg-[#F4F4F5] border border-[#E4E4E7] px-2 py-0.5 font-medium flex items-center gap-1">
-                  Lucia Garza
-                </span>
-                <span className="rounded bg-[#F4F4F5] border border-[#E4E4E7] px-2 py-0.5 font-medium flex items-center gap-1">
-                  Judah Montes
-                </span>
-                <span className="rounded bg-[#F4F4F5] border border-[#E4E4E7] px-2 py-0.5 font-medium flex items-center gap-1">
-                  Roselyn McCoy
+                  Monthly newsletter
                 </span>
                 <Badge variant="secondary" className="text-[10px] font-bold py-0.5 px-2 rounded-full">
-                  +3 more
+                  1,240 contacts
                 </Badge>
-              </div>
-              
-              <div className="flex items-center gap-2 border-b border-[#F4F4F5] pb-2">
-                <span className="w-8 text-[#717170] shrink-0">Cc:</span>
-                <span className="text-[#A1A1AA]">Optional carbon copy list</span>
               </div>
 
               <div className="flex items-center gap-2 border-b border-[#F4F4F5] pb-2">
                 <span className="w-8 text-[#717170] shrink-0">Subj:</span>
-                <span className="font-semibold text-[#0A0A0A]">Welcome to Letterstack</span>
+                <span className="font-semibold text-[#0A0A0A]">What we shipped in March</span>
               </div>
 
               <div className="flex items-center gap-2 border-b border-[#F4F4F5] pb-2">
                 <span className="w-8 text-[#717170] shrink-0">From:</span>
-                <span className="font-medium text-[#717170]">setup@letterstack.io</span>
+                <span className="font-medium text-[#717170]">news@yourdomain.com</span>
               </div>
 
               {/* Template Body area */}
               <div className="pt-2 text-[#4B5563] space-y-3 leading-relaxed bg-[#FAFBFB] rounded-lg p-3 border border-[#F4F4F5]">
-                <p className="font-medium text-[#0A0A0A]">Hi {"{first_name}"},</p>
+                <p className="font-medium text-[#0A0A0A]">Hi there,</p>
                 <p>
-                  We are building state-of-the-art web applications with{" "}
-                  <span className="text-primary font-semibold">React and TypeScript</span> using industry best practices.
+                  Three new features, one fixed bug, and a{" "}
+                  <span className="text-primary font-semibold">date for the next meetup</span>.
                 </p>
                 <div className="h-6 w-20 rounded bg-primary flex items-center justify-center text-[9px] text-primary-foreground font-bold select-none">
-                  Get Started
+                  Read more
                 </div>
               </div>
             </div>

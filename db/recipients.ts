@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
 import { recipients } from "./schema";
 
@@ -133,6 +133,26 @@ export async function deleteRecipient(organizationId: string, id: string) {
 
   return rows.length > 0;
 }
+/**
+ * Delete several contacts in one statement, limited to the organization.
+ * Returns the ids that were actually deleted, so the caller can report the
+ * rest (already gone, or belonging to another workspace) as not found.
+ */
+export async function deleteRecipients(organizationId: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .delete(recipients)
+    .where(
+      and(
+        eq(recipients.organizationId, organizationId),
+        inArray(recipients.id, ids),
+      ),
+    )
+    .returning({ id: recipients.id });
+
+  return rows.map((row) => row.id);
+}
+
 /** One contact by address, for the API's upsert path — addRecipient returns
  *  null on conflict, and the caller still owes the client the existing row. */
 export async function getRecipientByEmail(organizationId: string, email: string) {

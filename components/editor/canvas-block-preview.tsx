@@ -8,7 +8,7 @@ import {
   DEFAULT_FONT_SIZE_BY_TEXT_TYPE,
   type FormattingTextType,
 } from "./formatting-options";
-import { previewHtml } from "./preview-html";
+import { previewHtml, sanitizePreviewHtml } from "./preview-html";
 import { RichTextEditor } from "./rich-text-editor";
 import {
   type ArticleCardBlock,
@@ -21,16 +21,13 @@ import {
   type RawHtmlBlock,
   type TextBlock,
 } from "@/lib/email/document";
+import { htmlToText } from "@/lib/email/plain-text";
+import { safeColor, safeFontFamily } from "@/lib/email/sanitize";
 import { socialIconSrc, socialLabel } from "@/lib/email/social";
 
 function stripOuterP(html: string): string {
   const stripped = html.replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1").trim();
   return stripped || html;
-}
-
-/** Plain-text fallback kept in sync with the HTML for the plain-text email. */
-function htmlToPlain(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -56,8 +53,13 @@ function EditableHtmlBlock({
 
   React.useEffect(() => {
     const el = ref.current;
-    if (el && el.innerHTML !== block.html) {
-      el.innerHTML = block.html || "";
+    // Sanitized before it touches the DOM: this surface lives in the app's
+    // origin, and block.html can come from a shared template or the agent.
+    // Compared in sanitized form, so the DOM is only replaced when the
+    // content really changed and typing never resets the caret.
+    const safe = sanitizePreviewHtml(block.html || "");
+    if (el && sanitizePreviewHtml(el.innerHTML) !== safe) {
+      el.innerHTML = safe;
     }
   }, [block.html]);
 
@@ -74,13 +76,70 @@ function EditableHtmlBlock({
         role="textbox"
         aria-label="Editable HTML preview"
         onInput={(e) => {
-          const html = e.currentTarget.innerHTML;
-          onUpdateBlock((b) => ({ ...b, html, text: htmlToPlain(html) }) as RawHtmlBlock);
+          // A paste lands in the DOM before anything can check it.
+          const html = sanitizePreviewHtml(e.currentTarget.innerHTML);
+          onUpdateBlock((b) => ({ ...b, html, text: htmlToText(html) }) as RawHtmlBlock);
         }}
         className="min-h-[44px] rounded-md border border-dashed border-muted-foreground/30 p-3 text-sm outline-none focus:border-ring"
         style={{ color: textColor, fontFamily: settings.fontFamily }}
       />
     </div>
+  );
+}
+
+/**
+ * Read-only preview of a Custom HTML block, in a sandboxed iframe.
+ *
+ * This is the one block whose whole point is arbitrary markup, so it gets a
+ * second wall behind DOMPurify: the sandbox has no allow-scripts, so even
+ * markup that slipped past the sanitizer cannot run. allow-same-origin is
+ * there only so this component can read the content height and size the
+ * frame to it — without scripts in the frame, there is nothing to use it.
+ * pointer-events:none lets a click fall through to the block, which selects it.
+ */
+function RawHtmlFrame({
+  html,
+  textColor,
+  fontFamily,
+}: {
+  html: string;
+  textColor: string;
+  fontFamily: string;
+}) {
+  const ref = React.useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = React.useState(44);
+
+  const srcDoc = React.useMemo(() => {
+    const color = safeColor(textColor) ?? "#1a1a1a";
+    const font = safeFontFamily(fontFamily) ?? "Arial, Helvetica, sans-serif";
+    return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;}body{color:${color};font-family:${font};font-size:14px;line-height:1.5;overflow:hidden;}img{max-width:100%;height:auto;}</style></head><body>${sanitizePreviewHtml(html)}</body></html>`;
+  }, [html, textColor, fontFamily]);
+
+  const measure = React.useCallback(() => {
+    const doc = ref.current?.contentDocument;
+    if (!doc?.body) return;
+    setHeight(Math.max(20, Math.ceil(doc.documentElement.scrollHeight)));
+  }, []);
+
+  const handleLoad = React.useCallback(() => {
+    measure();
+    // Images finish after the frame's load event and change its height.
+    const doc = ref.current?.contentDocument;
+    doc?.querySelectorAll("img").forEach((img) => {
+      if (!img.complete) img.addEventListener("load", measure, { once: true });
+    });
+  }, [measure]);
+
+  return (
+    <iframe
+      ref={ref}
+      title="Custom HTML preview"
+      srcDoc={srcDoc}
+      sandbox="allow-same-origin"
+      onLoad={handleLoad}
+      className="pointer-events-none block w-full border-0"
+      style={{ height }}
+    />
   );
 }
 
@@ -565,11 +624,9 @@ export function CanvasBlockPreview({
         );
       }
       return block.html.trim() ? (
-        <div
-          className="px-4 py-3 text-sm"
-          style={{ color: textColor, fontFamily: s.fontFamily }}
-          dangerouslySetInnerHTML={previewHtml(block.html)}
-        />
+        <div className="px-4 py-3">
+          <RawHtmlFrame html={block.html} textColor={textColor} fontFamily={s.fontFamily} />
+        </div>
       ) : (
         <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
           <HugeiconsIcon icon={CodeIcon} strokeWidth={1.75} className="size-4" />

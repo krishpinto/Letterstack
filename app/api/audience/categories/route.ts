@@ -1,7 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { categories, recipientCategories } from "@/db/schema";
+import { categories, recipientCategories, recipients } from "@/db/schema";
+import { buildCategoryMappings } from "@/lib/audience/category-mappings";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -96,25 +97,39 @@ export async function POST(request: Request) {
 
       const orgCategoryIds = orgCategories.map((c) => c.id);
 
-      if (orgCategoryIds.length > 0 && recipientIds.length > 0) {
+      // Recipient ids come from the request too, so they are scoped to this
+      // workspace before anything is deleted or inserted.
+      const ownedRecipients =
+        recipientIds.length > 0
+          ? await db
+              .select({ id: recipients.id })
+              .from(recipients)
+              .where(
+                and(
+                  eq(recipients.organizationId, organizationId),
+                  inArray(recipients.id, recipientIds),
+                ),
+              )
+          : [];
+      const ownedRecipientIds = ownedRecipients.map((r) => r.id);
+
+      if (orgCategoryIds.length > 0 && ownedRecipientIds.length > 0) {
         await db
           .delete(recipientCategories)
           .where(
             and(
-              inArray(recipientCategories.recipientId, recipientIds),
+              inArray(recipientCategories.recipientId, ownedRecipientIds),
               inArray(recipientCategories.categoryId, orgCategoryIds),
             ),
           );
       }
 
-      const values: { recipientId: string; categoryId: string }[] = [];
-      for (const recipientId of recipientIds) {
-        for (const categoryId of categoryIds) {
-          if (orgCategoryIds.includes(categoryId)) {
-            values.push({ recipientId, categoryId });
-          }
-        }
-      }
+      const values = buildCategoryMappings({
+        recipientIds,
+        categoryIds,
+        ownedRecipientIds,
+        ownedCategoryIds: orgCategoryIds,
+      });
 
       if (values.length > 0) {
         await db.insert(recipientCategories).values(values).onConflictDoNothing();

@@ -13,18 +13,9 @@ import bcrypt from "bcryptjs";
 
 import { getPasswordHash, setPasswordHash } from "@/db/users";
 import { currentUserId } from "@/lib/auth-helpers";
+import { BCRYPT_COST, MIN_PASSWORD_LENGTH as MIN_LENGTH } from "@/lib/auth-rules";
 
 export const runtime = "nodejs";
-
-/**
- * Matches /api/auth/reset. Signup still allows 6, which is a real
- * inconsistency in the codebase; 8 is the one worth keeping, so new and
- * changed passwords use it and signup is the thing to raise later.
- */
-const MIN_LENGTH = 8;
-
-/** Signup's cost, not reset's 10. Both exist today; the stronger one wins. */
-const BCRYPT_COST = 12;
 
 export async function PUT(request: Request) {
   const userId = await currentUserId();
@@ -79,13 +70,11 @@ export async function PUT(request: Request) {
   // password to ask for — and refusing would leave the account permanently
   // unable to add one.
 
+  // This also signs out every session on the account, this browser's
+  // included (setPasswordHash bumps users.session_version, which the jwt
+  // callback checks). The settings panel signs straight back in with the new
+  // password, so the person making the change stays signed in here.
   await setPasswordHash(userId, await bcrypt.hash(newPassword, BCRYPT_COST));
 
-  // Deliberately does NOT invalidate other sessions. Sessions are stateless
-  // JWTs with no adapter behind them, so there is no server-side list to
-  // revoke and nothing here could honestly claim to have signed anyone out.
-  // Saying so is better than a button that lies; the fix is a token-version
-  // column checked in the jwt callback, which costs a database read on every
-  // session refresh and is a decision of its own.
   return NextResponse.json({ ok: true, hadPassword: Boolean(existing) });
 }

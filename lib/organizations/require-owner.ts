@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { getOrganizationForUser } from "@/db/organizations";
 import { currentUserId } from "@/lib/auth-helpers";
+import { isManagerRole } from "./roles";
 
 export async function requireMember(organizationId: string) {
   const userId = await currentUserId();
@@ -47,8 +48,7 @@ export async function requireOwner(organizationId: string) {
 export async function requireManager(organizationId: string) {
   const result = await requireMember(organizationId);
   if (result.error) return result;
-  const role = result.organization!.role;
-  if (role !== "owner" && role !== "admin") {
+  if (!isManagerRole(result.organization!.role)) {
     return {
       error: NextResponse.json(
         { ok: false, error: "Only owners and admins can change this" },

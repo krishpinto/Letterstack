@@ -21,7 +21,9 @@ the way it is.
    per address.
 6. **Feedback.** An SES configuration set publishes delivery, bounce, complaint,
    open and click events to SNS, which posts them to
-   [`/api/webhooks/ses`](../app/api/webhooks/ses/route.ts).
+   [`/api/webhooks/ses`](../app/api/webhooks/ses/route.ts). The webhook checks
+   the SNS signature and the topic ARN before it reads anything else, because
+   the URL is public and a forged complaint would suppress a real address.
 
 ## Why the output is table-based HTML
 
@@ -68,12 +70,16 @@ down delivery for everyone on the account.
 
 Hard bounces and complaints are therefore written to a single suppression table,
 checked by every campaign send and every list import, automatically.
+Soft (transient) bounces are recorded as events but never suppress: a full
+mailbox today can accept mail next week.
 
 ## Why correlation rides on SES message tags
 
-Each send is tagged with its campaign id. SES echoes the tag back inside the SNS
-event payload, so a bounce arriving forty minutes later attributes itself without
-needing a `MessageId → campaign` lookup table.
+Each send is tagged with its campaign id, or its automation id for automation
+mail. SES echoes the tag back inside the SNS event payload, so a bounce arriving
+forty minutes later attributes itself without needing a `MessageId → campaign`
+lookup table. The tags are only trusted because the SNS signature is verified
+first, and a tag that is not a well-formed id is ignored.
 
 ## Why one SES call per recipient
 

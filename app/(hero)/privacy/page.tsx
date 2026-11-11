@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "How LetterStack collects, uses, shares and protects personal data, including data received from Google APIs.",
 };
 
-const UPDATED = "3 September 2026";
+const UPDATED = "11 November 2026";
 
 const SECTIONS: LegalSection[] = [
   {
@@ -71,8 +71,6 @@ const SECTIONS: LegalSection[] = [
           "Signup forms you publish and the submissions they receive.",
         ],
       },
-      { subheading: "Content you put into the AI editor" },
-      "If you use the AI assistant, the text of your prompt and the email content in scope of your request are sent to Google as our model provider so it can generate a response. We also record a per-workspace count of AI requests in order to enforce quota.",
       { subheading: "Technical data" },
       "Server and application logs, which may include IP addresses, browser user agent, and the pages or API routes accessed, kept for security, debugging and abuse investigation.",
       {
@@ -129,7 +127,7 @@ const SECTIONS: LegalSection[] = [
           "Neon — managed PostgreSQL. Stores essentially all of the application data described above.",
           "Vercel — application hosting and edge delivery. Processes request data and server logs.",
           "Amazon Web Services (Simple Email Service), Mumbai region (ap-south-1) — sending email and reporting delivery events. Processes recipient addresses and message content.",
-          "Google LLC — Google sign-in, the Gmail send integration where you enable it, and the Gemini models behind the AI editor. Processes the data described in the Google section above.",
+          "Google LLC — Google sign-in and the Gmail send integration where you enable it. Processes the data described in the Google section above.",
           "Upstash (QStash) — the queue that fans a large send out into batches. Processes campaign and batch identifiers.",
           "UploadThing — hosting for images you upload into emails. Processes those image files.",
           "Razorpay — payment processing. Processes your payment details directly; we receive only the transaction record.",

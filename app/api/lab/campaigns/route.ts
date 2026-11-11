@@ -3,10 +3,13 @@ import { compileEmailDocument } from "@/lib/email/compiler";
 import { initialEmailDocument } from "@/lib/email/document";
 import { createCampaign, listCampaignsForOrganization } from "@/db/campaigns";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const userId = await currentUserId();
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -26,6 +29,8 @@ export async function GET() {
 }
 
 export async function POST() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const userId = await currentUserId();
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });

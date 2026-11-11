@@ -36,6 +36,13 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
       subject: campaign.subject,
       fromName: campaign.fromName,
       fromEmail: campaign.fromEmail,
+      // The sender is three fields, not one. Copying fromEmail alone turned
+      // a reused Gmail campaign into a "shared" SES draft with a Gmail From
+      // address, which SES rejects for every recipient. If the mailbox is
+      // another member's, the send route says so when this draft is sent.
+      senderType: campaign.senderType,
+      mailboxId: campaign.mailboxId,
+      replyTo: campaign.replyTo,
       html: campaign.htmlSnapshot,
       text: campaign.textSnapshot,
       document: campaign.document ?? undefined,

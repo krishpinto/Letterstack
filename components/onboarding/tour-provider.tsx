@@ -172,6 +172,10 @@ function TourAutoStart({ organizationId }: { organizationId: string }) {
     if (started.current) return;
     if (pathname !== "/dashboard") return;
     if (hasSeen(organizationId)) return;
+    // The tour points at the icon rail, which phones don't show (their
+    // navigation is in a sheet). Leave it unseen so it opens the first time
+    // this workspace is opened on a wider screen.
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
 
     let cancelled = false;
     let observer: MutationObserver | null = null;

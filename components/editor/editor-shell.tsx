@@ -29,7 +29,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
-import { alertDialog } from "@/components/app-dialogs"
+import { alertDialog, confirmDialog } from "@/components/app-dialogs"
 import { BlockInspector } from "@/components/editor/block-inspector"
 import { CanvasBlockPreview } from "@/components/editor/canvas-block-preview"
 import {
@@ -110,19 +110,26 @@ import {
   locateBlock,
   reorderBlocks,
   removeBlock,
-  STORAGE_KEY,
   touchDocument,
   updateBlock,
   type EmailBlock,
   type EmailDocument,
 } from "@/lib/email/document"
 import { compileEmailDocument } from "@/lib/email/compiler"
+import {
+  createSaveQueue,
+  type SaveQueueState,
+} from "@/lib/editor/save-queue"
 import { getEmailContainerShadow } from "@/lib/email/shadow"
 import { cn } from "@/lib/utils"
 
 type EditorView = "editor" | "html" | "preview"
 
 type PreviewViewport = "desktop" | "mobile"
+
+// One identity for the canvas's unused column callbacks, so they never make
+// memoized blocks re-render.
+const noop = () => {}
 
 // Clipboard write with an execCommand fallback for non-secure contexts.
 async function copyToClipboard(text: string) {
@@ -141,10 +148,21 @@ async function copyToClipboard(text: string) {
   textarea.remove()
 }
 
-// The dock's save indicator. "saving" and "error" exist because autosave
-// happens without anyone asking for it — a silent background write that can
-// fail needs somewhere to say so.
-type DockStatus = "idle" | "saving" | "saved" | "copied" | "error"
+// A short-lived confirmation in the header. Saving, failed and conflict
+// states are not flashes: they come from the save queue and stay up for as
+// long as they are true.
+type DockFlash = "saved" | "copied" | null
+
+const AUTOSAVE_DELAY_MS = 1500
+
+function sameSaveState(a: SaveQueueState, b: SaveQueueState) {
+  return (
+    a.status === b.status &&
+    a.dirty === b.dirty &&
+    a.error?.kind === b.error?.kind &&
+    a.error?.message === b.error?.message
+  )
+}
 
 type ActiveDrag =
   | { kind: "palette"; blockType: EmailBlock["type"] }
@@ -160,29 +178,44 @@ type DragData = {
 export function EditorShell({
   initialDocument,
   onSave,
+  onSaveOnUnload,
+  savedLabel = "Saved",
   onExit,
   onSaveAsTemplate,
   mode = "campaign",
-  renderAssistant,
+  readOnly = false,
+  banner,
 }: {
   initialDocument?: EmailDocument
+  /**
+   * Persists the document. Must reject when the save did not land (throw a
+   * SaveError from lib/editor/save-queue to say why); the editor only treats
+   * a resolved promise as saved.
+   */
   onSave?: (doc: EmailDocument) => Promise<void>
+  /**
+   * Last-resort write when the page is hidden or the editor unmounts with
+   * unsaved edits. It cannot be awaited, so it must use something that
+   * outlives the page, such as fetch with `keepalive`.
+   */
+  onSaveOnUnload?: (doc: EmailDocument) => void
+  /**
+   * Header text after a successful save. Says where the document went when
+   * that is not the server, so a browser-only draft isn't taken for a saved
+   * template.
+   */
+  savedLabel?: string
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
   /**
-   * Optional assistant, rendered as a tab in the left sidebar beside the block
-   * library. A render prop rather than a built-in so /studio can host the agent
-   * without this file growing again, and so /editor stays unchanged.
-   *
-   * It receives the canvas selection so the assistant can target whatever block
-   * the user is actually looking at.
+   * Show the document without allowing edits: opens on the preview, hides
+   * the canvas, Save and undo, and ignores every change. Used for campaigns
+   * that were sent, whose design is the record of what went out.
    */
-  renderAssistant?: (api: {
-    document: EmailDocument
-    updateDocument: (updater: (current: EmailDocument) => EmailDocument) => void
-    selectedBlockId: string
-  }) => React.ReactNode
+  readOnly?: boolean
+  /** Shown under the header, e.g. why the document is read-only. */
+  banner?: React.ReactNode
 } = {}) {
   const router = useRouter()
   const [document, setDocument] =
@@ -191,8 +224,8 @@ export function EditorShell({
   const [rightPanel, setRightPanel] = React.useState<"block" | "theme" | "settings" | null>(null)
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
-  const [dockStatus, setDockStatus] = React.useState<DockStatus>("idle")
-  const [view, setView] = React.useState<EditorView>("editor")
+  const [dockFlash, setDockFlash] = React.useState<DockFlash>(null)
+  const [view, setView] = React.useState<EditorView>(readOnly ? "preview" : "editor")
   const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
   const saveStatusTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -232,8 +265,80 @@ export function EditorShell({
     documentRef.current = document
   }, [document])
 
+  // ── Saving ────────────────────────────────────────────────────────────────
+  // All saving goes through one queue (lib/editor/save-queue.ts): edits are
+  // written shortly after typing stops, at most one save runs at a time, the
+  // newest document is always the one that ends up stored, and only a save
+  // that really succeeded clears the unsaved state. Before this, the autosave
+  // timer gave up whenever a save was already in flight and was never
+  // rescheduled, and a manual Save could start a second PATCH racing the
+  // first.
+  const onSaveRef = React.useRef(onSave)
+  const onSaveOnUnloadRef = React.useRef(onSaveOnUnload)
+  const onExitRef = React.useRef(onExit)
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+    onSaveOnUnloadRef.current = onSaveOnUnload
+    onExitRef.current = onExit
+  }, [onSave, onSaveOnUnload, onExit])
+
+  const [saveState, setSaveState] = React.useState<SaveQueueState>({
+    status: "idle",
+    dirty: false,
+    error: null,
+  })
+  const flash = React.useCallback((value: Exclude<DockFlash, null>) => {
+    setDockFlash(value)
+    if (saveStatusTimeoutRef.current) clearTimeout(saveStatusTimeoutRef.current)
+    saveStatusTimeoutRef.current = setTimeout(() => {
+      setDockFlash(null)
+      saveStatusTimeoutRef.current = null
+    }, 1400)
+  }, [])
+
+  const [saveQueue] = React.useState(() => {
+    let lastStatus: SaveQueueState["status"] = "idle"
+    return createSaveQueue<EmailDocument>(initialDocument ?? initialEmailDocument, {
+      delayMs: AUTOSAVE_DELAY_MS,
+      // The page's onSave is the only store. This used to write every
+      // document, campaigns included, into one global localStorage key that
+      // /editor opened on its next visit — so "New template" showed the last
+      // campaign edited in this browser, whoever it belonged to. Pages that
+      // want a browser copy keep one themselves (lib/editor/local-draft.ts).
+      save: async (doc) => {
+        await onSaveRef.current?.(doc)
+      },
+      onChange: (state) => {
+        // The queue reports on every edit; only re-render when what the
+        // header shows actually changed.
+        setSaveState((current) => (sameSaveState(current, state) ? current : state))
+        // Only a save that just finished earns the flash, not edits being
+        // discarded on "Leave anyway".
+        if (state.status === "saved" && lastStatus === "saving") flash("saved")
+        lastStatus = state.status
+      },
+    })
+  })
+
+  // Read through refs so the edit callbacks below stay stable. Without a save
+  // handler there is nowhere to write to, so edits are not tracked as unsaved
+  // (and the leave-page guard never arms).
+  const readOnlyRef = React.useRef(readOnly)
+  const persistsRef = React.useRef(Boolean(onSave) && !readOnly)
+  React.useEffect(() => {
+    readOnlyRef.current = readOnly
+    persistsRef.current = Boolean(onSave) && !readOnly
+  }, [onSave, readOnly])
+  const trackEdit = React.useCallback(
+    (next: EmailDocument) => {
+      if (persistsRef.current) saveQueue.update(next)
+    },
+    [saveQueue]
+  )
+
   const updateDocument = React.useCallback(
     (updater: (current: EmailDocument) => EmailDocument) => {
+      if (readOnlyRef.current) return
       const current = documentRef.current
       const next = updater(current)
       if (next === current) return
@@ -249,11 +354,13 @@ export function EditorShell({
       documentRef.current = next
       setDocument(next)
       setHistoryTick((tick) => tick + 1)
+      trackEdit(next)
     },
-    []
+    [trackEdit]
   )
 
   const undo = React.useCallback(() => {
+    if (readOnlyRef.current) return
     const history = historyRef.current
     const previous = history.past[history.past.length - 1]
     if (!previous) return
@@ -263,9 +370,11 @@ export function EditorShell({
     documentRef.current = previous
     setDocument(previous)
     setHistoryTick((tick) => tick + 1)
-  }, [])
+    trackEdit(previous)
+  }, [trackEdit])
 
   const redo = React.useCallback(() => {
+    if (readOnlyRef.current) return
     const history = historyRef.current
     const next = history.future[history.future.length - 1]
     if (!next) return
@@ -275,7 +384,8 @@ export function EditorShell({
     documentRef.current = next
     setDocument(next)
     setHistoryTick((tick) => tick + 1)
-  }, [])
+    trackEdit(next)
+  }, [trackEdit])
 
   void historyTick // state exists to refresh canUndo/canRedo below
   const canUndo = historyRef.current.past.length > 0
@@ -317,99 +427,46 @@ export function EditorShell({
     }
   }, [])
 
-  const showDockStatus = React.useCallback(
-    (status: Exclude<DockStatus, "idle" | "saving">) => {
-      setDockStatus(status)
+  const saveNow = React.useCallback(() => {
+    void saveQueue.flush()
+  }, [saveQueue])
 
-      if (saveStatusTimeoutRef.current) {
-        clearTimeout(saveStatusTimeoutRef.current)
+  // When the editor goes away with edits still unsaved — the tab is closed or
+  // navigated away from, or the component unmounts through some route other
+  // than the back chevron (browser Back, a link) — make one last attempt that
+  // does not depend on this page staying alive. A pending autosave timer is
+  // cancelled rather than left to fire into an unmounted editor.
+  React.useEffect(() => {
+    const saveOnUnload = () => {
+      // A conflict or a locked document: writing would overwrite someone
+      // else's save or be refused, so don't.
+      if (saveQueue.getState().status === "blocked") return
+      const pending = saveQueue.pendingDocument()
+      if (pending) onSaveOnUnloadRef.current?.(pending)
+    }
+    // A hidden tab may be frozen or discarded without another event, so save
+    // normally while the page is still alive to hear the answer.
+    const onVisibilityChange = () => {
+      if (globalThis.document.visibilityState === "hidden" && saveQueue.isDirty()) {
+        void saveQueue.flush()
       }
-      saveStatusTimeoutRef.current = setTimeout(
-        () => {
-          setDockStatus("idle")
-          saveStatusTimeoutRef.current = null
-        },
-        // A failure stays up long enough to be read; a success is just
-        // reassurance and can blink past.
-        status === "error" ? 4000 : 1400
-      )
-    },
-    []
-  )
-
-  // ── Autosave ──────────────────────────────────────────────────────────────
-  // The editor used to write only when someone clicked Save, and nothing
-  // guarded the tab, so closing mid-edit lost the work outright. Edits are now
-  // written back shortly after typing stops.
-  //
-  // Everything here reads through refs rather than through `document`, so the
-  // scheduling effect depends only on the document identity and is not torn
-  // down and rebuilt on each keystroke.
-
-  const AUTOSAVE_DELAY_MS = 1500
-
-  const onSaveRef = React.useRef(onSave)
-  React.useEffect(() => {
-    onSaveRef.current = onSave
-  }, [onSave])
-
-  // The document last written successfully. Compared by reference, which is
-  // sound because updateDocument always produces a new object — so an equal
-  // reference really does mean nothing has changed since.
-  const lastSavedRef = React.useRef<EmailDocument>(
-    initialDocument ?? initialEmailDocument
-  )
-  const savingRef = React.useRef(false)
-  const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  /** Writes the current document. Returns false if the remote save failed. */
-  const persistDocument = React.useCallback(async () => {
-    const snapshot = documentRef.current
-    savingRef.current = true
-    try {
-      // localStorage first and unconditionally: it is the offline copy that
-      // makes a failed remote save recoverable rather than lost.
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-      await onSaveRef.current?.(snapshot)
-      lastSavedRef.current = snapshot
-      return true
-    } catch (err) {
-      console.error("[editor] save failed", err)
-      return false
-    } finally {
-      savingRef.current = false
     }
-  }, [])
-
-  const saveDocument = React.useCallback(async () => {
-    setDockStatus("saving")
-    const ok = await persistDocument()
-    showDockStatus(ok ? "saved" : "error")
-  }, [persistDocument, showDockStatus])
-
-  React.useEffect(() => {
-    if (document === lastSavedRef.current) return
-
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null
-      // A manual save may already be in flight; its own effect run will
-      // reschedule this one if anything is still unsaved afterwards.
-      if (savingRef.current) return
-      void saveDocument()
-    }, AUTOSAVE_DELAY_MS)
-
+    window.addEventListener("pagehide", saveOnUnload)
+    globalThis.document.addEventListener("visibilitychange", onVisibilityChange)
     return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+      window.removeEventListener("pagehide", saveOnUnload)
+      globalThis.document.removeEventListener("visibilitychange", onVisibilityChange)
+      saveQueue.cancelScheduled()
+      saveOnUnload()
     }
-  }, [document, saveDocument])
+  }, [saveQueue])
 
   // Last line of defence: if edits are still unwritten — because autosave has
-  // not fired yet, or because the remote save failed — make the browser ask
-  // before the tab goes.
+  // not fired yet, a save is in flight, or the last save failed — make the
+  // browser ask before the tab goes.
   React.useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (documentRef.current === lastSavedRef.current) return
+      if (!saveQueue.isDirty()) return
       event.preventDefault()
       // Legacy browsers need returnValue set; modern ones ignore the string
       // and show their own wording.
@@ -417,12 +474,12 @@ export function EditorShell({
     }
     window.addEventListener("beforeunload", onBeforeUnload)
     return () => window.removeEventListener("beforeunload", onBeforeUnload)
-  }, [])
+  }, [saveQueue])
 
   const copyTemplateJson = React.useCallback(async () => {
-    await copyToClipboard(JSON.stringify(document, null, 2))
-    showDockStatus("copied")
-  }, [document, showDockStatus])
+    await copyToClipboard(JSON.stringify(documentRef.current, null, 2))
+    flash("copied")
+  }, [flash])
 
   // What the HTML and Preview views show — the exact compiler output that a
   // send would use, recompiled whenever the document changes.
@@ -433,8 +490,8 @@ export function EditorShell({
 
   const copyCompiledHtml = React.useCallback(async () => {
     await copyToClipboard(compileEmailDocument(documentRef.current).html)
-    showDockStatus("copied")
-  }, [showDockStatus])
+    flash("copied")
+  }, [flash])
 
   const handlePasteJson = React.useCallback(() => {
     try {
@@ -444,7 +501,6 @@ export function EditorShell({
         updateDocument(() => parsed)
         setPasteOpen(false)
         setPasteJsonText("")
-        showDockStatus("saved")
       } else {
         void alertDialog({
           title: "Invalid template JSON",
@@ -457,7 +513,7 @@ export function EditorShell({
         description: "The pasted text could not be parsed as JSON.",
       })
     }
-  }, [pasteJsonText, showDockStatus, updateDocument])
+  }, [pasteJsonText, updateDocument])
 
   const handleSaveAsTemplateSubmit = React.useCallback(async () => {
     if (!templateName.trim()) return
@@ -480,14 +536,40 @@ export function EditorShell({
     [updateDocument]
   )
 
-  const saveAndExit = React.useCallback(async () => {
-    await saveDocument()
-    if (onExit) {
-      onExit()
-    } else {
-      router.push("/")
+  // In-app navigation does not fire beforeunload, and the back chevron used to
+  // leave at once, dropping whatever the 1.5s autosave had not written yet.
+  // Leaving now saves first and waits for it (the header shows "Saving…");
+  // only if that fails does it ask whether to leave anyway.
+  const leavingRef = React.useRef(false)
+  const leaveEditor = React.useCallback(async () => {
+    if (leavingRef.current) return
+    leavingRef.current = true
+    try {
+      const saved = await saveQueue.flush()
+      if (!saved) {
+        const message =
+          saveQueue.getState().error?.message ?? "Your latest changes could not be saved."
+        const leave = await confirmDialog({
+          title: "Leave without saving?",
+          description: `${message} If you leave now, your latest changes will be lost.`,
+          confirmLabel: "Leave anyway",
+          cancelLabel: "Stay",
+          destructive: true,
+        })
+        if (!leave) return
+        // The user chose to drop these edits; the unmount flush must not
+        // send them anyway.
+        saveQueue.discard()
+      }
+      if (onExitRef.current) {
+        onExitRef.current()
+      } else {
+        router.push("/")
+      }
+    } finally {
+      leavingRef.current = false
     }
-  }, [saveDocument, onExit, router])
+  }, [saveQueue, router])
 
   const addBlock = React.useCallback(
     (type: EmailBlock["type"]) => {
@@ -636,32 +718,66 @@ export function EditorShell({
     setInsertTarget(null)
   }, [])
 
+  // Canvas callbacks are stable for the editor's lifetime (they read the
+  // selection through a ref), so memoized blocks on the canvas do not
+  // re-render just because the document changed somewhere else.
+  const selectedBlockIdRef = React.useRef(selectedBlockId)
+  React.useEffect(() => {
+    selectedBlockIdRef.current = selectedBlockId
+  }, [selectedBlockId])
+
+  const handleSelectBlock = React.useCallback((id: string) => {
+    setSelectedBlockId(id)
+    setRightPanel("block")
+  }, [])
+  const handleUpdateBlock = React.useCallback(
+    (id: string, updater: (block: EmailBlock) => EmailBlock) =>
+      updateDocument((current) => updateBlock(current, id, updater)),
+    [updateDocument]
+  )
+  const handleDuplicateBlock = React.useCallback(
+    (id: string) => updateDocument((current) => duplicateBlock(current, id)),
+    [updateDocument]
+  )
+  const handleRemoveBlock = React.useCallback(
+    (id: string) => {
+      updateDocument((current) => removeBlock(current, id))
+      if (selectedBlockIdRef.current === id) {
+        setSelectedBlockId("")
+        setRightPanel(null)
+      }
+    },
+    [updateDocument]
+  )
+  const handleReorderTop = React.useCallback(
+    (from: number, to: number) =>
+      updateDocument((current) => reorderBlocks(current, from, to)),
+    [updateDocument]
+  )
+
   const canvasValue = React.useMemo<CanvasContextValue>(
     () => ({
       document,
       selectedBlockId,
       insertTarget,
-      onSelect: (id) => {
-        setSelectedBlockId(id)
-        setRightPanel("block")
-      },
-      onUpdateBlock: (id, updater) =>
-        updateDocument((current) => updateBlock(current, id, updater)),
-      onDuplicate: (id) =>
-        updateDocument((current) => duplicateBlock(current, id)),
-      onRemove: (id) => {
-        updateDocument((current) => removeBlock(current, id))
-        if (selectedBlockId === id) {
-          setSelectedBlockId("")
-          setRightPanel(null)
-        }
-      },
-      onReorderTop: (from, to) =>
-        updateDocument((current) => reorderBlocks(current, from, to)),
-      onReorderColumn: () => {},
-      onAddToColumn: () => {},
+      onSelect: handleSelectBlock,
+      onUpdateBlock: handleUpdateBlock,
+      onDuplicate: handleDuplicateBlock,
+      onRemove: handleRemoveBlock,
+      onReorderTop: handleReorderTop,
+      onReorderColumn: noop,
+      onAddToColumn: noop,
     }),
-    [document, insertTarget, selectedBlockId, updateDocument]
+    [
+      document,
+      insertTarget,
+      selectedBlockId,
+      handleSelectBlock,
+      handleUpdateBlock,
+      handleDuplicateBlock,
+      handleRemoveBlock,
+      handleReorderTop,
+    ]
   )
 
   return (
@@ -670,15 +786,20 @@ export function EditorShell({
         <EditorHeader
           documentName={document.name}
           onRename={renameDocument}
-          onExit={onExit ?? (() => router.push("/"))}
-          onSave={() => void saveDocument()}
+          onExit={() => void leaveEditor()}
+          onSave={saveNow}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
-          status={dockStatus}
+          saveState={saveState}
+          flash={dockFlash}
+          savedLabel={savedLabel}
+          onRetry={saveNow}
+          onReload={() => window.location.reload()}
+          readOnly={readOnly}
           mode={mode}
-          onSaveAndExit={() => void saveAndExit()}
+          onSaveAndExit={() => void leaveEditor()}
           onSaveAsTemplate={() => {
             setTemplateName(document.name || "")
             setSaveTemplateDialogOpen(true)
@@ -695,7 +816,8 @@ export function EditorShell({
             setView("preview")
           }}
         />
-        
+        {banner}
+
         <div className="flex-1 min-h-0 flex relative">
           <DndContext
             id="editor-dnd"
@@ -729,11 +851,6 @@ export function EditorShell({
                   setSelectedBlockId("")
                   setRightPanel("settings")
                 }}
-                assistant={renderAssistant?.({
-                  document,
-                  updateDocument,
-                  selectedBlockId,
-                })}
               />
               <SidebarInset className="min-h-0 overflow-hidden flex flex-col bg-background">
                 <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -910,7 +1027,12 @@ function EditorHeader({
   canRedo,
   onUndo,
   onRedo,
-  status,
+  saveState,
+  flash,
+  savedLabel,
+  onRetry,
+  onReload,
+  readOnly,
   mode,
   onSaveAndExit,
   onSaveAsTemplate,
@@ -929,7 +1051,12 @@ function EditorHeader({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
-  status: DockStatus
+  saveState: SaveQueueState
+  flash: DockFlash
+  savedLabel: string
+  onRetry: () => void
+  onReload: () => void
+  readOnly: boolean
   mode: "campaign" | "template-creator" | "template-editor"
   onSaveAndExit: () => void
   onSaveAsTemplate: () => void
@@ -940,11 +1067,13 @@ function EditorHeader({
   viewport: PreviewViewport
   onViewportChange: (viewport: PreviewViewport) => void
 }) {
-  const views = [
+  const allViews = [
     { id: "editor", label: "Editor", icon: PencilIcon },
     { id: "html", label: "HTML", icon: CodeIcon },
     { id: "preview", label: "Preview", icon: EyeIcon },
   ] as const
+  // A read-only document has nothing to edit, so the canvas view is hidden.
+  const views = readOnly ? allViews.filter((v) => v.id !== "editor") : allViews
   return (
     <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
       {/* Left: Back chevron + Title */}
@@ -958,7 +1087,13 @@ function EditorHeader({
         >
           <ChevronLeftIcon className="size-4" />
         </button>
-        <HeaderTitle name={documentName} onRename={onRename} />
+        {readOnly ? (
+          <span className="px-1.5 py-0.5 text-sm font-semibold tracking-tight text-foreground">
+            {documentName || "Untitled Email"}
+          </span>
+        ) : (
+          <HeaderTitle name={documentName} onRename={onRename} />
+        )}
       </div>
 
       {/* Center: Switcher (Editor / HTML / Preview) */}
@@ -983,34 +1118,16 @@ function EditorHeader({
 
       {/* Right: Actions, Status & Viewport */}
       <div className="flex items-center gap-3">
-        {/* Status Indicator — flashes briefly after a save or copy lands */}
-        {status !== "idle" && (
-          <span
-            className={cn(
-              "flex items-center gap-1 text-xs font-medium select-none mr-1.5",
-              status === "saved" && "text-emerald-500",
-              status === "error" && "text-destructive",
-              (status === "copied" || status === "saving") && "text-muted-foreground"
-            )}
-          >
-            {status === "error" ? (
-              <AlertTriangleIcon className="size-3.5" />
-            ) : status === "saving" ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <CheckIcon className="size-3.5" />
-            )}
-            {status === "saving"
-              ? "Saving…"
-              : status === "saved"
-                ? "Saved"
-                : status === "error"
-                  ? "Not saved"
-                  : "Copied"}
-          </span>
-        )}
+        <SaveIndicator
+          saveState={saveState}
+          flash={flash}
+          savedLabel={savedLabel}
+          onRetry={onRetry}
+          onReload={onReload}
+        />
 
         {/* Undo/Redo Buttons */}
+        {!readOnly && (
         <div className="flex items-center gap-1">
           <button
             onClick={onUndo}
@@ -1033,6 +1150,7 @@ function EditorHeader({
             <Redo2Icon className="size-3.5" />
           </button>
         </div>
+        )}
 
         {/* Vertical Divider */}
         <div className="h-4 w-px bg-border" />
@@ -1075,7 +1193,7 @@ function EditorHeader({
         {/* Action Buttons. In template-creator mode the only real persist
             path is "save as template", so that takes the primary slot. */}
         <div className="flex items-center gap-1">
-          {mode === "template-creator" ? (
+          {readOnly ? null : mode === "template-creator" ? (
             <Button
               onClick={onSaveAsTemplate}
               variant="default"
@@ -1110,11 +1228,13 @@ function EditorHeader({
                 <HugeiconsIcon icon={Copy01Icon} strokeWidth={2} className="size-4 mr-2" />
                 Copy JSON
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onPasteJson}>
-                <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
-                Paste JSON
-              </DropdownMenuItem>
-              {mode !== "template-creator" && (
+              {!readOnly && (
+                <DropdownMenuItem onClick={onPasteJson}>
+                  <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={2} className="size-4 mr-2" />
+                  Paste JSON
+                </DropdownMenuItem>
+              )}
+              {mode !== "template-creator" && !readOnly && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onSaveAndExit}>
@@ -1128,6 +1248,76 @@ function EditorHeader({
         </div>
       </div>
     </header>
+  )
+}
+
+// The header's save status. Failures and conflicts stay visible, with the one
+// action that helps, until they are resolved; success just blinks past.
+function SaveIndicator({
+  saveState,
+  flash,
+  savedLabel,
+  onRetry,
+  onReload,
+}: {
+  saveState: SaveQueueState
+  flash: DockFlash
+  savedLabel: string
+  onRetry: () => void
+  onReload: () => void
+}) {
+  const base = "flex items-center gap-1 text-xs font-medium select-none mr-1.5"
+  const action =
+    "ml-1 rounded px-1 underline underline-offset-2 hover:bg-muted hover:text-foreground"
+  const message = saveState.error?.message
+
+  let content: React.ReactNode = null
+  if (saveState.status === "blocked") {
+    content = (
+      <span className={cn(base, "text-amber-600 dark:text-amber-500")} title={message}>
+        <AlertTriangleIcon className="size-3.5" />
+        {saveState.error?.kind === "locked" ? "Can no longer be edited" : "Changed elsewhere"}
+        <button type="button" className={action} onClick={onReload}>
+          Reload
+        </button>
+      </span>
+    )
+  } else if (saveState.status === "error") {
+    content = (
+      <span className={cn(base, "text-destructive")} title={message}>
+        <AlertTriangleIcon className="size-3.5" />
+        {saveState.error?.kind === "unauthorized" ? "Signed out, not saved" : "Not saved"}
+        <button type="button" className={action} onClick={onRetry}>
+          Retry
+        </button>
+      </span>
+    )
+  } else if (saveState.status === "saving") {
+    content = (
+      <span className={cn(base, "text-muted-foreground")}>
+        <Spinner className="size-3.5" />
+        Saving…
+      </span>
+    )
+  } else if (flash) {
+    content = (
+      <span
+        className={cn(
+          base,
+          flash === "saved" ? "text-emerald-500" : "text-muted-foreground"
+        )}
+      >
+        <CheckIcon className="size-3.5" />
+        {flash === "saved" ? savedLabel : "Copied"}
+      </span>
+    )
+  }
+
+  // Polite live region so a failed background save is announced, not just drawn.
+  return (
+    <div role="status" aria-live="polite" className="contents">
+      {content}
+    </div>
   )
 }
 
@@ -1235,53 +1425,20 @@ function EmailHtmlPane({
 function EditorLeftSidebar({
   onAddBlock,
   onOpenTheme,
-  assistant,
 }: {
   onAddBlock: (type: EmailBlock["type"]) => void
   onOpenTheme: () => void
   // onOpenSettings kept off the params while the Campaign settings button is
   // commented out below; re-add it here (and in the caller) to restore.
   onOpenSettings?: () => void
-  /** Rendered as a second tab when the host route provides one (/studio). */
-  assistant?: React.ReactNode
 }) {
-  const [tab, setTab] = React.useState<"blocks" | "assistant">("blocks")
-  // Without an assistant this is the plain block library, exactly as /editor
-  // has always been — no tab strip, no layout shift.
-  const showTabs = Boolean(assistant)
-  const activeTab = showTabs ? tab : "blocks"
-
   return (
     <Sidebar variant="inset" collapsible="offcanvas" className="top-12 h-[calc(100vh-3rem)] bg-background [&>div]:bg-background">
       <SidebarContent className="overflow-hidden">
-        {showTabs && (
-          <div className="flex shrink-0 gap-1 p-2 pb-0">
-            {(["blocks", "assistant"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setTab(value)}
-                className={cn(
-                  "flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-colors",
-                  activeTab === value
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        )}
-
         <SidebarGroup className="min-h-0 flex-1 p-0">
-          {activeTab === "assistant" ? (
-            assistant
-          ) : (
-            <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
-              <BlockLibrary onAddBlock={onAddBlock} />
-            </ScrollArea>
-          )}
+          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden">
+            <BlockLibrary onAddBlock={onAddBlock} />
+          </ScrollArea>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-t p-2">
@@ -1325,9 +1482,9 @@ function BlockLibrary({
 }) {
   const [searchQuery, setSearchQuery] = React.useState("")
 
-  // Base blocks only. Composites (text section, article card) are offered
-  // through the assistant's `/` menu instead, so the palette reads as a set of
-  // parts rather than a mix of parts and pre-built layouts.
+  // Base blocks only. Composites (text section, article card) stay out, so the
+  // palette reads as a set of parts rather than a mix of parts and pre-built
+  // layouts.
   const editorNewBlocks = React.useMemo(
     () => [
       ...BASE_BLOCKS,
