@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Spinner } from "@/components/ui/spinner";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { type EmailDocument } from "@/lib/email/document";
-import { patchDocument } from "@/lib/editor/save-request";
+import { patchDocument, patchDocumentOnUnload } from "@/lib/editor/save-request";
 
 type Campaign = {
   id: string;
@@ -52,6 +52,10 @@ export default function CampaignEditorPage() {
     await patchDocument(`/api/campaigns/${id}`, { document: doc });
   }, [id]);
 
+  const handleSaveOnUnload = useCallback((doc: EmailDocument) => {
+    void patchDocumentOnUnload(`/api/campaigns/${id}`, { document: doc });
+  }, [id]);
+
   const handleExit = useCallback(() => {
     router.push(`/dashboard/campaigns/${id}`);
   }, [id, router]);
@@ -77,6 +81,7 @@ export default function CampaignEditorPage() {
     <EditorShell
       initialDocument={campaign.document ?? undefined}
       onSave={handleSave}
+      onSaveOnUnload={handleSaveOnUnload}
       onExit={handleExit}
     />
   );

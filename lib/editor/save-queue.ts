@@ -95,6 +95,11 @@ export type SaveQueue<D> = {
   getState: () => SaveQueueState;
   /** Cancels a scheduled autosave. Edits stay dirty; flush still works. */
   cancelScheduled: () => void;
+  /**
+   * Gives up on the unsaved edits: they count as handled, so nothing saves
+   * them later and `pendingDocument` returns null. For "leave anyway".
+   */
+  discard: () => void;
 };
 
 function toSaveError(err: unknown): SaveError {
@@ -209,6 +214,12 @@ export function createSaveQueue<D>(initial: D, options: SaveQueueOptions<D>): Sa
     emit();
   }
 
+  function discard() {
+    cancelScheduled();
+    savedRevision = revision;
+    emit();
+  }
+
   return {
     update,
     flush,
@@ -216,5 +227,6 @@ export function createSaveQueue<D>(initial: D, options: SaveQueueOptions<D>): Sa
     isDirty,
     getState,
     cancelScheduled,
+    discard,
   };
 }

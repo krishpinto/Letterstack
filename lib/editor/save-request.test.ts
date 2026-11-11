@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SaveError } from "./save-queue";
-import { patchDocument, saveErrorFromResponse } from "./save-request";
+import { patchDocument, patchDocumentOnUnload, saveErrorFromResponse } from "./save-request";
 
 describe("saveErrorFromResponse", () => {
   it("maps an expired session to unauthorized", () => {
@@ -65,5 +65,33 @@ describe("patchDocument", () => {
   it("rejects with conflict on 409", async () => {
     stubFetch(async () => Response.json({ ok: false, code: "conflict" }, { status: 409 }));
     await expect(patchDocument("/api/x", {})).rejects.toMatchObject({ kind: "conflict" });
+  });
+});
+
+describe("patchDocumentOnUnload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses keepalive for a body that fits, and a plain request for one that does not", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, version: "v2" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(patchDocumentOnUnload("/api/x", { document: { a: 1 } })).resolves.toBe("v2");
+    await patchDocumentOnUnload("/api/x", { document: { big: "x".repeat(70_000) } });
+
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0][1].keepalive).toBe(true);
+    expect(calls[1][1].keepalive).toBe(false);
+  });
+
+  it("never rejects", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(patchDocumentOnUnload("/api/x", {})).resolves.toBeNull();
   });
 });

@@ -246,6 +246,17 @@ describe("createSaveQueue", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  it("discard drops unsaved edits so nothing saves them later", async () => {
+    const save = vi.fn(async () => {});
+    const queue = createSaveQueue<string>("v0", { save, delayMs: 1500 });
+    queue.update("v1");
+    queue.discard();
+    expect(queue.isDirty()).toBe(false);
+    expect(queue.pendingDocument()).toBeNull();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("cancelScheduled keeps the edit dirty for a later flush", async () => {
     const save = vi.fn(async () => {});
     const queue = createSaveQueue<string>("v0", { save, delayMs: 1500 });

@@ -55,3 +55,30 @@ export async function patchDocument(
   if (!res.ok || !data?.ok) throw saveErrorFromResponse(res.status, data);
   return typeof data.version === "string" ? data.version : null;
 }
+
+// Browsers refuse keepalive bodies over 64KB (summed across in-flight
+// keepalive requests). Leave headroom for other requests on the page.
+const KEEPALIVE_BODY_LIMIT = 60_000;
+
+/**
+ * Best-effort save for when the page is going away and nothing can be
+ * awaited. Uses `keepalive` so the request survives the page; a document too
+ * large for that falls back to a normal request, which the browser may cancel.
+ * Resolves with the new version if the page is still around to hear it.
+ */
+export function patchDocumentOnUnload(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<string | null> {
+  const json = JSON.stringify(body);
+  const fits = new TextEncoder().encode(json).length <= KEEPALIVE_BODY_LIMIT;
+  return fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: json,
+    keepalive: fits,
+  })
+    .then((res) => res.json() as Promise<SaveResponse>)
+    .then((data) => (data?.ok && typeof data.version === "string" ? data.version : null))
+    .catch(() => null);
+}

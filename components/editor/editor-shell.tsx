@@ -29,7 +29,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { useRouter } from "next/navigation"
 
-import { alertDialog } from "@/components/app-dialogs"
+import { alertDialog, confirmDialog } from "@/components/app-dialogs"
 import { BlockInspector } from "@/components/editor/block-inspector"
 import { CanvasBlockPreview } from "@/components/editor/canvas-block-preview"
 import {
@@ -175,6 +175,7 @@ type DragData = {
 export function EditorShell({
   initialDocument,
   onSave,
+  onSaveOnUnload,
   onExit,
   onSaveAsTemplate,
   mode = "campaign",
@@ -187,6 +188,12 @@ export function EditorShell({
    * a resolved promise as saved.
    */
   onSave?: (doc: EmailDocument) => Promise<void>
+  /**
+   * Last-resort write when the page is hidden or the editor unmounts with
+   * unsaved edits. It cannot be awaited, so it must use something that
+   * outlives the page, such as fetch with `keepalive`.
+   */
+  onSaveOnUnload?: (doc: EmailDocument) => void
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
@@ -261,9 +268,13 @@ export function EditorShell({
   // rescheduled, and a manual Save could start a second PATCH racing the
   // first.
   const onSaveRef = React.useRef(onSave)
+  const onSaveOnUnloadRef = React.useRef(onSaveOnUnload)
+  const onExitRef = React.useRef(onExit)
   React.useEffect(() => {
     onSaveRef.current = onSave
-  }, [onSave])
+    onSaveOnUnloadRef.current = onSaveOnUnload
+    onExitRef.current = onExit
+  }, [onSave, onSaveOnUnload, onExit])
 
   const [saveState, setSaveState] = React.useState<SaveQueueState>({
     status: "idle",
@@ -389,9 +400,35 @@ export function EditorShell({
     void saveQueue.flush()
   }, [saveQueue])
 
-  // A pending autosave timer is cancelled rather than left to fire into an
-  // unmounted editor.
-  React.useEffect(() => () => saveQueue.cancelScheduled(), [saveQueue])
+  // When the editor goes away with edits still unsaved — the tab is closed or
+  // navigated away from, or the component unmounts through some route other
+  // than the back chevron (browser Back, a link) — make one last attempt that
+  // does not depend on this page staying alive. A pending autosave timer is
+  // cancelled rather than left to fire into an unmounted editor.
+  React.useEffect(() => {
+    const saveOnUnload = () => {
+      // A conflict or a locked document: writing would overwrite someone
+      // else's save or be refused, so don't.
+      if (saveQueue.getState().status === "blocked") return
+      const pending = saveQueue.pendingDocument()
+      if (pending) onSaveOnUnloadRef.current?.(pending)
+    }
+    // A hidden tab may be frozen or discarded without another event, so save
+    // normally while the page is still alive to hear the answer.
+    const onVisibilityChange = () => {
+      if (globalThis.document.visibilityState === "hidden" && saveQueue.isDirty()) {
+        void saveQueue.flush()
+      }
+    }
+    window.addEventListener("pagehide", saveOnUnload)
+    globalThis.document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      window.removeEventListener("pagehide", saveOnUnload)
+      globalThis.document.removeEventListener("visibilitychange", onVisibilityChange)
+      saveQueue.cancelScheduled()
+      saveOnUnload()
+    }
+  }, [saveQueue])
 
   // Last line of defence: if edits are still unwritten — because autosave has
   // not fired yet, a save is in flight, or the last save failed — make the
@@ -468,15 +505,40 @@ export function EditorShell({
     [updateDocument]
   )
 
-  const saveAndExit = React.useCallback(async () => {
-    // Stay put if the save failed: the header says why, with Retry.
-    if (!(await saveQueue.flush())) return
-    if (onExit) {
-      onExit()
-    } else {
-      router.push("/")
+  // In-app navigation does not fire beforeunload, and the back chevron used to
+  // leave at once, dropping whatever the 1.5s autosave had not written yet.
+  // Leaving now saves first and waits for it (the header shows "Saving…");
+  // only if that fails does it ask whether to leave anyway.
+  const leavingRef = React.useRef(false)
+  const leaveEditor = React.useCallback(async () => {
+    if (leavingRef.current) return
+    leavingRef.current = true
+    try {
+      const saved = await saveQueue.flush()
+      if (!saved) {
+        const message =
+          saveQueue.getState().error?.message ?? "Your latest changes could not be saved."
+        const leave = await confirmDialog({
+          title: "Leave without saving?",
+          description: `${message} If you leave now, your latest changes will be lost.`,
+          confirmLabel: "Leave anyway",
+          cancelLabel: "Stay",
+          destructive: true,
+        })
+        if (!leave) return
+        // The user chose to drop these edits; the unmount flush must not
+        // send them anyway.
+        saveQueue.discard()
+      }
+      if (onExitRef.current) {
+        onExitRef.current()
+      } else {
+        router.push("/")
+      }
+    } finally {
+      leavingRef.current = false
     }
-  }, [saveQueue, onExit, router])
+  }, [saveQueue, router])
 
   const addBlock = React.useCallback(
     (type: EmailBlock["type"]) => {
@@ -659,7 +721,7 @@ export function EditorShell({
         <EditorHeader
           documentName={document.name}
           onRename={renameDocument}
-          onExit={onExit ?? (() => router.push("/"))}
+          onExit={() => void leaveEditor()}
           onSave={saveNow}
           canUndo={canUndo}
           canRedo={canRedo}
@@ -670,7 +732,7 @@ export function EditorShell({
           onRetry={saveNow}
           onReload={() => window.location.reload()}
           mode={mode}
-          onSaveAndExit={() => void saveAndExit()}
+          onSaveAndExit={() => void leaveEditor()}
           onSaveAsTemplate={() => {
             setTemplateName(document.name || "")
             setSaveTemplateDialogOpen(true)

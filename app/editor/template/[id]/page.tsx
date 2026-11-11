@@ -6,7 +6,7 @@ import { alertDialog } from "@/components/app-dialogs";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { Spinner } from "@/components/ui/spinner";
 import { type EmailDocument } from "@/lib/email/document";
-import { patchDocument } from "@/lib/editor/save-request";
+import { patchDocument, patchDocumentOnUnload } from "@/lib/editor/save-request";
 
 export default function EditTemplatePage() {
   const params = useParams();
@@ -46,6 +46,10 @@ export default function EditTemplatePage() {
     await patchDocument(`/api/templates/${id}`, { document: doc });
   }
 
+  function handleSaveOnUnload(doc: EmailDocument) {
+    void patchDocumentOnUnload(`/api/templates/${id}`, { document: doc });
+  }
+
   async function handleExit() {
     router.push("/dashboard/templates");
   }
@@ -66,6 +70,7 @@ export default function EditTemplatePage() {
       mode="template-editor"
       initialDocument={initialDoc}
       onSave={handleSave}
+      onSaveOnUnload={handleSaveOnUnload}
       onExit={handleExit}
     />
   );
