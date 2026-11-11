@@ -670,7 +670,7 @@ export default function DashboardHome() {
                   </IconStack>
                   <div className="space-y-1">
                     <p className="font-semibold text-sm text-foreground">{activeDomain}</p>
-                    <p className="text-xs text-emerald-500 font-medium flex items-center justify-center gap-1">
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center justify-center gap-1">
                       <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Verified & Active
                     </p>
