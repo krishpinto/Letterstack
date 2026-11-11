@@ -223,7 +223,9 @@ export const connectedMailboxes = pgTable(
 // plan structure lands.
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id").notNull(),
+  // Null once the workspace is deleted: payments are financial records and
+  // are kept when the workspace goes (SET NULL, not CASCADE).
+  organizationId: uuid("organization_id"),
   // Who paid. A payment is a financial record and outlives the account that
   // made it: deleting the user nulls this rather than deleting the row.
   userId: uuid("user_id"),
@@ -245,7 +247,7 @@ export const payments = pgTable("payments", {
     name: "payments_organization_id_fkey",
     columns: [table.organizationId],
     foreignColumns: [organizations.id],
-  }).onDelete("cascade"),
+  }).onDelete("set null"),
   foreignKey({
     name: "payments_user_id_fkey",
     columns: [table.userId],
@@ -258,7 +260,9 @@ export const payments = pgTable("payments", {
 // integer rather than parsing LS/2026-27/0001 back apart. See db/invoices.ts.
 export const invoices = pgTable("invoices", {
   id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id").notNull(),
+  // Null once the workspace is deleted. Issued invoices are kept for the
+  // books (SET NULL, not CASCADE).
+  organizationId: uuid("organization_id"),
   // Unique in the database: settlement can run twice (browser callback racing
   // the webhook, plus webhook retries) and the second pass must find this row,
   // not mint a second invoice with a fresh serial.
@@ -283,12 +287,14 @@ export const invoices = pgTable("invoices", {
     name: "invoices_organization_id_fkey",
     columns: [table.organizationId],
     foreignColumns: [organizations.id],
-  }).onDelete("cascade"),
+  }).onDelete("set null"),
+  // Restrict: nothing deletes payments, and nothing should be able to take
+  // an issued invoice with it.
   foreignKey({
     name: "invoices_payment_id_fkey",
     columns: [table.paymentId],
     foreignColumns: [payments.id],
-  }).onDelete("cascade"),
+  }).onDelete("restrict"),
 ]);
 
 export const organizationMembers = pgTable(
@@ -367,9 +373,12 @@ export const suppressedEmails = pgTable(
   "suppressed_emails",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Null once the workspace is deleted. The row is kept (SET NULL, not
+    // CASCADE): the Terms promise suppression records survive termination.
+    // Sends do not consult these orphaned rows; see docs/database.md.
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
     // Who added it. Nulled, never cascaded, when that account is deleted:
     // losing the row would make a bounced or complained address mailable.
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),

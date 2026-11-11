@@ -134,3 +134,24 @@ one appears without one:
 | `RESTRICT` (handed to the owner first) | `recipients.user_id`, `campaigns.user_id`, `signup_forms.user_id`, `automations.user_id`, `api_keys.created_by_user_id` |
 | `SET NULL` (row kept) | `payments.user_id`, `suppressed_emails.user_id`, `users.access_decided_by_user_id` |
 | `CASCADE` (personal to the user) | `password_resets`, `organization_members`, `notification_preferences`, `connected_mailboxes`, `ai_budgets`, `ai_usage`, `organization_invites.invited_by_user_id` |
+
+## What deleting a workspace does
+
+Everything scoped to the workspace is deleted with it (`ON DELETE CASCADE`
+on `organization_id`), except three tables whose rows are kept with
+`organization_id` set to `NULL`:
+
+- `payments` and `invoices`: financial records. An invoice keeps its
+  number, amount, date, the address it was emailed to and its payment, and
+  `invoices.payment_id` is `RESTRICT`, so a payment with an invoice cannot
+  be deleted. A payment that settles after its workspace is gone is
+  recorded as paid but grants nothing (`lib/payments/settle.ts`).
+- `suppressed_emails`: the Terms say suppression records survive
+  termination.
+
+Kept suppression rows are records, not a live block list. Every send-path
+check (`db/suppression.ts`) filters by `organization_id`, so a row whose
+workspace is gone is never consulted, and a new workspace can mail an
+address the old one suppressed. Making bounces and complaints block an
+address across all workspaces would be a change to the send path, not to
+the schema.
