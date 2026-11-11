@@ -14,7 +14,7 @@ import type {
   TextBlock,
   VideoBlock,
 } from "./document";
-import { sanitizeEmailDocument } from "./sanitize";
+import { normalizeImageUrl, normalizeLinkUrl, sanitizeEmailDocument } from "./sanitize";
 import { getEmailContainerShadow } from "./shadow";
 import { socialIconSrc, socialLabel } from "./social";
 
@@ -27,7 +27,9 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
   // Sanitized on every compile, not only on save: documents stored before
   // write-time sanitizing existed are still sent and previewed, and this is
   // the one function every preview and every send goes through.
-  const document = withAttributeSafeStyles(sanitizeEmailDocument(input));
+  const document = withAttributeSafeStyles(
+    withNormalizedUrls(sanitizeEmailDocument(input)),
+  );
   const body = document.blocks
     .map((block) => renderBlock(block, document))
     .join("");
@@ -85,7 +87,7 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
 }
 
 export function compilePlainText(input: EmailDocument) {
-  return blocksToPlainText(sanitizeEmailDocument(input));
+  return blocksToPlainText(withNormalizedUrls(sanitizeEmailDocument(input)));
 }
 
 function blocksToPlainText(document: EmailDocument) {
@@ -93,6 +95,77 @@ function blocksToPlainText(document: EmailDocument) {
     .flatMap((block) => blockToText(block))
     .filter(Boolean)
     .join("\n\n");
+}
+
+/**
+ * Turn every link and image field into a URL a mail client can use, or "".
+ *
+ * The editor stores URLs as typed, so this is where "example.com/signup"
+ * becomes https://example.com/signup (as a bare host it would resolve
+ * against the reader's webmail page) and anything outside http(s), mailto,
+ * tel and {{unsubscribe_url}} is dropped. Done once, up front, so the HTML
+ * and the plain-text part link to exactly the same places, and renderers
+ * only have to handle "there is no link".
+ */
+function withNormalizedUrls(document: EmailDocument): EmailDocument {
+  const blocks = document.blocks.map((block): EmailBlock => {
+    switch (block.type) {
+      case "image":
+        return {
+          ...block,
+          src: normalizeImageUrl(block.src),
+          href: normalizeLinkUrl(block.href) || undefined,
+        };
+      case "button":
+        return {
+          ...block,
+          href: normalizeLinkUrl(block.href),
+          secondaryHref: normalizeLinkUrl(block.secondaryHref),
+        };
+      case "columns":
+        return {
+          ...block,
+          columns: block.columns.map((column) => ({
+            ...column,
+            imageSrc: normalizeImageUrl(column.imageSrc),
+            linkUrl: normalizeLinkUrl(column.linkUrl),
+          })),
+        };
+      case "articleCard":
+        return {
+          ...block,
+          imageSrc: normalizeImageUrl(block.imageSrc),
+          linkUrl: normalizeLinkUrl(block.linkUrl),
+        };
+      case "video":
+        return { ...block, url: normalizeLinkUrl(block.url) };
+      case "social":
+        return {
+          ...block,
+          links: block.links.map((link) => ({
+            ...link,
+            url: normalizeLinkUrl(link.url),
+            // Without a usable icon, a custom link falls back to the
+            // neutral tile rather than a broken image.
+            iconSrc: normalizeImageUrl(link.iconSrc) || undefined,
+          })),
+        };
+      case "logo":
+        return {
+          ...block,
+          src: normalizeImageUrl(block.src),
+          href: normalizeLinkUrl(block.href) || undefined,
+        };
+      default:
+        return block;
+    }
+  });
+  return { ...document, blocks };
+}
+
+/** href="…" with a leading space, or nothing when there is no link. */
+function hrefAttr(url: string | undefined): string {
+  return url ? ` href="${escapeAttribute(url)}"` : "";
 }
 
 const BLOCK_STYLE_FIELDS = [
@@ -165,6 +238,9 @@ function renderBlockInner(block: EmailBlock, document: EmailDocument): string {
     case "paragraph":
       return renderParagraphBlock(block, document);
     case "image": {
+      // No usable image URL: an <img src=""> is a broken-image icon in
+      // every client, so the block is left out of the email.
+      if (!block.src) return "";
       // Centered like the editor canvas (margin:auto for modern clients,
       // align="center" for table-based ones). The width attribute is scaled
       // to the block's percentage so Outlook doesn't stretch partial-width
@@ -276,7 +352,7 @@ function renderVideoBlock(block: VideoBlock, document: EmailDocument) {
   return `
             <tr>
               <td style="padding:16px ${p}px;">
-                <a href="${escapeAttribute(block.url)}" style="display:block;background:#111;text-align:center;padding:48px 24px;text-decoration:none;border-radius:4px;">
+                <a${hrefAttr(block.url)} style="display:block;background:#111;text-align:center;padding:48px 24px;text-decoration:none;border-radius:4px;">
                   <p style="margin:0;color:#ffffff;font-family:${document.settings.fontFamily};font-size:18px;font-weight:700;">&#9654; Watch video</p>
                 </a>
                 ${block.caption ? `<p style="margin:8px 0 0;color:${document.settings.textColor};font-family:${document.settings.fontFamily};font-size:13px;text-align:center;">${escapeHtml(block.caption)}</p>` : ""}
@@ -307,13 +383,13 @@ function renderSocialBlock(block: SocialBlock, document: EmailDocument) {
   // canvas still shows it (it is being edited), but a dead icon in a
   // recipient's inbox helps nobody.
   const links = block.links
-    .filter((link) => link.url.trim())
+    .filter((link) => link.url)
     .map((link) => {
       const label = escapeAttribute(socialLabel(link));
       const src = escapeAttribute(socialIconSrc(link, SOCIAL_ASSET_BASE));
       // width/height as attributes as well as CSS: Outlook sizes from the
       // attributes and ignores the style. border:0 kills its blue link ring.
-      return `<a href="${escapeAttribute(link.url)}" title="${label}" style="display:inline-block;margin:0 4px;text-decoration:none;"><img src="${src}" alt="${label}" width="32" height="32" style="display:block;width:32px;height:32px;border:0;outline:none;text-decoration:none;" /></a>`;
+      return `<a${hrefAttr(link.url)} title="${label}" style="display:inline-block;margin:0 4px;text-decoration:none;"><img src="${src}" alt="${label}" width="32" height="32" style="display:block;width:32px;height:32px;border:0;outline:none;text-decoration:none;" /></a>`;
     })
     .join("");
   return `
@@ -380,7 +456,7 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
       const bodyHtml = styleBodyHtml(column.body, textColor, ff, "14px", "1.55");
       const cta =
         column.showCta && (column.linkLabel || column.linkUrl)
-          ? `<a href="${escapeAttribute(column.linkUrl)}" style="color:${document.settings.linkColor};font-family:${ff};font-size:13px;font-weight:700;text-decoration:none;">${escapeHtml(column.linkLabel || "Learn more")} →</a>`
+          ? `<a${hrefAttr(column.linkUrl)} style="color:${document.settings.linkColor};font-family:${ff};font-size:13px;font-weight:700;text-decoration:none;">${escapeHtml(column.linkLabel || "Learn more")} →</a>`
           : "";
       const inner = `
                         ${image}
@@ -426,8 +502,8 @@ function renderArticleCardBlock(
   const cta =
     showCta && (block.linkLabel || block.linkUrl)
       ? ctaStyle === "button"
-        ? `<a href="${escapeAttribute(block.linkUrl)}" style="display:inline-block;background:${document.settings.buttonBackgroundColor};color:${document.settings.buttonTextColor};border:1px solid transparent;text-decoration:none;font-family:${ff};font-size:${Math.max(12, document.settings.buttonFontSize - 2)}px;font-weight:700;line-height:1;padding:${Math.max(7, document.settings.buttonPaddingY - 5)}px ${Math.max(12, document.settings.buttonPaddingX - 6)}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(block.linkLabel || "Read more")}</a>`
-        : `<a href="${escapeAttribute(block.linkUrl)}" style="color:${document.settings.linkColor};font-family:${ff};font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(block.linkLabel || "Read more")} →</a>`
+        ? `<a${hrefAttr(block.linkUrl)} style="display:inline-block;background:${document.settings.buttonBackgroundColor};color:${document.settings.buttonTextColor};border:1px solid transparent;text-decoration:none;font-family:${ff};font-size:${Math.max(12, document.settings.buttonFontSize - 2)}px;font-weight:700;line-height:1;padding:${Math.max(7, document.settings.buttonPaddingY - 5)}px ${Math.max(12, document.settings.buttonPaddingX - 6)}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(block.linkLabel || "Read more")}</a>`
+        : `<a${hrefAttr(block.linkUrl)} style="color:${document.settings.linkColor};font-family:${ff};font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(block.linkLabel || "Read more")} →</a>`
       : "";
 
   const textCell = `
@@ -669,7 +745,7 @@ function renderButtonBlock(block: ButtonBlock, document: EmailDocument) {
       const layout = full
         ? "display:block;width:100%;box-sizing:border-box;text-align:center;margin:0 0 8px 0;"
         : "display:inline-block;margin:0 6px 8px 0;";
-      return `<a href="${escapeAttribute(button.href)}" style="${layout}background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(button.label)}</a>`;
+      return `<a${hrefAttr(button.href)} style="${layout}background:${colors.backgroundColor};color:${colors.color};${border}text-decoration:none;font-family:${document.settings.fontFamily};font-size:${document.settings.buttonFontSize}px;font-weight:700;line-height:1;padding:${document.settings.buttonPaddingY}px ${document.settings.buttonPaddingX}px;border-radius:${document.settings.buttonRadius}px;">${escapeHtml(button.label)}</a>`;
     })
     .join("");
 

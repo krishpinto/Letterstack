@@ -99,3 +99,75 @@ describe("compileEmailDocument: attribute values", () => {
     expect(html).not.toMatch(/javascript:|<svg/i);
   });
 });
+
+/** Every href in the compiled HTML, in document order. */
+function hrefs(html: string): string[] {
+  return [...parse(html).querySelectorAll("a[href]")].map((a) => a.getAttribute("href") ?? "");
+}
+
+describe("compileEmailDocument: links", () => {
+  const bad = "javascript:alert(1)";
+
+  it("drops javascript: and other unsafe links from every link field", () => {
+    const { html, text } = compileEmailDocument(
+      doc([
+        block("button", { href: bad, secondaryLabel: "Two", secondaryHref: "jav&#x61;script:x" }),
+        block("image", { src: "https://a.com/i.png", href: bad }),
+        block("logo", { src: "https://a.com/l.png", href: "vbscript:x" }),
+        block("video", { url: "data:text/html,x" }),
+        block("social", { links: [{ id: "s", platform: "twitter", url: bad }] }),
+        block("articleCard", { linkUrl: bad, showCta: true, linkLabel: "Read" }),
+        block("columns", {
+          columns: [{ ...createColumn(), showCta: true, linkLabel: "Go", linkUrl: bad }],
+        }),
+      ]),
+    );
+    expect(html).not.toMatch(/javascript:|vbscript:|data:text/i);
+    expect(text).not.toMatch(/javascript:|vbscript:|data:text/i);
+    // Only the compiler's own unsubscribe link is left.
+    expect(hrefs(html)).toEqual(["{{unsubscribe_url}}"]);
+  });
+
+  it("gives bare domains a scheme instead of a relative href", () => {
+    const { html, text } = compileEmailDocument(
+      doc([
+        block("button", { href: "example.com/signup" }),
+        block("articleCard", { linkUrl: "www.shop.co.uk", showCta: true, linkLabel: "Shop" }),
+      ]),
+    );
+    expect(hrefs(html)).toEqual([
+      "https://example.com/signup",
+      "https://www.shop.co.uk",
+      "{{unsubscribe_url}}",
+    ]);
+    expect(text).toContain("https://example.com/signup");
+  });
+
+  it("keeps http(s), mailto, tel and the unsubscribe placeholder", () => {
+    const { html } = compileEmailDocument(
+      doc([
+        block("button", {
+          href: "mailto:hi@a.com",
+          secondaryLabel: "Call",
+          secondaryHref: "tel:+15550000",
+        }),
+        block("image", { src: "https://a.com/i.png", href: "{{unsubscribe_url}}" }),
+        block("logo", { src: "https://a.com/l.png", href: "http://a.com" }),
+      ]),
+    );
+    expect(hrefs(html)).toEqual([
+      "mailto:hi@a.com",
+      "tel:+15550000",
+      "{{unsubscribe_url}}",
+      "http://a.com",
+      "{{unsubscribe_url}}",
+    ]);
+  });
+
+  it("leaves out images it has no usable URL for", () => {
+    const { html } = compileEmailDocument(
+      doc([block("image", { src: "/relative.png" }), block("logo", { src: "javascript:x" })]),
+    );
+    expect(parse(html).querySelectorAll("img")).toHaveLength(0);
+  });
+});
