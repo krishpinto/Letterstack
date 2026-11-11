@@ -7,6 +7,7 @@ import {
 import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { isValidFlow, type AutomationFlow } from "@/lib/automations/flow";
 import { disallowedSenders, withNormalizedSenders } from "@/lib/automations/senders";
+import { enableProblem } from "@/lib/automations/validate";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -80,6 +81,18 @@ export async function PATCH(
     const existing = await getAutomation(id, organizationId);
     if (!existing) {
       return NextResponse.json({ ok: false, error: "Automation not found" }, { status: 404 });
+    }
+
+    // A live automation must have a trigger and at least one finished step.
+    // Checked when it is switched on and when its flow is saved while live,
+    // so emptying a running flow can't leave it "on" doing nothing. Drafts
+    // may be saved half-finished.
+    const willBeEnabled = (patch.status ?? existing.status) === "enabled";
+    if (willBeEnabled && (patch.flow || patch.status === "enabled")) {
+      const problem = enableProblem(patch.flow ?? (existing.flow as AutomationFlow));
+      if (problem) {
+        return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+      }
     }
 
     // Check senders whenever a flow is saved or switched on. Turning on an
