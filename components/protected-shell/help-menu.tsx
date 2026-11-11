@@ -33,7 +33,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 // Same fallback as the public contact form, so the in-app and marketing
 // "email us" links can't point at two different inboxes.
 const CONTACT_EMAIL =
-  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hello@letterstack.site";
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL || "hello@letterstack.site";
 
 /**
  * "⌘" on Apple platforms, "Ctrl" elsewhere. Read after mount so the server

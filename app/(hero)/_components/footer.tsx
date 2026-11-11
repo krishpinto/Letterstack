@@ -9,7 +9,7 @@ import { BrandLogo } from "@/components/brand-logo";
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 const CONTACT_EMAIL =
-  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hello@letterstack.site";
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL || "hello@letterstack.site";
 
 export function Footer() {
   const reduceMotion = useReducedMotion();

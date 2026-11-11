@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 // configured rather than hard-coded so a self-hosted deployment shows its own
 // address.
 const CONTACT_EMAIL =
-  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hello@letterstack.site";
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL || "hello@letterstack.site";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const COMPANY_SIZES = ["Just me", "2–10", "11–50", "51–200", "200+"] as const;
