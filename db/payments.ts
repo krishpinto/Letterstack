@@ -160,6 +160,42 @@ export async function latestPaidDailyRate(
 }
 
 /**
+ * Record a refund against a settled order. The running total only ever goes
+ * up, so refund events arriving out of order can't shrink it. A full refund
+ * also moves the status to 'refunded', which stops any further settlement
+ * step and drops the payment out of everything that counts paid revenue.
+ *
+ * Recorded whatever our status says: a payment can be refunded from the
+ * Razorpay dashboard before our settlement ever ran, and once it reads
+ * 'refunded' a late `payment.captured` retry can no longer settle it.
+ * Callers skip auto-refunds of payments that were never captured.
+ */
+export async function recordRefund(
+  razorpayOrderId: string,
+  amountRefunded: number,
+  full: boolean,
+) {
+  const [row] = await db
+    .update(payments)
+    .set({
+      amountRefunded: sql`GREATEST(${payments.amountRefunded}, ${amountRefunded})`,
+      refundedAt: sql`COALESCE(${payments.refundedAt}, now())`,
+      ...(full ? { status: "refunded" } : {}),
+    })
+    .where(eq(payments.razorpayOrderId, razorpayOrderId))
+    .returning();
+  return row ?? null;
+}
+
+/** Record that a refund needed no change to the workspace. */
+export async function markPlanRevoked(paymentId: string) {
+  await db
+    .update(payments)
+    .set({ planRevokedAt: new Date() })
+    .where(and(eq(payments.id, paymentId), isNull(payments.planRevokedAt)));
+}
+
+/**
  * Everything an invoice needs about one settled payment, in a single read.
  *
  * Joined here rather than assembled by the caller so the invoice layer never

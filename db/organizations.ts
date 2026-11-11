@@ -384,6 +384,39 @@ export async function grantPlanForPayment(input: {
 }
 
 /**
+ * Take a fully refunded payment's days back, exactly once. Same
+ * compare-and-set shape as grantPlanForPayment, marking plan_revoked_at.
+ * Only ever moves the expiry: the tier stays, and if the cut reaches today
+ * the period simply lapses to Free the way any expired one does.
+ */
+export async function revokePlanForPayment(input: {
+  paymentId: string;
+  organizationId: string;
+  expected: StoredPlanColumns;
+  planExpiresAt: Date;
+}): Promise<boolean> {
+  const result = await db.execute(sql`
+    WITH org AS (
+      UPDATE organizations
+      SET plan_expires_at = ${timestampParam(input.planExpiresAt)}::timestamp
+      WHERE id = ${input.organizationId}
+        AND ${unchangedSince(input.expected)}
+        AND EXISTS (
+          SELECT 1 FROM payments
+          WHERE id = ${input.paymentId} AND plan_revoked_at IS NULL
+        )
+      RETURNING id
+    )
+    UPDATE payments
+    SET plan_revoked_at = now()
+    FROM org
+    WHERE payments.id = ${input.paymentId} AND payments.plan_revoked_at IS NULL
+    RETURNING payments.id
+  `);
+  return Boolean(returnedRow(result));
+}
+
+/**
  * Set a workspace's plan outright: the tier and the end date are both stated,
  * rather than added to whatever is already there.
  *
