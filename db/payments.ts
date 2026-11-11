@@ -1,4 +1,4 @@
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { payments } from "./schema";
 
@@ -56,15 +56,19 @@ export async function getPaymentByOrderIdUnscoped(razorpayOrderId: string) {
 }
 
 /**
- * Settle an order. Only ever called after a signature has verified —
+ * Mark an order paid. Only ever called after a signature has verified —
  * `status: "paid"` here means "Razorpay's own signature checked out", not
  * "the browser told us it went through".
  *
  * Two independent callers race for this: the browser callback and the
  * webhook, in either order, and the webhook retries on top of that. The
- * `ne(status, "paid")` guard makes the update itself the lock — the first
- * writer wins and every later one gets `null` back, so settlement side
- * effects can be hung off a non-null return exactly once.
+ * status guard makes the update itself the lock — the first writer gets the
+ * row, every later one gets `null`. That only says who marked it paid; the
+ * steps after it (grant, invoice) are tracked separately so a retry can
+ * finish them. See lib/payments/settle.ts.
+ *
+ * Moves only an unsettled order: a refunded payment must never flip back to
+ * paid because a late `payment.captured` retry arrived.
  */
 export async function settlePaymentPaid(
   razorpayOrderId: string,
@@ -76,14 +80,18 @@ export async function settlePaymentPaid(
     .where(
       and(
         eq(payments.razorpayOrderId, razorpayOrderId),
-        ne(payments.status, "paid"),
+        inArray(payments.status, ["created", "failed"]),
       ),
     )
     .returning();
   return row ?? null;
 }
 
-/** Never downgrades a settled payment — a late `failed` event can't unpay it. */
+/**
+ * Never touches a settled payment — a late `failed` event can't unpay a paid
+ * order or un-refund a refunded one. A failed attempt can be followed by a
+ * successful one on the same order, which settlePaymentPaid still accepts.
+ */
 export async function markPaymentFailed(
   razorpayOrderId: string,
   razorpayPaymentId?: string,
@@ -94,9 +102,61 @@ export async function markPaymentFailed(
     .where(
       and(
         eq(payments.razorpayOrderId, razorpayOrderId),
-        ne(payments.status, "paid"),
+        inArray(payments.status, ["created", "failed"]),
       ),
     );
+}
+
+export async function getPaymentById(paymentId: string) {
+  const [row] = await db
+    .select()
+    .from(payments)
+    .where(eq(payments.id, paymentId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Record that the grant step needs no change to the workspace: an item that
+ * grants nothing, or a purchase on a workspace that already holds the tier
+ * with no end date. Guarded so it can't overwrite a real grant's record.
+ */
+export async function markPlanGrantSettled(
+  paymentId: string,
+  grantedPlan: string | null,
+  grantedDays: number,
+) {
+  await db
+    .update(payments)
+    .set({ planGrantedAt: new Date(), planGrantedPlan: grantedPlan, planGrantedDays: grantedDays })
+    .where(and(eq(payments.id, paymentId), isNull(payments.planGrantedAt)));
+}
+
+/**
+ * Paise per day of the most recent payment whose days landed on `plan` in
+ * this workspace — the rate the running period was bought at, used to value
+ * its unused part on an upgrade. Null when no payment bought it (a trial or
+ * an admin grant), which means there is nothing to convert.
+ */
+export async function latestPaidDailyRate(
+  organizationId: string,
+  plan: string,
+): Promise<number | null> {
+  const [row] = await db
+    .select({ amount: payments.amount, days: payments.planGrantedDays })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.organizationId, organizationId),
+        eq(payments.status, "paid"),
+        eq(payments.planGrantedPlan, plan),
+        gt(payments.planGrantedDays, 0),
+      ),
+    )
+    .orderBy(desc(payments.planGrantedAt))
+    .limit(1);
+  if (!row?.days) return null;
+  return row.amount / row.days;
 }
 
 /**

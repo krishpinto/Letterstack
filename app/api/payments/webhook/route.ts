@@ -94,10 +94,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ignored: "amount-mismatch" });
       }
 
-      const result = await settlePaidOrder(orderId, paymentId);
-      // settled:false means another caller (the browser callback, or a retry
-      // of this event) got there first — the normal case, not an error.
-      return NextResponse.json({ ok: true, ...result });
+      try {
+        const result = await settlePaidOrder(orderId, paymentId);
+        // settled:false means another caller (the browser callback, or a
+        // retry of this event) marked it paid first — the normal case, not an
+        // error. Any step still missing was finished by this call.
+        return NextResponse.json({ ok: true, ...result });
+      } catch (err) {
+        // The money is taken, so a failed step must be retried: 500 makes
+        // Razorpay redeliver, and the redelivery resumes from the step that
+        // failed instead of seeing "already paid" and stopping.
+        console.error(`Settling order ${orderId} failed; Razorpay will retry`, err);
+        return NextResponse.json(
+          { ok: false, error: "Settlement incomplete" },
+          { status: 500 },
+        );
+      }
     }
 
     case "payment.failed": {

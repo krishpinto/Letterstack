@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
+import { activePlanAt, type StoredPlan } from "@/lib/plans/active";
 import {
   higherPlan,
-  normalizePlan,
   PAID_PLAN_KEYS,
   PLAN_LIMITS,
   type PlanKey,
@@ -145,17 +145,8 @@ function organizationSelect() {
  * a paid period that has run out should read as free everywhere without
  * needing a cron job to sweep expired rows.
  */
-export function activePlan(org: {
-  plan?: string | null;
-  planExpiresAt?: Date | string | null;
-}): PlanKey {
-  // normalizePlan collapses anything unrecognised to free, so a typo or a
-  // hand-edited row can only ever be less permissive than intended.
-  const plan = normalizePlan(org.plan);
-  if (plan === "free") return "free";
-  if (!org.planExpiresAt) return plan;
-  const expires = new Date(org.planExpiresAt);
-  return expires.getTime() > Date.now() ? plan : "free";
+export function activePlan(org: StoredPlan): PlanKey {
+  return activePlanAt(org, new Date());
 }
 
 /** Warn this many days out, in-app, before a trial or paid period lapses. */
@@ -286,40 +277,110 @@ export async function endTrialForOrganization(organizationId: string) {
   return row ?? null;
 }
 
-/**
- * Start or extend a paid period. Extends from whichever is later — the
- * current expiry or now — so buying again mid-period adds to the remaining
- * time instead of throwing it away. Buying during a trial therefore stacks
- * on top of the remaining free days rather than forfeiting them; paying
- * early is never punished.
- */
-export async function activatePlanForOrganization(
-  organizationId: string,
-  plan: string,
-  days: number,
-) {
-  const [current] = await db
-    .select({ planExpiresAt: organizations.planExpiresAt, plan: organizations.plan })
+/** The plan columns exactly as stored, for a compare-and-set against them. */
+export async function getOrganizationPlan(organizationId: string) {
+  const [row] = await db
+    .select({
+      plan: organizations.plan,
+      planExpiresAt: organizations.planExpiresAt,
+      planSource: organizations.planSource,
+    })
     .from(organizations)
     .where(eq(organizations.id, organizationId))
     .limit(1);
-
-  const now = Date.now();
-  const currentExpiry =
-    current && activePlan(current) !== "free" && current.planExpiresAt
-      ? new Date(current.planExpiresAt).getTime()
-      : now;
-  const base = Math.max(now, currentExpiry);
-  const expiresAt = new Date(base + days * 24 * 60 * 60 * 1000);
-
-  const [row] = await db
-    .update(organizations)
-    // planSource flips to 'paid' here and never goes back, so a lapsed
-    // subscription reads as "renew" rather than reviving the trial copy.
-    .set({ plan, planExpiresAt: expiresAt, planSource: "paid" })
-    .where(eq(organizations.id, organizationId))
-    .returning({ plan: organizations.plan, planExpiresAt: organizations.planExpiresAt });
   return row ?? null;
+}
+
+type StoredPlanColumns = {
+  plan: string;
+  planExpiresAt: Date | null;
+  planSource: string;
+};
+
+/**
+ * Timestamps are bound as ISO strings and cast, the same way Drizzle writes
+ * a `timestamp` column: the trailing Z is ignored, so the stored value is the
+ * UTC wall clock, matching every other write to these columns.
+ */
+function timestampParam(value: Date | null) {
+  return value ? value.toISOString() : null;
+}
+
+/**
+ * The workspace still has exactly the plan columns we decided from.
+ *
+ * Expiry is compared at millisecond precision: Postgres keeps microseconds,
+ * JS dates keep milliseconds, and a value written by hand in SQL would
+ * otherwise never match what we read back.
+ */
+function unchangedSince(expected: StoredPlanColumns) {
+  return sql`plan = ${expected.plan}
+    AND plan_source = ${expected.planSource}
+    AND date_trunc('milliseconds', plan_expires_at) IS NOT DISTINCT FROM ${timestampParam(expected.planExpiresAt)}::timestamp`;
+}
+
+function returnedRow(result: unknown): unknown {
+  const rows =
+    (result as { rows?: unknown[] }).rows ??
+    (Array.isArray(result) ? result : []);
+  return rows[0];
+}
+
+/**
+ * Apply one payment's plan grant, exactly once.
+ *
+ * Replaces activatePlanForOrganization, which read the expiry, added days in
+ * JS, and wrote it back. Two settlements of different orders running at once
+ * could both read the same expiry and one purchase's days were lost; and
+ * nothing recorded that a given payment had been applied, so the grant
+ * couldn't be retried safely.
+ *
+ * One statement does both writes, so they commit together:
+ *
+ * - the workspace update is a compare-and-set on the plan columns the caller
+ *   decided from (see decidePlanGrant). If anything changed them in the
+ *   meantime — another payment's grant, an admin — it matches nothing, and
+ *   the caller re-reads and decides again.
+ * - the payment is marked granted only if the workspace update happened, and
+ *   the workspace update only happens while the payment is still ungranted.
+ *   A second settlement of the same payment waits on the first's row lock,
+ *   then finds the expiry moved and does nothing.
+ *
+ * Returns false when the compare-and-set lost; the caller retries.
+ */
+export async function grantPlanForPayment(input: {
+  paymentId: string;
+  organizationId: string;
+  expected: StoredPlanColumns;
+  next: { plan: PlanKey; planExpiresAt: Date };
+  grantedPlan: PlanKey;
+  grantedDays: number;
+}): Promise<boolean> {
+  const result = await db.execute(sql`
+    WITH org AS (
+      UPDATE organizations
+      -- plan_source flips to 'paid' here and never goes back, so a lapsed
+      -- subscription reads as "renew" rather than reviving the trial copy.
+      SET plan = ${input.next.plan},
+          plan_expires_at = ${timestampParam(input.next.planExpiresAt)}::timestamp,
+          plan_source = 'paid'
+      WHERE id = ${input.organizationId}
+        AND ${unchangedSince(input.expected)}
+        AND EXISTS (
+          SELECT 1 FROM payments
+          WHERE id = ${input.paymentId} AND status = 'paid' AND plan_granted_at IS NULL
+        )
+      RETURNING id
+    )
+    UPDATE payments
+    SET plan_granted_at = now(),
+        plan_granted_plan = ${input.grantedPlan},
+        plan_granted_days = ${input.grantedDays}
+    FROM org
+    WHERE payments.id = ${input.paymentId} AND payments.plan_granted_at IS NULL
+    RETURNING payments.id
+  `);
+  return Boolean(returnedRow(result));
 }
 
 /**
