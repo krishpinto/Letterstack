@@ -41,6 +41,8 @@ export const NULLED_ON_ACCOUNT_DELETION = [
  */
 export const DELETED_WITH_ACCOUNT = [
   "password_resets.user_id",
+  // Single-use email verification links; meaningless once the account is gone.
+  "email_verifications.user_id",
   "organization_members.user_id",
   "notification_preferences.user_id",
   // A personal Gmail credential; campaigns.mailbox_id is SET NULL.

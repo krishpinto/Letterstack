@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/auth-helpers", () => ({ currentUserId: vi.fn() }));
+// requireVerifiedEmail resolving to null means "verified": the route carries on.
+vi.mock("@/lib/auth-helpers", () => ({
+  currentUserId: vi.fn(),
+  requireVerifiedEmail: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/db/campaigns", () => ({ getCampaignForUser: vi.fn() }));
 vi.mock("@/db/organizations", () => ({
   getSendUsage: vi.fn(),
