@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, Loader2Icon } from "lucide-react";
 
 import { alertDialog } from "@/components/app-dialogs";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { FormFields } from "@/components/dashboard/forms/form-fields";
@@ -32,6 +33,9 @@ export default function EditFormPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [savedAt, setSavedAt] = React.useState<number | null>(null);
+  // Edits since the last load or save. Leaving with any asks first.
+  const [dirty, setDirty] = React.useState(false);
+  useUnsavedChangesGuard(dirty);
 
   React.useEffect(() => {
     let active = true;
@@ -78,6 +82,7 @@ export default function EditFormPage() {
   ) {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
     setSavedAt(null);
+    setDirty(true);
   }
 
   async function save() {
@@ -93,6 +98,7 @@ export default function EditFormPage() {
       const data = await res.json();
       if (data.ok) {
         setSavedAt(Date.now());
+        setDirty(false);
         // Saving is "I'm done here" — land back on the forms list.
         router.push("/dashboard/forms");
         return;
