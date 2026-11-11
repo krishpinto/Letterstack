@@ -1,9 +1,24 @@
 import { NextResponse } from "next/server";
-import { listPendingByIds } from "@/db/campaign-recipients";
+import { countSendingAmong } from "@/db/campaign-recipients";
 import { sendCampaignBatch, type FrozenContent } from "@/lib/send/send-campaign";
-import { finalizeCampaignIfDone, verifyQstashRequest } from "@/lib/send/qstash-worker";
+import {
+  scheduleSettleCheck,
+  settleCampaign,
+  verifyQstashRequest,
+} from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
+
+type Payload =
+  | { settleOnly: true; campaignId: string }
+  | {
+      settleOnly?: false;
+      content: FrozenContent;
+      userId: string;
+      organizationId: string;
+      campaignId?: string;
+      campaignRecipientIds: string[];
+    };
 
 export async function POST(request: Request) {
   const body = await verifyQstashRequest(request);
@@ -15,19 +30,32 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { content, userId, organizationId, campaignId, campaignRecipientIds } = JSON.parse(body) as {
-      content: FrozenContent;
-      userId: string;
-      organizationId: string;
-      campaignId?: string;
-      campaignRecipientIds: string[];
-    };
+    const payload = JSON.parse(body) as Payload;
 
-    const rows = await listPendingByIds(campaignRecipientIds ?? []);
-    const result = await sendCampaignBatch(content, rows, userId, organizationId, campaignId);
-    await finalizeCampaignIfDone(campaignId);
+    // A delayed check from scheduleSettleCheck: nothing to send, only settle
+    // claims that have timed out and close the campaign if that finishes it.
+    if (payload.settleOnly) {
+      const { inFlight } = await settleCampaign(payload.campaignId);
+      if (inFlight > 0) await scheduleSettleCheck(payload.campaignId);
+      return NextResponse.json({ ok: true, settled: true, inFlight });
+    }
 
-    console.log(`campaign-worker: batch done - sent ${result.sent}, failed ${result.failed}`);
+    const { content, userId, organizationId, campaignId } = payload;
+    const ids = payload.campaignRecipientIds ?? [];
+
+    const result = await sendCampaignBatch(content, ids, userId, organizationId, campaignId);
+
+    if (campaignId) {
+      await settleCampaign(campaignId);
+      // Rows of this batch still "sending" are held by a duplicate delivery,
+      // or by an attempt that died holding them. Come back once their claims
+      // have timed out so the campaign cannot stay "sending" forever.
+      if ((await countSendingAmong(ids)) > 0) await scheduleSettleCheck(campaignId);
+    }
+
+    console.log(
+      `campaign-worker: batch done - sent ${result.sent}, failed ${result.failed}, unrecorded ${result.unrecorded}`,
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

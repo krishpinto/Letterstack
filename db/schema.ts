@@ -358,9 +358,15 @@ export const campaignRecipients = pgTable("campaign_recipients", {
     .references(() => recipients.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   name: text("name"),
+  // pending → sending → sent | failed. "sending" means a worker has claimed
+  // the row and may be talking to the provider right now; see
+  // claimCampaignRecipient in db/campaign-recipients.ts.
   status: text("status").notNull().default("pending"),
   sentAt: timestamp("sent_at"),
   error: text("error"),
+  // When a worker claimed the row (status "sending"). A claim older than
+  // CLAIM_TIMEOUT_MS belongs to a worker that died mid-send.
+  claimedAt: timestamp("claimed_at"),
 }, (table) => [unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email)]);
 
 export const categories = pgTable("categories", {

@@ -1,12 +1,14 @@
 import { Receiver } from "@upstash/qstash";
-import { countPendingForCampaign } from "@/db/campaign-recipients";
+import { failStaleClaims, recipientStatusCounts } from "@/db/campaign-recipients";
 import { markCampaignSent } from "@/db/campaigns";
 import { notifyCampaignFinished } from "@/lib/notifications/campaign-notifications";
+import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
+import { CLAIM_TIMEOUT_MS, decideCampaignOutcome } from "./send-policy";
 
 /**
  * Shared by every QStash worker route (campaign-worker, gmail-campaign-worker,
- * automation-worker, scheduled-dispatch): signature verification and the
- * "nothing left pending → mark sent" finalization. Everything else about how
+ * automation-worker, scheduled-dispatch): signature verification and settling
+ * the campaign's status once its recipients are done. Everything else about how
  * a worker actually sends stays route-specific — SES and Gmail need
  * different batching/retry/error handling (see the Gmail Sending plan), so
  * only this shared skeleton is factored out, not the sending itself.
@@ -26,22 +28,45 @@ export async function verifyQstashRequest(request: Request): Promise<string | nu
 }
 
 /**
- * Marks a campaign fully sent once nothing is left pending for it, and tells
- * the workspace it is done.
+ * Bring a campaign's status up to date with its recipients, and tell the
+ * workspace when it is done. Every worker calls this after its batch.
+ *
+ * First it settles claims whose worker is gone (see CLAIM_TIMEOUT_MS), so a
+ * worker that died mid-send cannot hold the campaign in "sending" forever.
+ * Then, once nothing is pending or in flight, it marks the campaign sent.
  *
  * The notification hangs off markCampaignSent's return value rather than off
- * the pending count. Both matter: at-least-once delivery means this runs more
- * than once for the same batch, and the last few workers of a large campaign
- * can all see pending hit zero together. Only one of them wins the guarded
- * UPDATE, so only one of them mails.
+ * the counts. At-least-once delivery means this runs more than once, and the
+ * last few workers of a large campaign can all see the end together; only one
+ * of them wins the guarded UPDATE, so only one of them mails.
  *
  * Awaited, not fire-and-forget. A serverless invocation that returns is
  * frozen, so a dangling promise here would be cancelled mid-send about as
  * often as it completed.
  */
-export async function finalizeCampaignIfDone(campaignId: string | undefined): Promise<void> {
-  if (campaignId && (await countPendingForCampaign(campaignId)) === 0) {
+export async function settleCampaign(campaignId: string): Promise<{ inFlight: number }> {
+  await failStaleClaims(campaignId, CLAIM_TIMEOUT_MS);
+  const counts = await recipientStatusCounts(campaignId);
+  if (decideCampaignOutcome(counts) === "sent") {
     const justFinished = await markCampaignSent(campaignId);
     if (justFinished) await notifyCampaignFinished(campaignId);
   }
+  return { inFlight: counts.sending };
+}
+
+/**
+ * Ask for settleCampaign to run again once every current claim is past
+ * CLAIM_TIMEOUT_MS.
+ *
+ * Needed when a worker finishes and some of its own rows are still
+ * "sending": a duplicate delivery is mid-send, or an earlier attempt died
+ * holding them. In the second case nothing else would ever come back to
+ * settle those rows, and the campaign would sit in "sending" forever.
+ */
+export async function scheduleSettleCheck(campaignId: string): Promise<void> {
+  await publishQstashJSON({
+    url: `${appBaseUrl()}/api/send/campaign-worker`,
+    notBefore: qstashNotBefore(Date.now() + CLAIM_TIMEOUT_MS + 60_000),
+    body: { settleOnly: true, campaignId },
+  });
 }

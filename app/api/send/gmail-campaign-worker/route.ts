@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { listPendingByIds } from "@/db/campaign-recipients";
+import { countSendingAmong } from "@/db/campaign-recipients";
 import { sendGmailCampaignBatch } from "@/lib/send/gmail-campaign";
 import type { FrozenContent } from "@/lib/send/send-campaign";
-import { finalizeCampaignIfDone, verifyQstashRequest } from "@/lib/send/qstash-worker";
+import {
+  scheduleSettleCheck,
+  settleCampaign,
+  verifyQstashRequest,
+} from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
 
@@ -25,19 +29,19 @@ export async function POST(request: Request) {
         campaignId?: string;
         campaignRecipientIds: string[];
       };
+    const ids = campaignRecipientIds ?? [];
 
-    const rows = await listPendingByIds(campaignRecipientIds ?? []);
-    const result = await sendGmailCampaignBatch(content, rows, userId, organizationId, mailboxId);
+    const result = await sendGmailCampaignBatch(content, ids, userId, organizationId, mailboxId);
 
-    // A reconnect halt is not "done" — recipients past the halt point are
-    // still pending on purpose, so skip finalizing until they've actually
-    // gone out via a later Resume.
-    if (!result.haltedForReconnect) {
-      await finalizeCampaignIfDone(campaignId);
+    // A reconnect halt leaves the rest "pending" on purpose; settling is
+    // still safe because pending rows keep the campaign open.
+    if (campaignId) {
+      await settleCampaign(campaignId);
+      if ((await countSendingAmong(ids)) > 0) await scheduleSettleCheck(campaignId);
     }
 
     console.log(
-      `gmail-campaign-worker: batch done - sent ${result.sent}, failed ${result.failed}` +
+      `gmail-campaign-worker: batch done - sent ${result.sent}, failed ${result.failed}, unrecorded ${result.unrecorded}` +
         (result.haltedForReconnect ? " (halted: mailbox needs reconnecting)" : ""),
     );
     return NextResponse.json({ ok: true, ...result });

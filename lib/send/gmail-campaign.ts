@@ -1,4 +1,8 @@
-import { markCampaignRecipient } from "@/db/campaign-recipients";
+import {
+  claimCampaignRecipient,
+  finishCampaignRecipient,
+  returnCampaignRecipientToPending,
+} from "@/db/campaign-recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { getMailbox } from "@/db/connected-mailboxes";
 import { getValidAccessToken, MailboxReauthRequiredError } from "./gmail-auth";
@@ -9,7 +13,7 @@ import {
   unsubscribeOneClickUrl,
   unsubscribePageUrl,
 } from "@/lib/email/unsubscribe";
-import type { FrozenContent } from "./send-campaign";
+import { recordSent, releaseClaimAndThrow, type FrozenContent } from "./send-campaign";
 
 /**
  * Gmail's own send path — deliberately separate functions from
@@ -36,42 +40,54 @@ function isRateLimitError(err: unknown): boolean {
   return message.includes("429") || message.toLowerCase().includes("rate limit");
 }
 
-type CampaignBatchRow = { id: string; email: string };
-
 export type GmailBatchResult = {
   sent: number;
   failed: number;
+  unrecorded: number;
   /** True if the run stopped early because the mailbox needs reconnecting. */
   haltedForReconnect: boolean;
 };
 
 export async function sendGmailCampaignBatch(
   content: FrozenContent,
-  rows: CampaignBatchRow[],
+  recipientIds: string[],
   userId: string,
   organizationId: string,
   mailboxId: string,
 ): Promise<GmailBatchResult> {
   let sent = 0;
   let failed = 0;
+  let unrecorded = 0;
   const base = appBaseUrl();
 
   const mailbox = await getMailbox(mailboxId);
   if (!mailbox) {
     // Shouldn't happen — dispatchCampaign already checked it exists — but
     // leaving everything pending is the safe failure mode either way.
-    return { sent, failed, haltedForReconnect: false };
+    return { sent, failed, unrecorded, haltedForReconnect: false };
   }
 
-  for (const row of rows) {
-    try {
-      if (await isSuppressedForOrganization(organizationId, row.email)) {
-        await markCampaignRecipient(row.id, "failed", "suppressed");
-        failed++;
-        await sleep(SEND_GAP_MS);
-        continue;
-      }
+  for (const id of recipientIds) {
+    // Claimed one at a time, right before its own send — see
+    // sendCampaignBatch. Matters more here: a Gmail run is long, and a
+    // claim taken up front for all of it would strand every unsent row if
+    // the function were killed.
+    const row = await claimCampaignRecipient(id);
+    if (!row) continue;
 
+    let suppressed: boolean;
+    try {
+      suppressed = await isSuppressedForOrganization(organizationId, row.email);
+    } catch (err) {
+      return releaseClaimAndThrow(row.id, err);
+    }
+    if (suppressed) {
+      await finishCampaignRecipient(row.id, "failed", "suppressed");
+      failed++;
+      continue;
+    }
+
+    try {
       const personalized = personalizeUnsubscribe(
         content,
         unsubscribePageUrl(base, userId, row.email),
@@ -103,29 +119,31 @@ export async function sendGmailCampaignBatch(
           throw err;
         }
       }
-
-      await markCampaignRecipient(row.id, "sent");
-      sent++;
     } catch (err) {
       if (err instanceof MailboxReauthRequiredError) {
-        // Not a per-recipient failure — the whole mailbox is down. Stop
-        // here and leave everything from this row onward `pending`, so a
-        // "Resume" after reconnecting picks up exactly where this left off
-        // instead of every remaining recipient reading as an individual
-        // bounce.
-        return { sent, failed, haltedForReconnect: true };
+        // Not a per-recipient failure — the whole mailbox is down. Put this
+        // row back and stop, leaving everything from here on "pending", so a
+        // Resume after reconnecting picks up exactly where this left off
+        // instead of every remaining recipient reading as a bounce.
+        await returnCampaignRecipientToPending(row.id);
+        return { sent, failed, unrecorded, haltedForReconnect: true };
       }
-      await markCampaignRecipient(
+      await finishCampaignRecipient(
         row.id,
         "failed",
         err instanceof Error ? err.message : "Unknown error",
       );
       failed++;
+      await sleep(SEND_GAP_MS);
+      continue;
     }
+
+    if (await recordSent(row.id)) sent++;
+    else unrecorded++;
     await sleep(SEND_GAP_MS);
   }
 
-  return { sent, failed, haltedForReconnect: false };
+  return { sent, failed, unrecorded, haltedForReconnect: false };
 }
 
 /**

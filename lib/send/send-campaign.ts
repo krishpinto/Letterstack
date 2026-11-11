@@ -1,5 +1,9 @@
 import { isSuppressedForOrganization } from "@/db/suppression";
-import { markCampaignRecipient } from "@/db/campaign-recipients";
+import {
+  claimCampaignRecipient,
+  finishCampaignRecipient,
+  returnCampaignRecipientToPending,
+} from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import {
@@ -24,31 +28,85 @@ export type FrozenContent = {
   replyTo?: string;
 };
 
-type CampaignBatchRow = {
-  id: string;
-  email: string;
+export type BatchResult = {
+  sent: number;
+  failed: number;
+  /** Rows the provider accepted but we could not mark "sent"; see recordSent. */
+  unrecorded: number;
 };
 
+/**
+ * Mark a recipient "sent" after the provider accepted the message.
+ *
+ * The provider call cannot be undone, so the one wrong move here is turning
+ * a delivered email into "failed" — that is what the old catch-all did when
+ * this write threw. Instead: try twice, and if the database is still not
+ * answering, leave the row "sending". Nothing will re-send it (only "pending"
+ * rows are ever claimed), and settleCampaign later marks it with
+ * UNKNOWN_DELIVERY_STATE.
+ */
+export async function recordSent(id: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await finishCampaignRecipient(id, "sent");
+      return true;
+    } catch (err) {
+      console.error(`recordSent: could not mark ${id} sent (attempt ${attempt + 1})`, err);
+    }
+  }
+  return false;
+}
+
+/**
+ * Put a claimed row back to pending after a failure that happened before the
+ * provider was called, then rethrow. Best-effort: if even that write fails,
+ * the claim times out and the row is settled by settleCampaign.
+ */
+export async function releaseClaimAndThrow(id: string, err: unknown): Promise<never> {
+  try {
+    await returnCampaignRecipientToPending(id);
+  } catch {
+    // Left "sending"; the claim timeout settles it.
+  }
+  throw err;
+}
+
+/**
+ * Send one QStash batch. Each recipient is claimed (pending → sending)
+ * immediately before its own send and settled right after, so a duplicate
+ * or retried delivery of the same batch skips everyone this one handled, and
+ * a crash leaves at most the one in-flight row in doubt.
+ */
 export async function sendCampaignBatch(
   content: FrozenContent,
-  rows: CampaignBatchRow[],
+  recipientIds: string[],
   userId: string,
   organizationId: string,
   campaignId?: string,
-) {
+): Promise<BatchResult> {
   let sent = 0;
   let failed = 0;
+  let unrecorded = 0;
   const base = appBaseUrl();
   const tags = campaignId ? [{ name: "campaignId", value: campaignId }] : undefined;
 
-  for (const row of rows) {
-    try {
-      if (await isSuppressedForOrganization(organizationId, row.email)) {
-        await markCampaignRecipient(row.id, "failed", "suppressed");
-        failed++;
-        continue;
-      }
+  for (const id of recipientIds) {
+    const row = await claimCampaignRecipient(id);
+    if (!row) continue; // already handled, held by another worker, or campaign stopped
 
+    let suppressed: boolean;
+    try {
+      suppressed = await isSuppressedForOrganization(organizationId, row.email);
+    } catch (err) {
+      return releaseClaimAndThrow(row.id, err);
+    }
+    if (suppressed) {
+      await finishCampaignRecipient(row.id, "failed", "suppressed");
+      failed++;
+      continue;
+    }
+
+    try {
       const personalized = personalizeUnsubscribe(
         content,
         unsubscribePageUrl(base, userId, row.email),
@@ -64,19 +122,21 @@ export async function sendCampaignBatch(
         listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
         tags,
       });
-      await markCampaignRecipient(row.id, "sent");
-      sent++;
     } catch (err) {
-      await markCampaignRecipient(
+      await finishCampaignRecipient(
         row.id,
         "failed",
         err instanceof Error ? err.message : "Unknown error",
       );
       failed++;
+      continue;
     }
+
+    if (await recordSent(row.id)) sent++;
+    else unrecorded++;
   }
 
-  return { sent, failed };
+  return { sent, failed, unrecorded };
 }
 
 /**

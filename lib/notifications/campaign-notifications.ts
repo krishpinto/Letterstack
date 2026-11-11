@@ -77,7 +77,7 @@ async function fanOut(
 /**
  * "Your campaign finished sending."
  *
- * Called from finalizeCampaignIfDone, and only on the call that actually
+ * Called from settleCampaign, and only on the call that actually
  * performed the sending to sent transition. QStash delivers at least once and
  * several workers can finish at the same moment, so anything gated on "is this
  * campaign done?" would mail more than once; gating on "did I just mark it
