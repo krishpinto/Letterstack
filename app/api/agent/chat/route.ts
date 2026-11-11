@@ -8,7 +8,9 @@
 // document up and back on every step.
 //
 // The server still owns the things a client cannot be trusted with: the API
-// key, the quota gates, the usage ledger, and the step ceiling.
+// key, the quota gates, the usage ledger, the request size, and the step
+// ceiling (as a per-user call rate from the ledger — the step count in the
+// request body is only a courtesy check, since the client controls it).
 
 import { NextResponse } from "next/server";
 import {
@@ -30,7 +32,13 @@ import {
   MAX_AGENT_STEPS,
   resolveModelId,
 } from "@/lib/agent/models";
-import { checkAgentBudget, recordAgentUsage } from "@/lib/agent/budget";
+import {
+  cancelAgentReservation,
+  checkAgentBudget,
+  reserveAgentCall,
+  settleAgentCall,
+} from "@/lib/agent/budget";
+import { checkAgentRequestShape, estimateCallTokens } from "@/lib/agent/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -95,11 +103,18 @@ export async function POST(request: Request) {
     return bad(503, "The assistant isn't configured yet — GOOGLE_GENERATIVE_AI_API_KEY is missing.");
   }
 
-  const body = await request.json().catch(() => null);
-  const messages = (body?.messages ?? []) as UIMessage[];
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return bad(400, "No messages provided.");
+  // Everything in the body becomes input tokens, so its size is checked
+  // before it is parsed or forwarded anywhere.
+  const raw = await request.text().catch(() => "");
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    body = null;
   }
+  const shape = checkAgentRequestShape({ bodyChars: raw.length, messages: body?.messages });
+  if (!shape.ok) return bad(shape.status, shape.error);
+  const messages = body!.messages as UIMessage[];
 
   if (stepsInCurrentTurn(messages) >= MAX_AGENT_STEPS) {
     return refusal(
@@ -109,15 +124,29 @@ export async function POST(request: Request) {
 
   const modelId = resolveModelId(typeof body?.model === "string" ? body.model : undefined);
 
-  // Keyed on model: Google meters each one separately, so exhausting Flash
-  // must not lock the user out of Flash Lite.
-  const verdict = await checkAgentBudget(userId, modelId);
-  if (!verdict.ok) return refusal(verdict.reason);
-
   // Rebuilt by the client each turn from the live document, so it reflects
   // edits made moments ago rather than whatever was true when the chat started.
   const documentContext = typeof body?.context === "string" ? body.context : "";
   const campaignId = typeof body?.campaignId === "string" ? body.campaignId : null;
+
+  // Reserve first, then check: the gates count this call's row, so parallel
+  // requests see each other instead of all reading the same old totals.
+  // Keyed on model: Google meters each one separately, so exhausting Flash
+  // must not lock the user out of Flash Lite.
+  const estimatedTokens = estimateCallTokens(raw.length);
+  const reservationId = await reserveAgentCall({
+    organizationId,
+    userId,
+    provider: "google",
+    model: modelId,
+    campaignId,
+    estimatedTokens,
+  });
+  const verdict = await checkAgentBudget(userId, modelId, estimatedTokens);
+  if (!verdict.ok) {
+    await cancelAgentReservation(reservationId);
+    return refusal(verdict.reason);
+  }
 
   try {
     const result = streamText({
@@ -129,15 +158,10 @@ export async function POST(request: Request) {
       tools: clientTools,
 
       onEnd({ usage, finishReason }) {
-        void recordAgentUsage({
-          organizationId,
-          userId,
-          provider: "google",
-          model: modelId,
+        void settleAgentCall(reservationId, {
           promptTokens: usage?.inputTokens,
           completionTokens: usage?.outputTokens,
           totalTokens: usage?.totalTokens,
-          campaignId,
           ok: finishReason !== "error",
         });
       },
@@ -152,12 +176,7 @@ export async function POST(request: Request) {
   } catch (err) {
     // A call that never streamed still consumed a request against the daily
     // ceiling, so it belongs in the ledger.
-    void recordAgentUsage({
-      organizationId,
-      userId,
-      provider: "google",
-      model: modelId,
-      campaignId,
+    void settleAgentCall(reservationId, {
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
     });
