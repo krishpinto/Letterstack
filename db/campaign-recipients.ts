@@ -1,7 +1,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaignRecipients, campaigns } from "./schema";
+import { automations, campaignRecipients, campaigns } from "./schema";
 import { listSuppressedSetForOrganization } from "./suppression";
+import { uniqueByOrganization, type SuppressionTarget } from "@/lib/webhooks/ses-event";
 
 const INSERT_BATCH_SIZE = 1_000;
 
@@ -147,17 +148,44 @@ export async function organizationIdsForEmail(email: string): Promise<string[]> 
   return rows.map((row) => row.organizationId);
 }
 
+/**
+ * Every workspace a bounce or complaint for this address should be recorded
+ * in: each one whose campaigns have mailed it (an address that hard-bounces
+ * for one sender is dead for all of them on the shared SES account), plus the
+ * workspace behind the automation that sent this message, if it was one.
+ *
+ * Automation sends leave no campaign_recipients row, so without the
+ * automation lookup a bounce from an automation-only contact was never
+ * suppressed and the automation kept mailing it. The automation id comes from
+ * the SES message tag, which only counts as trustworthy because the webhook
+ * verifies the SNS signature first.
+ */
 export async function suppressionTargetsForEmail(
   email: string,
-): Promise<{ organizationId: string; userId: string }[]> {
-  return db
-    .selectDistinct({
-      organizationId: campaigns.organizationId,
-      userId: campaigns.userId,
-    })
-    .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
+  options: { automationId?: string | null } = {},
+): Promise<SuppressionTarget[]> {
+  const [fromCampaigns, fromAutomation] = await Promise.all([
+    db
+      .selectDistinct({
+        organizationId: campaigns.organizationId,
+        userId: campaigns.userId,
+      })
+      .from(campaignRecipients)
+      .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
+      .where(eq(campaignRecipients.email, email)),
+    options.automationId
+      ? db
+          .select({
+            organizationId: automations.organizationId,
+            userId: automations.userId,
+          })
+          .from(automations)
+          .where(eq(automations.id, options.automationId))
+          .limit(1)
+      : Promise.resolve([] as SuppressionTarget[]),
+  ]);
+
+  return uniqueByOrganization([...fromAutomation, ...fromCampaigns]);
 }
 
 export async function listCampaignRecipients(campaignId: string) {

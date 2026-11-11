@@ -105,7 +105,9 @@ export async function POST(request: Request) {
   if (toSuppress.length > 0) {
     const reason = event.type.toLowerCase();
     for (const { email } of toSuppress) {
-      const targets = await suppressionTargetsForEmail(email);
+      const targets = await suppressionTargetsForEmail(email, {
+        automationId: event.automationId,
+      });
       await Promise.all(
         targets.map((target) =>
           suppressEmailForOrganization(target.organizationId, target.userId, email, reason),

@@ -75,9 +75,11 @@ mailbox today can accept mail next week.
 
 ## Why correlation rides on SES message tags
 
-Each send is tagged with its campaign id. SES echoes the tag back inside the SNS
-event payload, so a bounce arriving forty minutes later attributes itself without
-needing a `MessageId → campaign` lookup table.
+Each send is tagged with its campaign id, or its automation id for automation
+mail. SES echoes the tag back inside the SNS event payload, so a bounce arriving
+forty minutes later attributes itself without needing a `MessageId → campaign`
+lookup table. The tags are only trusted because the SNS signature is verified
+first, and a tag that is not a well-formed id is ignored.
 
 ## Why one SES call per recipient
 

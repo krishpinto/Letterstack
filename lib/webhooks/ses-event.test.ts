@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHardBounce, parseSesEvent, readIdTag } from "./ses-event";
+import { isHardBounce, parseSesEvent, readIdTag, uniqueByOrganization } from "./ses-event";
 
 const CAMPAIGN = "5f0c3f43-6d1c-4b5a-9a43-3d3f2f0f7c11";
 const AUTOMATION = "9b2e7d6a-0c4f-4e1b-8f5a-2a1d3c4b5e6f";
@@ -125,5 +125,20 @@ describe("readIdTag", () => {
     expect(readIdTag(event, "type")).toBeNull();
     expect(readIdTag({}, "campaignId")).toBeNull();
     expect(readIdTag({ mail: { tags: { campaignId: "scalar" } } }, "campaignId")).toBeNull();
+  });
+});
+
+describe("uniqueByOrganization", () => {
+  it("keeps the first target per organization", () => {
+    expect(
+      uniqueByOrganization([
+        { organizationId: "o1", userId: "automation-owner" },
+        { organizationId: "o2", userId: "u2" },
+        { organizationId: "o1", userId: "campaign-owner" },
+      ]),
+    ).toEqual([
+      { organizationId: "o1", userId: "automation-owner" },
+      { organizationId: "o2", userId: "u2" },
+    ]);
   });
 });

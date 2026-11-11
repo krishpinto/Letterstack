@@ -114,3 +114,16 @@ function recipientsFor(type: string, record: Json, destination: string[]): SesEv
   return notSuppressed(destination);
 }
 
+export type SuppressionTarget = { organizationId: string; userId: string };
+
+/**
+ * One target per workspace. Suppression is unique on (organization, email),
+ * so a second row for the same workspace would only be a wasted insert.
+ */
+export function uniqueByOrganization(targets: SuppressionTarget[]): SuppressionTarget[] {
+  const seen = new Map<string, SuppressionTarget>();
+  for (const target of targets) {
+    if (!seen.has(target.organizationId)) seen.set(target.organizationId, target);
+  }
+  return [...seen.values()];
+}
