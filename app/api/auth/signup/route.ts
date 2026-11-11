@@ -14,10 +14,12 @@ import bcrypt from "bcryptjs";
 import { createEmailVerificationToken } from "@/db/email-verifications";
 import { sendEmailVerificationEmail } from "@/lib/auth-emails";
 import { BCRYPT_COST, MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const HOUR = 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
@@ -45,6 +47,15 @@ export async function POST(req: Request) {
     );
   }
 
+  // Per IP only: a per-email limit here would let anyone block a stranger
+  // from signing up. This also caps how fast the 409 below can be used to
+  // check which addresses have accounts.
+  const limit = await rateLimit(`signup:ip:${clientIp(req.headers)}`, {
+    limit: 10,
+    windowMs: HOUR,
+  });
+  if (!limit.ok) return tooManyRequests(limit);
+
   const existing = await db
     .select({ id: users.id })
     .from(users)
@@ -53,7 +64,8 @@ export async function POST(req: Request) {
 
   // Kept as a distinct answer: the page signs in straight after signup, so
   // hiding it would only turn "this email has an account" into a confusing
-  // sign-in failure.
+  // sign-in failure. The rate limit above is what keeps it from being a
+  // cheap way to test addresses in bulk.
   if (existing.length > 0) {
     return NextResponse.json(
       { ok: false, error: "An account with this email already exists. Log in instead." },

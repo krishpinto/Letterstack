@@ -1,5 +1,5 @@
 import { cache } from "react";
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { db } from "@/db/client";
@@ -8,6 +8,7 @@ import { claimAccountForGoogle, getAuthState } from "@/db/users";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { sessionIsCurrent } from "@/lib/auth-rules";
+import { clientIp, rateLimitAll } from "@/lib/rate-limit";
 
 // Keep in sync with the same flag on the login and signup pages.
 export const GOOGLE_AUTH_ENABLED = true;
@@ -18,6 +19,13 @@ const authSecret =
   (process.env.NODE_ENV === "development"
     ? "letterstack-local-development-auth-secret"
     : undefined);
+
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+/** Surfaces to the login page as `code: "rate_limited"`. */
+class RateLimitedSignin extends CredentialsSignin {
+  code = "rate_limited";
+}
 
 // The jwt callback runs on every auth() call, and one request can make
 // several (layout, page, currentUserId, currentOrganizationId). cache() makes
@@ -33,10 +41,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const email = String(credentials?.email ?? "").toLowerCase().trim();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
+
+        // Per email so one account can't be guessed at from many IPs, per IP
+        // so one machine can't spray many accounts. The per-email limit also
+        // means someone can lock an address out of password login for up to
+        // 15 minutes; Google sign-in and password reset still work then.
+        const limit = await rateLimitAll([
+          { key: `login:email:${email}`, rule: { limit: 10, windowMs: FIFTEEN_MINUTES } },
+          {
+            key: `login:ip:${clientIp(request.headers)}`,
+            rule: { limit: 50, windowMs: FIFTEEN_MINUTES },
+          },
+        ]);
+        if (!limit.ok) throw new RateLimitedSignin();
 
         const [user] = await db
           .select({

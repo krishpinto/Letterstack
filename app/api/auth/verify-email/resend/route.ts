@@ -5,10 +5,13 @@ import { NextResponse } from "next/server";
 import { createEmailVerificationToken } from "@/db/email-verifications";
 import { auth } from "@/lib/auth";
 import { sendEmailVerificationEmail } from "@/lib/auth-emails";
+import { clientIp, rateLimitAll, tooManyRequests } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+const HOUR = 60 * 60 * 1000;
+
+export async function POST(request: Request) {
   const session = await auth();
   const user = session?.user;
   if (!user?.id) {
@@ -17,6 +20,12 @@ export async function POST() {
   if (user.hasVerifiedEmail) {
     return NextResponse.json({ ok: true, alreadyVerified: true });
   }
+
+  const limit = await rateLimitAll([
+    { key: `verify-resend:user:${user.id}`, rule: { limit: 3, windowMs: HOUR } },
+    { key: `verify-resend:ip:${clientIp(request.headers)}`, rule: { limit: 10, windowMs: HOUR } },
+  ]);
+  if (!limit.ok) return tooManyRequests(limit);
 
   try {
     const token = await createEmailVerificationToken(user.id);

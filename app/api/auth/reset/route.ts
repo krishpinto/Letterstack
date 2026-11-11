@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { consumePasswordResetToken } from "@/db/password-resets";
 import { resetPassword } from "@/db/users";
 import { BCRYPT_COST, MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,14 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Tokens are 256 random bits, so this isn't stopping a guess; it bounds
+  // how much bcrypt work and database traffic one caller can cause.
+  const limit = await rateLimit(`reset:ip:${clientIp(request.headers)}`, {
+    limit: 20,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!limit.ok) return tooManyRequests(limit);
 
   try {
     const userId = await consumePasswordResetToken(token);
