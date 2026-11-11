@@ -80,7 +80,7 @@ import {
 } from "@/components/ui/select";
 import { STORAGE_KEY, type EmailDocument } from "@/lib/email/document";
 import { PREBUILT_TEMPLATES, blankDocument } from "@/lib/email/templates";
-import { errorMessage, fetchJson } from "@/lib/fetch-json";
+import { ApiError, errorMessage, fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { ImportWizard } from "../../contacts/import-wizard";
 import {
@@ -812,10 +812,24 @@ export function CampaignDetail({
       // effect syncing `initial`), so the button can't fire a second time.
       onRefresh();
     } catch (err) {
+      setConfirmIntent(null);
+      // 409: the campaign is already sending, or a resume was requested in
+      // the last minute. Nothing went wrong; the send is in progress, so
+      // say so and follow its progress instead of showing an error.
+      if (err instanceof ApiError && err.status === 409) {
+        toast.info(
+          intent === "resume" ? "Already resuming" : "Already sending",
+          { description: err.message },
+        );
+        stallRef.current = null;
+        setStalled(false);
+        setPollKey((key) => key + 1);
+        onRefresh();
+        return;
+      }
       const message = errorMessage(err, "Could not send this campaign.");
       setError(message);
       toast.error(message);
-      setConfirmIntent(null);
       setSending(false);
       actionLockRef.current = false;
     }
