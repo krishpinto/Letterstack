@@ -522,24 +522,24 @@ export function CampaignDetail({
     setSavingSection(key);
     setError(null);
     try {
-      const nextDoc: EmailDocument = JSON.parse(
-        JSON.stringify(campaign.document),
+      // Start from the stored design, not the copy this page loaded. The
+      // editor (often open in another tab) saves the whole document, so
+      // patching the page's copy would put back an older design and lose
+      // those edits. Only the fields this section owns are changed.
+      const latest = await fetchJson<{ campaign: CampaignData }>(
+        `/api/campaigns/${campaign.id}`,
       );
+      const base = latest.campaign.document ?? campaign.document;
+      const nextDoc: EmailDocument = JSON.parse(JSON.stringify(base));
       mutate(nextDoc);
-      const r = await fetch(`/api/campaigns/${campaign.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: nextDoc, ...extra }),
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        setError(data.error || "Could not save");
-        return;
-      }
+      const data = await fetchJson<{ campaign: CampaignData }>(
+        `/api/campaigns/${campaign.id}`,
+        { method: "PATCH", json: { document: nextDoc, ...extra } },
+      );
       setCampaign(data.campaign);
       setOpen(null);
-    } catch {
-      setError("Could not reach the server.");
+    } catch (saveError) {
+      setError(errorMessage(saveError, "Could not save."));
     } finally {
       setSavingSection(null);
     }
