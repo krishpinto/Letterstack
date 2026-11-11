@@ -6,10 +6,13 @@
 
 import { NextResponse } from "next/server";
 import { publishQstashJSON } from "@/lib/send/qstash";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 export async function POST() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 
   try {

@@ -1,8 +1,8 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "./client";
-import { apiKeys, apiKeyUsage } from "./schema";
-import { generateApiKey, hashApiKey } from "@/lib/api/keys";
+import { apiKeys, apiKeyUsage, organizationMembers } from "./schema";
+import { generateApiKey, hashApiKey, isApiKeyUsable } from "@/lib/api/keys";
 import type { ApiScope } from "@/lib/api/scopes";
 import { normalizePlan, type PlanKey } from "@/lib/plans/limits";
 
@@ -88,7 +88,8 @@ export type AuthenticatedKey = {
 };
 
 /**
- * The authentication lookup: one indexed hit on the unique key_hash.
+ * The authentication lookup: one indexed hit on the unique key_hash, plus
+ * the creator's membership in the same round trip.
  *
  * Takes the raw key rather than a digest so no caller can accidentally hash
  * it the wrong way — the hashing lives in exactly one place.
@@ -101,12 +102,20 @@ export async function findActiveApiKey(rawKey: string): Promise<AuthenticatedKey
       createdByUserId: apiKeys.createdByUserId,
       scopes: apiKeys.scopes,
       revokedAt: apiKeys.revokedAt,
+      creatorRole: organizationMembers.role,
     })
     .from(apiKeys)
+    .leftJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.organizationId, apiKeys.organizationId),
+        eq(organizationMembers.userId, apiKeys.createdByUserId),
+      ),
+    )
     .where(eq(apiKeys.keyHash, hashApiKey(rawKey)))
     .limit(1);
 
-  if (!row || row.revokedAt) return null;
+  if (!row || !isApiKeyUsable(row)) return null;
 
   return {
     id: row.id,
@@ -132,6 +141,31 @@ export async function revokeApiKey(organizationId: string, id: string): Promise<
     .returning({ id: apiKeys.id });
 
   return rows.length > 0;
+}
+
+/**
+ * Revoke every live key a person minted for a workspace. Called when they
+ * leave it or are removed, so their keys stop working with their membership
+ * rather than only when somebody remembers to revoke them by hand. Returns
+ * how many were revoked.
+ */
+export async function revokeApiKeysCreatedBy(
+  organizationId: string,
+  userId: string,
+): Promise<number> {
+  const rows = await db
+    .update(apiKeys)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(apiKeys.organizationId, organizationId),
+        eq(apiKeys.createdByUserId, userId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
+    .returning({ id: apiKeys.id });
+
+  return rows.length;
 }
 
 /** Fire-and-forget: a failed timestamp write must never fail the request it

@@ -86,13 +86,14 @@ export type DomainIdentityStatus = {
 };
 
 /**
- * Register `domain` as an SES identity with our configuration set and a custom
- * MAIL FROM. Safe to call again for an existing identity (it re-applies the
- * MAIL FROM setting and returns current state).
+ * Create the SES identity for `domain` with our configuration set. Reports
+ * whether it already existed instead of quietly succeeding: an existing
+ * identity may already be verified, and only the caller knows whether the
+ * workspace asking is entitled to it (see decideAddIdentity).
  */
-export async function registerDomainIdentity(
+export async function createDomainIdentity(
   domain: string,
-): Promise<DomainIdentityStatus> {
+): Promise<"created" | "exists"> {
   try {
     await ses().send(
       new CreateEmailIdentityCommand({
@@ -100,10 +101,17 @@ export async function registerDomainIdentity(
         ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
       }),
     );
+    return "created";
   } catch (err) {
-    if ((err as Error).name !== "AlreadyExistsException") throw err;
+    if ((err as Error).name === "AlreadyExistsException") return "exists";
+    throw err;
   }
+}
 
+/** Apply the custom MAIL FROM to an identity and return its current state. */
+export async function configureDomainIdentity(
+  domain: string,
+): Promise<DomainIdentityStatus> {
   await ses().send(
     new PutEmailIdentityMailFromAttributesCommand({
       EmailIdentity: domain,
@@ -113,6 +121,18 @@ export async function registerDomainIdentity(
   );
 
   return getDomainIdentityStatus(domain);
+}
+
+/**
+ * Create-or-reuse plus configure, with no ownership check. For the operator
+ * CLI (scripts/connect-domain.ts) only — the dashboard goes through
+ * createDomainIdentity so it can refuse an identity it doesn't own.
+ */
+export async function registerDomainIdentity(
+  domain: string,
+): Promise<DomainIdentityStatus> {
+  await createDomainIdentity(domain);
+  return configureDomainIdentity(domain);
 }
 
 /** Current SES verification state + the DNS records the owner must publish. */
@@ -139,4 +159,16 @@ export async function getDomainIdentityStatus(
 
 export async function deleteDomainIdentity(domain: string): Promise<void> {
   await ses().send(new DeleteEmailIdentityCommand({ EmailIdentity: domain }));
+}
+
+/**
+ * Delete the identity, treating "already gone" as success. Releasing is the
+ * goal, so an identity someone already removed by hand is not an error.
+ */
+export async function releaseDomainIdentity(domain: string): Promise<void> {
+  try {
+    await deleteDomainIdentity(domain);
+  } catch (err) {
+    if ((err as Error).name !== "NotFoundException") throw err;
+  }
 }

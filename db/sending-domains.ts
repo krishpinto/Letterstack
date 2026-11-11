@@ -43,6 +43,11 @@ export async function listVerifiedSendingDomains(
 /**
  * Attach a domain to the organization. Returns null when the org is at its
  * limit; throws on a unique violation (domain owned by another org).
+ *
+ * `created` says whether this call inserted the row. The caller needs it to
+ * decide whether an SES identity that already exists is this org's own (a
+ * re-run of verification) or someone else's left behind — see
+ * decideAddIdentity in lib/send/domain-ownership.ts.
  */
 export async function addSendingDomain(organizationId: string, domain: string) {
   const existing = await listSendingDomains(organizationId);
@@ -50,14 +55,23 @@ export async function addSendingDomain(organizationId: string, domain: string) {
   // Re-adding a domain already connected is a no-op, so it stays allowed even
   // at the limit — otherwise an org sitting exactly on its cap could never
   // re-run verification on a domain it already owns.
-  if (already) return already;
+  if (already) return { row: already, created: false };
   if (existing.length >= (await sendingDomainLimitFor(organizationId))) return null;
 
   const [row] = await db
     .insert(sendingDomains)
     .values({ organizationId, domain })
     .returning();
-  return row;
+  return { row, created: true };
+}
+
+/** Every organization whose sending_domains row references `domain`. */
+export async function listSendingDomainOwners(domain: string): Promise<string[]> {
+  const rows = await db
+    .select({ organizationId: sendingDomains.organizationId })
+    .from(sendingDomains)
+    .where(eq(sendingDomains.domain, domain));
+  return rows.map((row) => row.organizationId);
 }
 
 export async function removeSendingDomain(

@@ -7,6 +7,7 @@ import {
 import { sendOrganizationInviteEmail } from "@/lib/auth-emails";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { getOrganizationForUser } from "@/db/organizations";
+import { decideInviteRole, isManagerRole } from "@/lib/organizations/roles";
 
 export const runtime = "nodejs";
 
@@ -47,7 +48,16 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null);
   const email = String(body?.email ?? "").trim().toLowerCase();
-  const role = body?.role === "admin" ? "admin" : "member";
+
+  // Checked before anything else about the request, so a member learns
+  // nothing from probing it. The caller's role comes from their membership
+  // row, never from the request.
+  const decision = decideInviteRole(organization.role, body?.role);
+  if (!decision.ok) {
+    const status = isManagerRole(organization.role) ? 400 : 403;
+    return NextResponse.json({ ok: false, error: decision.error }, { status });
+  }
+  const role = decision.role;
 
   if (!EMAIL_RE.test(email)) {
     return NextResponse.json({ ok: false, error: "Valid email required" }, { status: 400 });

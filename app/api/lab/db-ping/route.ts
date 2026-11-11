@@ -7,11 +7,14 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 // GET = a read (we're only asking, not changing anything).
 export async function GET() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   try {
     // `sql\`...\`` lets us send raw SQL safely. `now()` is the database's clock.
     const result = await db.execute(sql`select now() as time`);

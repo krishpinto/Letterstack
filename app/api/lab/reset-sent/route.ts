@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { resetSentFlags } from "@/db/recipients";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 export async function POST() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const userId = await currentUserId();
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });

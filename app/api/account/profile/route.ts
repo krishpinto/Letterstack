@@ -12,7 +12,12 @@ import {
   SoleOwnerError,
   updateUserName,
 } from "@/db/users";
+import { listOrganizationsForUser } from "@/db/organizations";
 import { currentUserId } from "@/lib/auth-helpers";
+import {
+  releaseOrphanedDomainIdentities,
+  sendingDomainsForOrganizations,
+} from "@/lib/organizations/sending-domains";
 
 export const runtime = "nodejs";
 
@@ -60,7 +65,14 @@ export async function DELETE() {
   }
 
   try {
+    // Deleting the account cascades away the workspaces it solely owns, and
+    // their sending_domains rows with them, but not the SES identities. Note
+    // the domains first and release whichever ones end up with no owner.
+    const owned = (await listOrganizationsForUser(userId)).filter((org) => org.role === "owner");
+    const domains = await sendingDomainsForOrganizations(owned.map((org) => org.id));
+
     await deleteUserAccount(userId);
+    await releaseOrphanedDomainIdentities(domains);
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof SoleOwnerError) {
