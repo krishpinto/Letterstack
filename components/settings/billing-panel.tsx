@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -66,6 +67,39 @@ function quotaLine(plan: PlanKey) {
   );
 }
 
+type Quote =
+  | { allowed: true; summary: string }
+  | { allowed: false; message: string }
+  | null;
+
+/**
+ * What each button would do, fetched from the server so the end date and
+ * any days converted from unused time are stated before paying — by the
+ * same rule settlement applies afterwards. Silent on failure: the buttons
+ * still work, and checkout refuses anything that can't be bought.
+ */
+function usePlanQuote(plan: PlanKey, enabled: boolean) {
+  const [quote, setQuote] = useState<{ monthly: Quote; yearly: Quote } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch(`/api/payments/quote?plan=${plan}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.ok) {
+          setQuote({ monthly: data.monthly, yearly: data.yearly });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [plan, enabled]);
+  return quote;
+}
+
 /**
  * One purchasable (or enquirable) tier. Rendered for the current plan when
  * it can be renewed, and for every tier above it.
@@ -85,6 +119,11 @@ function PlanOffer({
   const items = checkoutItemsFor(plan);
   // Null on Free and Business — nothing to discount, nothing to cross out.
   const annual = yearlyPricing(plan);
+  const quote = usePlanQuote(plan, items !== null);
+  // Both periods are refused for the same reason (a lower tier while a
+  // higher one runs), so one message stands in for both buttons.
+  const refused =
+    quote?.yearly && !quote.yearly.allowed ? quote.yearly.message : null;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -93,7 +132,9 @@ function PlanOffer({
         <span className="text-xs text-muted-foreground">{quotaLine(plan)}</span>
       </div>
 
-      {items ? (
+      {items && refused ? (
+        <p className="text-xs text-muted-foreground">{refused}</p>
+      ) : items ? (
         <>
           <div className="flex flex-col gap-2 sm:flex-row">
             {/* Annual first: it's the better deal and, until recurring billing
@@ -115,6 +156,12 @@ function PlanOffer({
               onPaid={onPaid}
             />
           </div>
+          {quote?.yearly?.allowed && quote.monthly?.allowed ? (
+            <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <li>Yearly: {quote.yearly.summary}</li>
+              <li>Monthly: {quote.monthly.summary}</li>
+            </ul>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {annual ? (
               <>
