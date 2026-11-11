@@ -20,6 +20,7 @@ import {
 } from "@/db/automations";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { tryReserveSendQuota } from "@/db/organizations";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { normalizeDocument, type EmailDocument } from "@/lib/email/document";
 import { resolveTemplateVariables } from "@/lib/email/templates";
@@ -45,6 +46,7 @@ import {
   type UpdateContactConfig,
   type AddCategoryConfig,
 } from "./flow";
+import { isAllowedAutomationSender, normalizeSender } from "./senders";
 
 /** Guard against cycles / runaway flows. */
 const MAX_STEPS = 25;
@@ -267,11 +269,16 @@ async function executeSendEmail(
   if (!config.templateId || !config.fromEmail) {
     return "not configured — skipped";
   }
+  // Re-checked here, not only on save: a flow saved before the check
+  // existed, or whose domain has since been removed, must not send.
+  const fromEmail = normalizeSender(config.fromEmail);
+  if (
+    !isAllowedAutomationSender(fromEmail, await listVerifiedSendingDomains(organizationId))
+  ) {
+    return `sender ${fromEmail} not allowed for this workspace — skipped`;
+  }
   if (await isSuppressedForOrganization(organizationId, contact.email)) {
     return `suppressed ${contact.email} — skipped`;
-  }
-  if (!(await tryReserveSendQuota(organizationId, 1))) {
-    return `beta send cap reached — skipped ${contact.email}`;
   }
 
   const [template] = await db
@@ -280,6 +287,12 @@ async function executeSendEmail(
     .where(eq(emailTemplates.id, config.templateId));
   if (!template || template.organizationId !== organizationId || !template.document) {
     return "template missing — skipped";
+  }
+
+  // Reserve last, after every reason to skip, so a skipped step doesn't
+  // spend the workspace's monthly allowance.
+  if (!(await tryReserveSendQuota(organizationId, 1))) {
+    return `monthly send allowance reached — skipped ${contact.email}`;
   }
 
   const [organization] = await db
@@ -307,7 +320,7 @@ async function executeSendEmail(
     html: personalized.html,
     text: personalized.text,
     fromName: config.fromName || "LetterStack",
-    fromEmail: config.fromEmail,
+    fromEmail,
     listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, contact.userId, contact.email),
     tags: [{ name: "automationId", value: automationId }],
   });
