@@ -6,7 +6,6 @@
 // arrives, matches nothing, and no-ops.
 
 import { NextResponse } from "next/server";
-import { Receiver } from "@upstash/qstash";
 import { getCampaign } from "@/db/campaigns";
 import {
   dispatchCampaign,
@@ -19,24 +18,17 @@ import {
   publishQstashJSON,
   qstashNotBefore,
 } from "@/lib/send/qstash";
+import { verifyQstashRequest } from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
-
-const receiver = new Receiver({
-  currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY!,
-  nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY!,
-});
 
 // Postgres keeps microseconds and JS keeps milliseconds; allow a small skew
 // when matching the message's timestamp against the row.
 const MATCH_TOLERANCE_MS = 2000;
 
 export async function POST(request: Request) {
-  const body = await request.text();
-  const signature = request.headers.get("upstash-signature") ?? "";
-
-  const isValid = await receiver.verify({ body, signature }).catch(() => false);
-  if (!isValid) {
+  const body = await verifyQstashRequest(request, "/api/send/scheduled-dispatch");
+  if (body === null) {
     return NextResponse.json(
       { ok: false, error: "Invalid or missing QStash signature" },
       { status: 401 },

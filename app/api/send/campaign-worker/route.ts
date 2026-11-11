@@ -25,7 +25,7 @@ type Payload =
     };
 
 export async function POST(request: Request) {
-  const body = await verifyQstashRequest(request);
+  const body = await verifyQstashRequest(request, "/api/send/campaign-worker");
   if (body === null) {
     return NextResponse.json(
       { ok: false, error: "Invalid or missing QStash signature" },

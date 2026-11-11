@@ -9,8 +9,8 @@ import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import { ALL_RECIPIENTS_FAILED, CLAIM_TIMEOUT_MS, decideCampaignOutcome } from "./send-policy";
 
 /**
- * Shared by every QStash worker route (campaign-worker, gmail-campaign-worker,
- * automation-worker, scheduled-dispatch): signature verification and settling
+ * Shared by the campaign QStash routes (campaign-worker, gmail-campaign-worker,
+ * scheduled-dispatch): signature verification and settling
  * the campaign's status once its recipients are done. Everything else about how
  * a worker actually sends stays route-specific — SES and Gmail need
  * different batching/retry/error handling (see the Gmail Sending plan), so
@@ -22,11 +22,22 @@ const receiver = new Receiver({
   nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY!,
 });
 
-/** Verifies the QStash signature on an incoming request; returns the raw body if valid, else null. */
-export async function verifyQstashRequest(request: Request): Promise<string | null> {
+/**
+ * Verifies the QStash signature on an incoming request; returns the raw body
+ * if valid, else null.
+ *
+ * `path` is the route's own path, and the URL it makes is checked against
+ * the one QStash signed. Without it, a signed message captured for one
+ * worker (an automation step, say) could be replayed against another, and
+ * the signature alone would pass. The URL is built the same way every
+ * publisher builds it, from appBaseUrl(), so it matches what QStash was
+ * asked to call.
+ */
+export async function verifyQstashRequest(request: Request, path: string): Promise<string | null> {
   const body = await request.text();
   const signature = request.headers.get("upstash-signature") ?? "";
-  const isValid = await receiver.verify({ body, signature }).catch(() => false);
+  const url = `${appBaseUrl()}${path}`;
+  const isValid = await receiver.verify({ body, signature, url }).catch(() => false);
   return isValid ? body : null;
 }
 
