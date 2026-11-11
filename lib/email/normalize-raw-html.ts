@@ -7,7 +7,9 @@
 //      inside the email table, so a pasted <!DOCTYPE><html><head> nests a
 //      document inside a table cell and most clients mangle it.
 //   2. Strip anything unsafe. Once a model writes this field it is untrusted
-//      input — models can be prompt-injected by content the user pasted.
+//      input — models can be prompt-injected by content the user pasted. The
+//      walk below explains what it removes; sanitizeEmailHtml() (DOMPurify)
+//      then has the final say, so this file is never the only safety check.
 //   3. Derive the plain-text alternative, which nothing was writing before.
 //
 // Parsing uses the browser's own DOMParser rather than regexes: it handles
@@ -15,6 +17,8 @@
 // unwrap in (1) for free. Both callers are client-side. On a server render
 // there is no DOMParser, so we fail closed and report it instead of pretending
 // the content was checked.
+
+import { sanitizeEmailHtml } from "./sanitize";
 
 /** Removed outright — dangerous, or meaningless once inlined into an email. */
 const STRIPPED_TAGS = new Set([
@@ -33,10 +37,12 @@ const STRIPPED_TAGS = new Set([
   "textarea",
   "select",
   "option",
+  "svg",
+  "math",
 ]);
 
 /** Kept, but flagged — renders inconsistently or not at all in email clients. */
-const EMAIL_UNSAFE_TAGS = new Set(["svg", "canvas", "video", "audio", "picture"]);
+const EMAIL_UNSAFE_TAGS = new Set(["canvas", "video", "audio", "picture"]);
 
 const UNSAFE_URL_RE = /^\s*(javascript|vbscript|file):/i;
 
@@ -63,7 +69,7 @@ function collectCssWarnings(styleValue: string, warnings: Set<string>) {
     warnings.add("CSS grid is not supported in most email clients — use tables.");
   }
   if (/position\s*:\s*(absolute|fixed|sticky)/.test(css)) {
-    warnings.add("Positioned elements are stripped by most email clients.");
+    warnings.add("Removed absolute/fixed positioning — most email clients strip it.");
   }
   if (/var\s*\(\s*--/.test(css)) {
     warnings.add("CSS variables don't resolve in email — use literal values.");
@@ -142,13 +148,18 @@ export function normalizeRawHtml(input: string): NormalizeRawHtmlResult {
         continue;
       }
 
+      if (name === "class") {
+        warnings.add("Removed class attributes — an email has no stylesheet for them to match.");
+        continue;
+      }
+
       if (name === "style") collectCssWarnings(attr.value, warnings);
     }
   }
 
   for (const el of doomed) el.remove();
 
-  const html = doc.body.innerHTML.trim();
+  const html = sanitizeEmailHtml(doc.body.innerHTML.trim());
   const text = tidyText(doc.body.textContent ?? "");
 
   if (html && !text) {

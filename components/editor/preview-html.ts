@@ -1,16 +1,12 @@
-const SCRIPT_TAG_RE = /<script\b[\s\S]*?<\/script>/gi;
-const OPEN_SCRIPT_TAG_RE = /<script\b[^>]*>/gi;
-const EVENT_HANDLER_RE = /\son\w+=(["']).*?\1/gi;
-const BARE_EVENT_HANDLER_RE = /\son\w+=[^\s>]+/gi;
-const JS_URL_RE = /\s(href|src)=(["'])\s*javascript:[\s\S]*?\2/gi;
+import { sanitizeEmailHtml } from "@/lib/email/sanitize";
+
+// The canvas renders block HTML inside the app's own origin, next to the
+// user's session, and that HTML can come from anyone: a shared template, the
+// agent, a paste. It goes through the same DOMPurify rules as the compiler —
+// a regex cannot keep up with what a browser will parse as markup.
 
 export function sanitizePreviewHtml(html: string): string {
-  return html
-    .replace(SCRIPT_TAG_RE, "")
-    .replace(OPEN_SCRIPT_TAG_RE, "")
-    .replace(EVENT_HANDLER_RE, "")
-    .replace(BARE_EVENT_HANDLER_RE, "")
-    .replace(JS_URL_RE, "");
+  return sanitizeEmailHtml(html);
 }
 
 export function previewHtml(html: string) {
