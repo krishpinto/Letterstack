@@ -29,23 +29,30 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Organization required" }, { status: 428 });
   }
 
-  const [campaigns, engagement] = await Promise.all([
-    listCampaignsForOrganization(organizationId),
-    engagementByOrganization(organizationId),
-  ]);
+  try {
+    const [campaigns, engagement] = await Promise.all([
+      listCampaignsForOrganization(organizationId),
+      engagementByOrganization(organizationId),
+    ]);
 
-  const rows = campaigns
-    .filter((c) => c.status !== "draft")
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      subject: c.subject,
-      status: c.status,
-      sentAt: c.sentAt,
-      audienceCount: c.audienceCount,
-      sentCount: c.sentCount,
-      engagement: engagement.get(c.id) ?? EMPTY,
-    }));
+    const rows = campaigns
+      .filter((c) => c.status !== "draft")
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        subject: c.subject,
+        status: c.status,
+        sentAt: c.sentAt,
+        audienceCount: c.audienceCount,
+        sentCount: c.sentCount,
+        engagement: engagement.get(c.id) ?? EMPTY,
+      }));
 
-  return NextResponse.json({ ok: true, campaigns: rows });
+    return NextResponse.json({ ok: true, campaigns: rows });
+  } catch (error) {
+    // A JSON error, not an HTML 500 page, so the dashboard can show the
+    // reason next to a Retry instead of an empty chart.
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }

@@ -10,6 +10,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 254; // RFC 5321
 const DNS_TIMEOUT_MS = 4_000;
 const DNS_CONCURRENCY = 20;
+// Wall-clock budget for the DNS pass of ONE validateEmails call. Each lookup
+// already times out, but a request carrying thousands of unique domains could
+// still queue minutes of lookups and outlive the serverless function. Once the
+// budget is spent, no new lookups start; domains not yet checked count as
+// "inconclusive" and their addresses are kept, exactly like a DNS timeout.
+// Worst case per call ≈ budget + one lookup chain (3 × DNS_TIMEOUT_MS).
+export const DEFAULT_DNS_BUDGET_MS = 15_000;
 
 // "invalid_syntax" | "dead_domain" | "disposable" are drops; "valid" imports.
 export type EmailStatus = "valid" | "invalid_syntax" | "dead_domain" | "disposable";
@@ -117,15 +124,23 @@ async function resolveDomainAlive(domain: string): Promise<boolean | null> {
   return false; // no MX, no A, no AAAA — cannot receive mail
 }
 
-async function resolveDomainsAlive(
+export async function resolveDomainsAlive(
   domains: string[],
+  options: {
+    budgetMs?: number;
+    resolve?: (domain: string) => Promise<boolean | null>;
+    now?: () => number;
+  } = {},
 ): Promise<Map<string, boolean | null>> {
+  const resolve = options.resolve ?? resolveDomainAlive;
+  const now = options.now ?? Date.now;
+  const deadline = now() + (options.budgetMs ?? DEFAULT_DNS_BUDGET_MS);
   const out = new Map<string, boolean | null>();
   let cursor = 0;
   async function worker() {
-    while (cursor < domains.length) {
+    while (cursor < domains.length && now() < deadline) {
       const domain = domains[cursor++];
-      out.set(domain, await resolveDomainAlive(domain));
+      out.set(domain, await resolve(domain));
     }
   }
   const workers = Array.from(
@@ -133,6 +148,10 @@ async function resolveDomainsAlive(
     () => worker(),
   );
   await Promise.all(workers);
+  // Out of budget: whatever was never looked up is unknown, not dead.
+  for (const domain of domains) {
+    if (!out.has(domain)) out.set(domain, null);
+  }
   return out;
 }
 
@@ -140,7 +159,10 @@ async function resolveDomainsAlive(
  * Validate a batch of raw email strings. Results come back in input order so
  * callers can zip them against the original rows (for names, etc.).
  */
-export async function validateEmails(rawEmails: string[]): Promise<{
+export async function validateEmails(
+  rawEmails: string[],
+  options: { dnsBudgetMs?: number } = {},
+): Promise<{
   results: ValidatedEmail[];
   report: ValidationReport;
 }> {
@@ -166,7 +188,9 @@ export async function validateEmails(rawEmails: string[]): Promise<{
   for (const item of prelim) {
     if (item.status === "valid") domains.add(domainOf(item.email));
   }
-  const alive = await resolveDomainsAlive([...domains]);
+  const alive = await resolveDomainsAlive([...domains], {
+    budgetMs: options.dnsBudgetMs,
+  });
 
   // Pass 3 — finalize + tally.
   const report: ValidationReport = {

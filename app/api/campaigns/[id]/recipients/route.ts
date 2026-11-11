@@ -3,6 +3,9 @@
 // "bounced" (an address that SES later reported as a bounce/complaint).
 
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { campaignRecipients } from "@/db/schema";
 import {
   addCampaignRecipient,
   deleteCampaignRecipient,
@@ -125,7 +128,21 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
       );
     }
 
-    const recipientId = new URL(request.url).searchParams.get("recipientId") ?? "";
+    const params = new URL(request.url).searchParams;
+
+    // ?all=1 empties the campaign's recipient list (the "Remove all" button).
+    // Scoped by campaign id, and the campaign was resolved through
+    // getCampaignForUser above, so this can only touch the caller's own
+    // draft. Contacts in the audience are untouched.
+    if (params.get("all") === "1") {
+      const removed = await db
+        .delete(campaignRecipients)
+        .where(eq(campaignRecipients.campaignId, campaign.id))
+        .returning({ id: campaignRecipients.id });
+      return NextResponse.json({ ok: true, removed: removed.length });
+    }
+
+    const recipientId = params.get("recipientId") ?? "";
     if (!recipientId) {
       return NextResponse.json({ ok: false, error: "recipientId required" }, { status: 400 });
     }

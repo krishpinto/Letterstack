@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BanIcon,
@@ -10,8 +10,8 @@ import {
   Edit2Icon,
   FolderIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
-  TagIcon,
   Trash2Icon,
   UploadIcon,
   UserRoundIcon,
@@ -20,9 +20,22 @@ import {
 
 import { ImportWizard } from "./import-wizard";
 import { InlineEditCell, suggestEmailFix } from "./inline-edit-cell";
+import {
+  buildContactsCsv,
+  canUnsuppress,
+  chunk,
+  exportFileName,
+  lockedSuppressionExplanation,
+  statusForSuppression,
+  summarizeBulk,
+  suppressionLabel,
+} from "./contacts-helpers";
 import { dispatchAudienceChanged, onOrganizationChanged } from "@/lib/dashboard-events";
 import { paginationRange } from "@/lib/pagination";
-import { confirmDialog } from "@/components/app-dialogs";
+import { alertDialog, confirmDialog } from "@/components/app-dialogs";
+import { ErrorState, useAsyncData } from "@/components/data-state";
+import { toast } from "@/components/toast";
+import { errorMessage, fetchJson } from "@/lib/fetch-json";
 import { SelectionPill } from "@/components/selection-pill";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -108,7 +121,11 @@ type Recipient = {
 };
 
 type SuppressedEntry = { email: string; reason: string };
-type Contact = Recipient & { status: "subscribed" | "bounced" | "suppressed" };
+type Contact = Recipient & {
+  status: "subscribed" | "bounced" | "suppressed";
+  /** suppressed_emails.reason, or null when the address is not suppressed. */
+  suppressionReason: string | null;
+};
 type StatusKey = "all" | "subscribed" | "bounced" | "suppressed";
 
 type Category = {
@@ -144,6 +161,45 @@ const FOLDER_COLORS = [
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
+// Bulk requests are capped server-side at 1,000; stay well under it.
+const BULK_CHUNK = 500;
+
+type AudienceData = {
+  contacts: Contact[];
+  categories: Category[];
+  mappings: Mapping[];
+};
+
+type CategoriesResponse = { categories: Category[]; mappings: Mapping[] };
+
+// Contacts, their suppression state and their folders load together: the
+// folder filter needs the mappings, so a page showing contacts without them
+// would render a filtered folder as empty. Any one failing is an error.
+async function loadAudience(): Promise<AudienceData> {
+  const [recipientResponse, suppressionResponse, categoryResponse] = await Promise.all([
+    fetchJson<{ recipients: Recipient[] }>("/api/audience"),
+    fetchJson<{ suppressed: SuppressedEntry[] }>("/api/audience/suppression"),
+    fetchJson<CategoriesResponse>("/api/audience/categories"),
+  ]);
+
+  const reasons = new Map<string, string>();
+  for (const entry of suppressionResponse.suppressed) {
+    reasons.set(entry.email, entry.reason);
+  }
+
+  return {
+    contacts: recipientResponse.recipients.map((recipient) => {
+      const reason = reasons.get(recipient.email) ?? null;
+      return {
+        ...recipient,
+        status: statusForSuppression(reason),
+        suppressionReason: reason,
+      };
+    }),
+    categories: categoryResponse.categories ?? [],
+    mappings: categoryResponse.mappings ?? [],
+  };
+}
 
 function getInitials(name: string | null, email: string) {
   if (name) {
@@ -166,11 +222,15 @@ export default function AudiencePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [mappings, setMappings] = useState<Mapping[]>([]);
-  
-  const [loading, setLoading] = useState(true);
+  // Bumped on a workspace switch: a new workspace is a new resource, so the
+  // page shows the loader instead of the previous workspace's contacts.
+  const [organizationVersion, setOrganizationVersion] = useState(0);
+  const audience = useAsyncData(loadAudience, [organizationVersion]);
+  const { reload: reloadAudience, setData: setAudienceData } = audience;
+  const contacts = useMemo(() => audience.data?.contacts ?? [], [audience.data]);
+  const categories = useMemo(() => audience.data?.categories ?? [], [audience.data]);
+  const mappings = useMemo(() => audience.data?.mappings ?? [], [audience.data]);
+
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
   // Mailchimp-style always-visible filters: folders are multi-select,
@@ -181,7 +241,8 @@ export default function AudiencePage() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
+  // Which bulk action is in flight, so its button can't be pressed twice.
+  const [bulkBusy, setBulkBusy] = useState<"delete" | "suppress" | "unsuppress" | null>(null);
   const [filterReferenceTime] = useState(() => Date.now());
   
   // Importers / Single contact add dialogs
@@ -254,64 +315,30 @@ export default function AudiencePage() {
   const [selectedMappingCategories, setSelectedMappingCategories] = useState<Set<string>>(new Set());
   const [savingMapping, setSavingMapping] = useState(false);
 
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // Folder mutations only need the folder list and mappings re-read.
   const loadCategories = useCallback(async () => {
     try {
-      const r = await fetch("/api/audience/categories");
-      const data = await r.json();
-      if (data.ok) {
-        setCategories(data.categories);
-        setMappings(data.mappings);
-      }
-    } catch (err) {
-      console.error("Failed to load categories:", err);
+      const data = await fetchJson<CategoriesResponse>("/api/audience/categories");
+      setAudienceData((current) => ({
+        ...current,
+        categories: data.categories ?? [],
+        mappings: data.mappings ?? [],
+      }));
+    } catch (error) {
+      toast.error("Couldn't refresh folders", { description: errorMessage(error) });
     }
-  }, []);
+  }, [setAudienceData]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [recipientResponse, suppressionResponse] = await Promise.all([
-        fetch("/api/audience").then((response) => response.json()),
-        fetch("/api/audience/suppression").then((response) => response.json()),
-      ]);
+  const load = useCallback(() => reloadAudience(), [reloadAudience]);
 
-      if (!recipientResponse.ok || !suppressionResponse.ok) {
-        setContacts([]);
-        return;
-      }
-
-      const suppMap = new Map<string, string>();
-      (suppressionResponse.suppressed as SuppressedEntry[]).forEach((entry) =>
-        suppMap.set(entry.email, entry.reason),
-      );
-
-      const merged: Contact[] = (recipientResponse.recipients as Recipient[]).map(
-        (recipient) => {
-          const reason = suppMap.get(recipient.email);
-          let status: Contact["status"] = "subscribed";
-          if (reason === "bounce" || reason === "complaint") {
-            status = "bounced";
-          } else if (reason) {
-            status = "suppressed";
-          }
-          return { ...recipient, status };
-        },
-      );
-
-      setContacts(merged);
-      await loadCategories();
-    } catch {
-      setContacts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [loadCategories]);
-
+  // A failed background refresh keeps the list on screen and says so.
+  const refreshError =
+    audience.status === "error" && audience.data ? audience.error : null;
   useEffect(() => {
-    load();
-  }, [load]);
+    if (refreshError) {
+      toast.error("Couldn't refresh contacts", { description: refreshError });
+    }
+  }, [refreshError]);
 
   useEffect(() => {
     return onOrganizationChanged(() => {
@@ -321,19 +348,13 @@ export default function AudiencePage() {
       setFolderFilter(new Set());
       setAddedFilter("any");
       setPage(1);
-      void load();
+      setOrganizationVersion((version) => version + 1);
     });
-  }, [load]);
+  }, []);
 
   useEffect(() => {
     setPage(1);
   }, [query, statusFilter, folderFilter, addedFilter, pageSize]);
-
-  const showToast = useCallback((message: string) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(message);
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
-  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -372,7 +393,10 @@ export default function AudiencePage() {
   }, [contacts, query, statusFilter, folderFilter, addedFilter, mappings, filterReferenceTime]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageStart = (page - 1) * pageSize;
+  // After a bulk delete the old page number can point past the end; showing
+  // the last real page beats an empty table that reads like data loss.
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
   const pageItems = filtered.slice(pageStart, pageStart + pageSize);
   const firstShown = filtered.length > 0 ? pageStart + 1 : 0;
   const lastShown = Math.min(pageStart + pageSize, filtered.length);
@@ -400,6 +424,10 @@ export default function AudiencePage() {
     });
     return map;
   }, [mappings, categories]);
+
+  const selectedHasSuppressed = contacts.some(
+    (contact) => selected.has(contact.id) && contact.suppressionReason !== null,
+  );
 
   const allFilteredSelected =
     pageItems.length > 0 && pageItems.every((contact) => selected.has(contact.id));
@@ -437,16 +465,14 @@ export default function AudiencePage() {
     patch: { email?: string; name?: string },
   ): Promise<string | null> {
     try {
-      const response = await fetch("/api/audience", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...patch }),
-      });
-      const data = await response.json();
-      if (!data.ok) return data.error ?? "Could not update the contact.";
+      const data = await fetchJson<{ recipient: { email: string; name: string | null } }>(
+        "/api/audience",
+        { method: "PATCH", json: { id, ...patch } },
+      );
 
-      setContacts((prev) =>
-        prev.map((contact) =>
+      setAudienceData((current) => ({
+        ...current,
+        contacts: current.contacts.map((contact) =>
           contact.id === id
             ? {
                 ...contact,
@@ -455,88 +481,265 @@ export default function AudiencePage() {
                 // PATCH refuses suppressed addresses, so a changed email
                 // is always a clean subscriber again.
                 ...(patch.email !== undefined
-                  ? { status: "subscribed" as const }
+                  ? { status: "subscribed" as const, suppressionReason: null }
                   : {}),
               }
             : contact,
         ),
-      );
+      }));
       dispatchAudienceChanged();
-      showToast("Contact updated");
+      toast.success("Contact updated");
       return null;
-    } catch {
-      return "Could not reach the server.";
+    } catch (error) {
+      return errorMessage(error, "Could not update the contact.");
     }
   }
 
-  async function removeContact(id: string) {
-    const response = await fetch(`/api/audience?id=${id}`, {
-      method: "DELETE",
-    }).then((result) => result.json());
+  async function removeContact(contact: Contact) {
+    const ok = await confirmDialog({
+      title: `Delete ${contact.email}?`,
+      description:
+        "The contact is removed from your audience and every folder. Campaigns already sent are not affected. This cannot be undone.",
+      confirmLabel: "Delete contact",
+      destructive: true,
+    });
+    if (!ok) return;
 
-    if (response.ok) {
-      showToast("Contact removed");
+    try {
+      await fetchJson(`/api/audience?id=${encodeURIComponent(contact.id)}`, {
+        method: "DELETE",
+      });
+      toast.success("Contact deleted");
       setSelected((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        next.delete(contact.id);
         return next;
       });
-      await load();
+      dispatchAudienceChanged();
+    } catch (error) {
+      toast.error("Couldn't delete the contact", { description: errorMessage(error) });
     }
+    await load();
   }
 
-  async function bulkDelete() {
-    const ids = [...selected];
-    if (ids.length === 0) return;
+  function selectedContacts() {
+    return contacts.filter((contact) => selected.has(contact.id));
+  }
 
-    for (const id of ids) {
-      await fetch(`/api/audience?id=${id}`, { method: "DELETE" });
+  // Selections can outlive a reload (another tab deleted some), so counts
+  // come from the contacts still on the page, not the raw id set.
+  async function bulkDelete() {
+    const targets = selectedContacts();
+    if (targets.length === 0 || bulkBusy) return;
+    const count = targets.length;
+
+    const ok = await confirmDialog({
+      title: `Delete ${count.toLocaleString()} contact${count === 1 ? "" : "s"}?`,
+      description:
+        "They are removed from your audience and every folder. Campaigns already sent are not affected. This cannot be undone.",
+      confirmLabel: `Delete ${count.toLocaleString()}`,
+      destructive: true,
+    });
+    if (!ok) return;
+
+    setBulkBusy("delete");
+    const deleted = new Set<string>();
+    const failed: string[] = [];
+    try {
+      for (const ids of chunk(targets.map((contact) => contact.id), BULK_CHUNK)) {
+        try {
+          const data = await fetchJson<{ deleted: string[]; notFound: string[] }>(
+            "/api/audience",
+            { method: "DELETE", json: { ids } },
+          );
+          data.deleted.forEach((id) => deleted.add(id));
+          data.notFound.forEach(() => failed.push("Contact not found"));
+        } catch (error) {
+          ids.forEach(() => failed.push(errorMessage(error)));
+        }
+      }
+    } finally {
+      setBulkBusy(null);
     }
 
-    showToast(`${ids.length} contact${ids.length === 1 ? "" : "s"} removed`);
-    clearSelection();
+    const summary = summarizeBulk({
+      verb: "Deleted",
+      noun: "contact",
+      total: count,
+      done: deleted.size,
+      failed,
+    });
+    toast[summary.kind](summary.message, { description: summary.description });
+    // Keep the ones that failed selected so they can be retried.
+    setSelected((prev) => new Set([...prev].filter((id) => !deleted.has(id))));
+    if (deleted.size > 0) dispatchAudienceChanged();
     await load();
   }
 
   async function bulkSuppress() {
-    const emails = contacts
-      .filter((contact) => selected.has(contact.id))
-      .map((contact) => contact.email);
-    if (emails.length === 0) return;
+    const targets = selectedContacts();
+    if (targets.length === 0 || bulkBusy) return;
+    const fresh = targets.filter((contact) => !contact.suppressionReason);
+    const already = targets.length - fresh.length;
 
-    for (const email of emails) {
-      await fetch("/api/audience/suppression", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+    if (fresh.length === 0) {
+      await alertDialog({
+        title: "Already suppressed",
+        description: `${targets.length === 1 ? "The selected contact is" : `All ${targets.length.toLocaleString()} selected contacts are`} already suppressed.`,
       });
+      return;
     }
 
-    showToast(`${emails.length} contact${emails.length === 1 ? "" : "s"} suppressed`);
-    clearSelection();
+    const count = fresh.length;
+    const ok = await confirmDialog({
+      title: `Suppress ${count.toLocaleString()} contact${count === 1 ? "" : "s"}?`,
+      description:
+        "Suppressed contacts stay in your audience but are skipped by every campaign and automation until you unsuppress them." +
+        (already > 0
+          ? ` ${already.toLocaleString()} of the selected contacts ${already === 1 ? "is" : "are"} already suppressed and will be left as they are.`
+          : ""),
+      confirmLabel: `Suppress ${count.toLocaleString()}`,
+    });
+    if (!ok) return;
+
+    setBulkBusy("suppress");
+    let done = 0;
+    const failed: string[] = [];
+    try {
+      for (const emails of chunk(fresh.map((contact) => contact.email), BULK_CHUNK)) {
+        try {
+          const data = await fetchJson<{ suppressed: number; alreadySuppressed: number }>(
+            "/api/audience/suppression",
+            { method: "POST", json: { emails } },
+          );
+          // "Already suppressed" here means it was suppressed in the
+          // meantime; the address ends up suppressed either way.
+          done += data.suppressed + data.alreadySuppressed;
+        } catch (error) {
+          emails.forEach(() => failed.push(errorMessage(error)));
+        }
+      }
+    } finally {
+      setBulkBusy(null);
+    }
+
+    const summary = summarizeBulk({ verb: "Suppressed", noun: "contact", total: count, done, failed });
+    toast[summary.kind](summary.message, { description: summary.description });
+    if (failed.length === 0) clearSelection();
+    if (done > 0) dispatchAudienceChanged();
     await load();
   }
 
-  function exportContacts() {
-    const escapeCsv = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const rows = [
-      ["Name", "Email", "Status", "Added"],
-      ...contacts.map((contact) => [
-        contact.name ?? "",
-        contact.email,
-        contact.status,
-        contact.createdAt,
-      ]),
+  // Undo a manual suppression. Bounces, complaints and unsubscribes are
+  // refused by the server too; the dialog explains why up front.
+  async function unsuppress(targets: Contact[]) {
+    const suppressed = targets.filter((contact) => contact.suppressionReason);
+    if (suppressed.length === 0 || bulkBusy) return;
+    const allowed = suppressed.filter((contact) => canUnsuppress(contact.suppressionReason));
+    const locked = suppressed.filter((contact) => !canUnsuppress(contact.suppressionReason));
+
+    const lockedReasons = [
+      ...new Set(
+        locked
+          .map((contact) => lockedSuppressionExplanation(contact.suppressionReason))
+          .filter((reason): reason is string => Boolean(reason)),
+      ),
     ];
-    const csv = rows
-      .map((row) => row.map((value) => escapeCsv(String(value))).join(","))
-      .join("\r\n");
+    const lockedNote =
+      locked.length === 0
+        ? ""
+        : locked.length === 1 && allowed.length === 0
+          ? (lockedReasons[0] ?? "")
+          : `${locked.length.toLocaleString()} of the selected can't be unsuppressed. ${lockedReasons.join(" ")}`;
+
+    if (allowed.length === 0) {
+      await alertDialog({
+        title:
+          locked.length === 1
+            ? `${locked[0]!.email} can't be unsuppressed`
+            : "These contacts can't be unsuppressed",
+        description: lockedNote,
+      });
+      return;
+    }
+
+    const count = allowed.length;
+    const ok = await confirmDialog({
+      title:
+        count === 1
+          ? `Unsuppress ${allowed[0]!.email}?`
+          : `Unsuppress ${count.toLocaleString()} contacts?`,
+      description:
+        `${count === 1 ? "This contact" : "They"} will receive campaigns and automations again.` +
+        (lockedNote ? ` ${lockedNote}` : ""),
+      confirmLabel: count === 1 ? "Unsuppress" : `Unsuppress ${count.toLocaleString()}`,
+    });
+    if (!ok) return;
+
+    setBulkBusy("unsuppress");
+    let done = 0;
+    const failed: string[] = [];
+    try {
+      for (const emails of chunk(allowed.map((contact) => contact.email), BULK_CHUNK)) {
+        try {
+          const data = await fetchJson<{
+            removed: string[];
+            refused: { email: string; reason: string }[];
+            notSuppressed: string[];
+          }>("/api/audience/suppression", { method: "DELETE", json: { emails } });
+          // Already unsuppressed elsewhere: the outcome the user wanted.
+          done += data.removed.length + data.notSuppressed.length;
+          data.refused.forEach((row) =>
+            failed.push(
+              lockedSuppressionExplanation(row.reason) ?? "This suppression can't be removed.",
+            ),
+          );
+        } catch (error) {
+          emails.forEach(() => failed.push(errorMessage(error)));
+        }
+      }
+    } finally {
+      setBulkBusy(null);
+    }
+
+    const summary = summarizeBulk({ verb: "Unsuppressed", noun: "contact", total: count, done, failed });
+    toast[summary.kind](summary.message, { description: summary.description });
+    if (failed.length === 0) clearSelection();
+    if (done > 0) dispatchAudienceChanged();
+    await load();
+  }
+
+  // Exports exactly what the table is showing across all pages: the current
+  // folder, status, "added" window and search.
+  function exportContacts() {
+    if (filtered.length === 0) {
+      toast.info("Nothing to export", {
+        description: "No contacts match the current filters.",
+      });
+      return;
+    }
+    const csv = buildContactsCsv(
+      filtered.map((contact) => ({
+        name: contact.name,
+        email: contact.email,
+        status: suppressionLabel(contact.suppressionReason),
+        folders: (contactCategories[contact.id] ?? []).map((folder) => folder.name),
+        createdAt: contact.createdAt,
+      })),
+    );
+    const folderName =
+      folderFilter.size === 1
+        ? (categories.find((folder) => folderFilter.has(folder.id))?.name ?? null)
+        : null;
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "letterstack-audience.csv";
+    anchor.download = exportFileName(folderName);
     anchor.click();
     URL.revokeObjectURL(url);
+    toast.success(
+      `Exported ${filtered.length.toLocaleString()} contact${filtered.length === 1 ? "" : "s"}`,
+    );
   }
 
   async function addContact() {
@@ -544,28 +747,35 @@ export default function AudiencePage() {
     setAddError(null);
 
     try {
-      const response = await fetch("/api/audience", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: addEmail, name: addName || undefined }),
-      }).then((result) => result.json());
-
-      if (!response.ok) {
-        setAddError(response.error);
+      let recipientId: string | undefined;
+      try {
+        const data = await fetchJson<{ recipient?: { id: string } }>("/api/audience", {
+          method: "POST",
+          json: { email: addEmail, name: addName || undefined },
+        });
+        recipientId = data.recipient?.id;
+      } catch (error) {
+        setAddError(errorMessage(error));
         return;
       }
 
-      // Drop the new contact into any folders picked in the dialog.
-      if (addFolders.size > 0 && response.recipient?.id) {
-        await fetch("/api/audience/categories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "map",
-            recipientIds: [response.recipient.id],
-            categoryIds: Array.from(addFolders),
-          }),
-        });
+      // Drop the new contact into any folders picked in the dialog. The
+      // contact exists either way; a failure here is reported, not hidden.
+      if (addFolders.size > 0 && recipientId) {
+        try {
+          await fetchJson("/api/audience/categories", {
+            method: "POST",
+            json: {
+              action: "map",
+              recipientIds: [recipientId],
+              categoryIds: Array.from(addFolders),
+            },
+          });
+        } catch (error) {
+          toast.error("Contact added, but not to the folder", {
+            description: errorMessage(error),
+          });
+        }
       }
 
       setAddEmail("");
@@ -574,7 +784,7 @@ export default function AudiencePage() {
       setAddNewFolder("");
       setAddOpen(false);
       dispatchAudienceChanged();
-      showToast("Contact added");
+      toast.success("Contact added");
       await load();
     } finally {
       setAdding(false);
@@ -596,50 +806,39 @@ export default function AudiencePage() {
     if (!name) return;
     setAddCreatingFolder(true);
     try {
-      const r = await fetch("/api/audience/categories", {
+      const data = await fetchJson<{ category?: Category }>("/api/audience/categories", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", name }),
+        json: { action: "create", name },
       });
-      const data = await r.json();
-      if (data.ok && data.category) {
-        setAddNewFolder("");
-        dispatchAudienceChanged();
-        await loadCategories();
-        setAddFolders((prev) => new Set(prev).add(data.category.id));
-      } else {
-        showToast(data.error || "Failed to create folder");
-      }
-    } catch {
-      showToast("Failed to create folder");
+      setAddNewFolder("");
+      dispatchAudienceChanged();
+      await loadCategories();
+      const created = data.category;
+      if (created) setAddFolders((prev) => new Set(prev).add(created.id));
+    } catch (error) {
+      toast.error("Couldn't create the folder", { description: errorMessage(error) });
     } finally {
       setAddCreatingFolder(false);
     }
   }
 
-  // â”€â”€ Category Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Folder actions (folders are "categories" in the API and database) ──
 
   async function handleCreateCategory() {
     if (!newFolderName.trim()) return;
     setCreatingFolder(true);
     try {
-      const r = await fetch("/api/audience/categories", {
+      await fetchJson("/api/audience/categories", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", name: newFolderName }),
+        json: { action: "create", name: newFolderName },
       });
-      const data = await r.json();
-      if (data.ok) {
-        showToast("Folder created");
-        setNewFolderName("");
-        setCreateFolderOpen(false);
-        dispatchAudienceChanged();
-        await loadCategories();
-      } else {
-        showToast(data.error || "Failed to create category");
-      }
-    } catch {
-      showToast("Failed to create category");
+      toast.success("Folder created");
+      setNewFolderName("");
+      setCreateFolderOpen(false);
+      dispatchAudienceChanged();
+      await loadCategories();
+    } catch (error) {
+      toast.error("Couldn't create the folder", { description: errorMessage(error) });
     } finally {
       setCreatingFolder(false);
     }
@@ -648,85 +847,84 @@ export default function AudiencePage() {
   async function handleRenameCategory(id: string, name: string) {
     if (!name.trim()) return;
     try {
-      const r = await fetch("/api/audience/categories", {
+      await fetchJson("/api/audience/categories", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name }),
+        json: { id, name },
       });
-      const data = await r.json();
-      if (data.ok) {
-        showToast("Folder renamed");
-        setEditingCategoryId(null);
-        dispatchAudienceChanged();
-        await loadCategories();
-      } else {
-        showToast(data.error || "Failed to rename folder");
-      }
-    } catch {
-      showToast("Failed to rename folder");
+      toast.success("Folder renamed");
+      setEditingCategoryId(null);
+      dispatchAudienceChanged();
+      await loadCategories();
+    } catch (error) {
+      toast.error("Couldn't rename the folder", { description: errorMessage(error) });
     }
   }
 
   async function handleDeleteCategory(id: string) {
+    const folder = categories.find((cat) => cat.id === id);
+    const inside = categoryCounts[id] ?? 0;
     const ok = await confirmDialog({
-      title: "Delete this folder?",
-      description: "Contacts inside will not be deleted.",
+      title: folder ? `Delete the folder "${folder.name}"?` : "Delete this folder?",
+      description:
+        inside > 0
+          ? `The ${inside.toLocaleString()} contact${inside === 1 ? "" : "s"} inside stay in your audience; only the folder is removed.`
+          : "Contacts inside will not be deleted.",
       confirmLabel: "Delete folder",
       destructive: true,
     });
     if (!ok) return;
     try {
-      const r = await fetch(`/api/audience/categories?id=${id}`, {
+      await fetchJson(`/api/audience/categories?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
-      const data = await r.json();
-      if (data.ok) {
-        showToast("Folder deleted");
-        if (searchParams.get("folder") === id) {
-          router.replace(buildHref({ folder: null }));
-        }
-        dispatchAudienceChanged();
-        await loadCategories();
-      } else {
-        showToast(data.error || "Failed to delete folder");
+      toast.success("Folder deleted");
+      if (searchParams.get("folder") === id) {
+        router.replace(buildHref({ folder: null }));
       }
-    } catch {
-      showToast("Failed to delete folder");
+      dispatchAudienceChanged();
+      await loadCategories();
+    } catch (error) {
+      toast.error("Couldn't delete the folder", { description: errorMessage(error) });
     }
   }
 
   async function handleSaveMapping() {
     setSavingMapping(true);
     try {
-      const r = await fetch("/api/audience/categories", {
+      await fetchJson("/api/audience/categories", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        json: {
           action: "map",
           recipientIds: Array.from(selected),
           categoryIds: Array.from(selectedMappingCategories),
-        }),
+        },
       });
-      const data = await r.json();
-      if (data.ok) {
-        showToast("Categories updated");
-        setManageCategoriesOpen(false);
-        clearSelection();
-        dispatchAudienceChanged();
-        await loadCategories();
-      } else {
-        showToast(data.error || "Failed to update categories");
-      }
-    } catch {
-      showToast("Failed to update categories");
+      toast.success("Folders updated");
+      setManageCategoriesOpen(false);
+      clearSelection();
+      dispatchAudienceChanged();
+      await loadCategories();
+    } catch (error) {
+      toast.error("Couldn't update folders", { description: errorMessage(error) });
     } finally {
       setSavingMapping(false);
     }
   }
 
-  if (loading) {
+  if (audience.status === "loading") {
+    return <PageLoader label="Loading audience..." />;
+  }
+
+  if (audience.status === "error" && !audience.data) {
     return (
-      <PageLoader label="Loading audience..." />
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
+        <ErrorState
+          title="Couldn't load your audience"
+          message={audience.error}
+          onRetry={() => void load()}
+          retrying={audience.refreshing}
+        />
+      </div>
     );
   }
 
@@ -996,7 +1194,25 @@ export default function AudiencePage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={contact.status} />
+                        <div className="flex items-center gap-1">
+                          <StatusBadge
+                            status={contact.status}
+                            reason={contact.suppressionReason}
+                          />
+                          {contact.suppressionReason &&
+                            canUnsuppress(contact.suppressionReason) && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => void unsuppress([contact])}
+                                disabled={bulkBusy !== null}
+                                aria-label={`Unsuppress ${contact.email}`}
+                                title="Unsuppress"
+                              >
+                                <RotateCcwIcon />
+                              </Button>
+                            )}
+                        </div>
                       </TableCell>
                       <TableCell className="hidden text-muted-foreground md:table-cell">
                         {formatDate(contact.createdAt)}
@@ -1005,8 +1221,9 @@ export default function AudiencePage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => removeContact(contact.id)}
-                          title="Remove contact"
+                          onClick={() => void removeContact(contact)}
+                          aria-label={`Delete ${contact.email}`}
+                          title="Delete contact"
                         >
                           <Trash2Icon />
                         </Button>
@@ -1019,6 +1236,8 @@ export default function AudiencePage() {
                   <TableCell colSpan={6}>
                     <ContactsEmptyState
                       hasContacts={contacts.length > 0}
+                      onImport={() => setImportOpen(true)}
+                      onAdd={() => setAddOpen(true)}
                       onClear={() => {
                         setQuery("");
                         clearAllFilters();
@@ -1060,13 +1279,13 @@ export default function AudiencePage() {
                     href="#"
                     onClick={(event) => {
                       event.preventDefault();
-                      setPage((current) => Math.max(1, current - 1));
+                      setPage(Math.max(1, currentPage - 1));
                     }}
-                    aria-disabled={page === 1}
-                    tabIndex={page === 1 ? -1 : undefined}
+                    aria-disabled={currentPage === 1}
+                    tabIndex={currentPage === 1 ? -1 : undefined}
                   />
                 </PaginationItem>
-                {paginationRange(page, pageCount).map((entry, index) =>
+                {paginationRange(currentPage, pageCount).map((entry, index) =>
                   entry === "ellipsis" ? (
                     <PaginationItem key={`ellipsis-${index}`}>
                       <PaginationEllipsis />
@@ -1075,7 +1294,7 @@ export default function AudiencePage() {
                     <PaginationItem key={entry}>
                       <PaginationLink
                         href="#"
-                        isActive={entry === page}
+                        isActive={entry === currentPage}
                         onClick={(event) => {
                           event.preventDefault();
                           setPage(entry);
@@ -1091,10 +1310,10 @@ export default function AudiencePage() {
                     href="#"
                     onClick={(event) => {
                       event.preventDefault();
-                      setPage((current) => Math.min(pageCount, current + 1));
+                      setPage(Math.min(pageCount, currentPage + 1));
                     }}
-                    aria-disabled={page === pageCount}
-                    tabIndex={page === pageCount ? -1 : undefined}
+                    aria-disabled={currentPage === pageCount}
+                    tabIndex={currentPage === pageCount ? -1 : undefined}
                   />
                 </PaginationItem>
               </PaginationContent>
@@ -1121,25 +1340,51 @@ export default function AudiencePage() {
               setManageCategoriesOpen(true);
             }}
           >
-            <TagIcon data-icon="inline-start" />
+            <FolderIcon data-icon="inline-start" />
             Add to folders
           </Button>
+          {selectedHasSuppressed ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full"
+              onClick={() => void unsuppress(selectedContacts())}
+              disabled={bulkBusy !== null}
+            >
+              {bulkBusy === "unsuppress" ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RotateCcwIcon data-icon="inline-start" />
+              )}
+              Unsuppress
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
             className="rounded-full"
-            onClick={bulkSuppress}
+            onClick={() => void bulkSuppress()}
+            disabled={bulkBusy !== null}
           >
-            <BanIcon data-icon="inline-start" />
+            {bulkBusy === "suppress" ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <BanIcon data-icon="inline-start" />
+            )}
             Suppress
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="rounded-full text-destructive hover:text-destructive"
-            onClick={bulkDelete}
+            onClick={() => void bulkDelete()}
+            disabled={bulkBusy !== null}
           >
-            <Trash2Icon data-icon="inline-start" />
+            {bulkBusy === "delete" ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Trash2Icon data-icon="inline-start" />
+            )}
             Delete
           </Button>
         </SelectionPill>
@@ -1181,10 +1426,11 @@ export default function AudiencePage() {
           onClose={() => setImportOpen(false)}
           onDone={(summary) => {
             setImportOpen(false);
-            showToast(
-              `${summary.imported} contact${summary.imported === 1 ? "" : "s"} imported`,
+            toast.success(
+              `${summary.imported.toLocaleString()} contact${summary.imported === 1 ? "" : "s"} imported`,
             );
-            load();
+            dispatchAudienceChanged();
+            void load();
           }}
         />
       )}
@@ -1195,7 +1441,7 @@ export default function AudiencePage() {
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
             <DialogDescription>
-              Create a new category folder to organize your contacts.
+              Folders group contacts so you can send a campaign to just one group.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -1227,7 +1473,7 @@ export default function AudiencePage() {
         </DialogPopup>
       </Dialog>
 
-      {/* Manage categories dialog for selection */}
+      {/* "Add to folders" dialog for the selection */}
       <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>
         <DialogPopup className="sm:max-w-md">
           <DialogHeader>
@@ -1445,30 +1691,37 @@ export default function AudiencePage() {
         </SheetContent>
       </Sheet>
 
-      {/* Toast notification */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-card-foreground shadow-lg">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: Contact["status"] }) {
+function StatusBadge({
+  status,
+  reason,
+}: {
+  status: Contact["status"];
+  reason: string | null;
+}) {
+  // The label names the reason ("Unsubscribed", "Complained"), and a locked
+  // suppression says on hover why it can't be undone.
+  const explanation = lockedSuppressionExplanation(reason);
   return (
-    <Badge variant={STATUS_BADGE_VARIANTS[status]}>
+    <Badge variant={STATUS_BADGE_VARIANTS[status]} title={explanation ?? undefined}>
       <span className="size-1.5 rounded-full bg-current" />
-      {STATUS_LABELS[status]}
+      {reason ? suppressionLabel(reason) : STATUS_LABELS[status]}
     </Badge>
   );
 }
 
 function ContactsEmptyState({
   hasContacts,
+  onImport,
+  onAdd,
   onClear,
 }: {
   hasContacts: boolean;
+  onImport: () => void;
+  onAdd: () => void;
   onClear: () => void;
 }) {
   return (
@@ -1480,21 +1733,32 @@ function ContactsEmptyState({
           </IconStack>
         </EmptyMedia>
         <EmptyTitle>
-          {hasContacts ? "No contacts match your filters" : "No audience contacts yet"}
+          {hasContacts ? "No contacts match your filters" : "No contacts yet"}
         </EmptyTitle>
         <EmptyDescription>
           {hasContacts
             ? "Try a different search term or clear the active filter."
-            : "Import a list or add recipients one at a time."}
+            : "Import a list or add contacts one at a time."}
         </EmptyDescription>
       </EmptyHeader>
-      {hasContacts && (
-        <EmptyContent>
+      <EmptyContent>
+        {hasContacts ? (
           <Button variant="outline" onClick={onClear}>
             Clear filters
           </Button>
-        </EmptyContent>
-      )}
+        ) : (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={onImport}>
+              <UploadIcon data-icon="inline-start" />
+              Import contacts
+            </Button>
+            <Button variant="outline" onClick={onAdd}>
+              <PlusIcon data-icon="inline-start" />
+              Add contact
+            </Button>
+          </div>
+        )}
+      </EmptyContent>
     </Empty>
   );
 }
@@ -1540,9 +1804,9 @@ function AddContactDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add recipient</DialogTitle>
+          <DialogTitle>Add contact</DialogTitle>
           <DialogDescription>
-            Add a single recipient or jump into the importer for a larger list.
+            Add a single contact or jump into the importer for a larger list.
           </DialogDescription>
         </DialogHeader>
 

@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { CheckCircle2Icon, FileSpreadsheetIcon, UploadIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  FileSpreadsheetIcon,
+  RotateCcwIcon,
+  UploadIcon,
+} from "lucide-react";
 
+import { useAsyncData } from "@/components/data-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +35,12 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
@@ -42,21 +50,44 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { errorMessage, fetchJson } from "@/lib/fetch-json";
+import {
+  IMPORT_MAX_ROWS_PER_FILE,
+  addImportSummary,
+  chunkRows,
+  describeStoppedImport,
+  emptyImportSummary,
+  importPercent,
+  remainingAutomationBudget,
+  type ImportSummary,
+} from "@/lib/import/batches";
 import { cn } from "@/lib/utils";
 
-type Summary = {
-  received: number;
-  imported: number;
-  duplicates: number;
-  invalid: number;
-  suppressed: number;
-  deadDomain?: number;
-  disposable?: number;
-  roleFlagged?: number;
-  typos?: number;
-};
+export type { ImportSummary };
+
+const AUDIENCE_IMPORT_ENDPOINT = "/api/audience/import";
+const NEW_FOLDER = "__new__";
 
 type Parsed = { headers: string[]; rows: string[][]; fileName: string };
+type Contact = { email: string; name: string };
+type Folder = { id: string; name: string };
+
+type ChunkResponse = {
+  summary?: Partial<Record<keyof ImportSummary, unknown>>;
+  automationsQueued?: unknown;
+};
+
+// One import of one file, sent in chunks (lib/import/batches.ts). `next` is
+// the first chunk not yet saved, so Retry / Resume picks up there instead of
+// sending the whole file again.
+type ImportRun = {
+  chunks: Contact[][];
+  next: number;
+  total: ImportSummary;
+  automationsQueued: number;
+  folderId: string | null;
+  error: string | null;
+};
 
 function norm(header: string) {
   return header.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -85,20 +116,43 @@ function guessColumn(headers: string[], kind: "email" | "name"): number {
 }
 
 export function ImportWizard({
-  endpoint = "/api/audience/import",
+  endpoint = AUDIENCE_IMPORT_ENDPOINT,
+  showFolderPicker = endpoint === AUDIENCE_IMPORT_ENDPOINT,
+  defaultFolderId,
   onClose,
   onDone,
 }: {
   endpoint?: string;
+  /** Offer "Add to folder". Only the audience import supports folders. */
+  showFolderPicker?: boolean;
+  /** Folder to preselect, e.g. the one the contacts page is filtered to. */
+  defaultFolderId?: string;
   onClose: () => void;
-  onDone: (summary: Summary) => void;
+  onDone: (summary: ImportSummary) => void;
 }) {
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [emailCol, setEmailCol] = useState<number>(-1);
   const [nameCol, setNameCol] = useState<number>(-1);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [committing, setCommitting] = useState(false);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [folderChoice, setFolderChoice] = useState(defaultFolderId ?? "");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [run, setRun] = useState<ImportRun | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const stopRequested = useRef(false);
+
+  // Sending is folder-first, so an import should land in a folder. The list
+  // is read here rather than passed in, so every caller of the wizard gets it.
+  const folders = useAsyncData<Folder[]>(async () => {
+    if (!showFolderPicker) return [];
+    const data = await fetchJson<{ categories?: Folder[] }>(
+      "/api/audience/categories",
+    );
+    return (data.categories ?? []).map(({ id, name }) => ({ id, name }));
+  }, [showFolderPicker]);
+
+  // Once a chunk is saved, the mapping and folder are fixed for this run.
+  const started = run !== null && run.next > 0;
 
   function ingest(headers: string[], rows: string[][], fileName: string) {
     const clean = headers.map((header) => (header ?? "").toString().trim());
@@ -106,6 +160,7 @@ export function ImportWizard({
     setEmailCol(guessColumn(clean, "email"));
     setNameCol(guessColumn(clean, "name"));
     setParseError(null);
+    setRun(null);
   }
 
   function onFile(file: File) {
@@ -155,7 +210,7 @@ export function ImportWizard({
     reader.readAsArrayBuffer(file);
   }
 
-  const contacts = useMemo(() => {
+  const contacts = useMemo<Contact[]>(() => {
     if (!parsed || emailCol < 0) return [];
     return parsed.rows
       .map((row) => ({
@@ -165,26 +220,102 @@ export function ImportWizard({
       .filter((contact) => contact.email);
   }, [parsed, emailCol, nameCol]);
 
-  async function commit() {
-    setCommitting(true);
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contacts }),
-      }).then((result) => result.json());
+  const tooMany = contacts.length > IMPORT_MAX_ROWS_PER_FILE;
 
-      if (response.ok) setSummary(response.summary);
-      else setParseError(response.error || "Import failed");
-    } catch {
-      setParseError("Could not reach the server.");
+  // A change before anything was saved starts the run over.
+  function resetUnstartedRun() {
+    if (run && run.next === 0) setRun(null);
+  }
+
+  async function resolveFolderId(): Promise<string | null> {
+    if (!showFolderPicker || !folderChoice) return null;
+    if (folderChoice !== NEW_FOLDER) return folderChoice;
+    const name = newFolderName.trim();
+    if (!name) throw new Error("Name the new folder, or choose an existing one.");
+    const data = await fetchJson<{ category: Folder }>("/api/audience/categories", {
+      method: "POST",
+      json: { action: "create", name },
+    });
+    const created = { id: data.category.id, name: data.category.name };
+    // Select it, so a retry reuses this folder instead of creating another.
+    folders.setData((list) => [created, ...list]);
+    setFolderChoice(created.id);
+    setNewFolderName("");
+    return created.id;
+  }
+
+  async function startOrResume() {
+    if (importing || tooMany || contacts.length === 0) return;
+    setImporting(true);
+    setParseError(null);
+    stopRequested.current = false;
+
+    let current: ImportRun | null = run;
+    try {
+      if (!current) {
+        const folderId = await resolveFolderId();
+        current = {
+          chunks: chunkRows(contacts),
+          next: 0,
+          total: emptyImportSummary(),
+          automationsQueued: 0,
+          folderId,
+          error: null,
+        };
+      }
+      current = { ...current, error: null };
+      setRun(current);
+
+      while (current.next < current.chunks.length) {
+        const response: ChunkResponse = await fetchJson<ChunkResponse>(endpoint, {
+          method: "POST",
+          json: {
+            contacts: current.chunks[current.next],
+            categoryId: current.folderId ?? undefined,
+            automationBudget: remainingAutomationBudget(current.automationsQueued),
+          },
+        });
+        const queued = Number(response.automationsQueued ?? 0);
+        current = {
+          ...current,
+          next: current.next + 1,
+          total: addImportSummary(current.total, response.summary ?? {}),
+          automationsQueued:
+            current.automationsQueued + (Number.isFinite(queued) ? queued : 0),
+        };
+        setRun(current);
+        if (stopRequested.current) break;
+      }
+
+      if (current.next >= current.chunks.length) setSummary(current.total);
+    } catch (error) {
+      const message = errorMessage(error, "Import failed. Try again.");
+      if (current) setRun({ ...current, error: message });
+      else setParseError(message); // the new folder could not be created
     } finally {
-      setCommitting(false);
+      setImporting(false);
     }
   }
 
+  function close() {
+    if (importing) {
+      // Finish the chunk in flight, then pause. Closing mid-request would
+      // leave nobody knowing whether that chunk was saved.
+      stopRequested.current = true;
+      return;
+    }
+    // Some chunks were saved: report them so the list behind refreshes.
+    if (run && run.next > 0) onDone(run.total);
+    else onClose();
+  }
+
+  const runFolderName =
+    run?.folderId != null
+      ? (folders.data?.find((folder) => folder.id === run.folderId)?.name ?? null)
+      : null;
+
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogPopup className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
@@ -202,17 +333,43 @@ export function ImportWizard({
 
         <DialogPanel>
         {summary ? (
-          <SummaryStep summary={summary} />
+          <SummaryStep summary={summary} folderName={runFolderName} />
         ) : parsed ? (
           <MapStep
             parsed={parsed}
             emailCol={emailCol}
             nameCol={nameCol}
             contacts={contacts}
+            tooMany={tooMany}
             parseError={parseError}
-            committing={committing}
-            setEmailCol={setEmailCol}
-            setNameCol={setNameCol}
+            locked={started || importing}
+            setEmailCol={(value) => {
+              setEmailCol(value);
+              resetUnstartedRun();
+            }}
+            setNameCol={(value) => {
+              setNameCol(value);
+              resetUnstartedRun();
+            }}
+            folderPicker={
+              showFolderPicker ? (
+                <FolderPicker
+                  folders={folders.data ?? []}
+                  loading={folders.status === "loading"}
+                  loadError={folders.status === "error" ? folders.error : null}
+                  onRetryLoad={() => void folders.reload()}
+                  value={folderChoice}
+                  onChange={(value) => {
+                    setFolderChoice(value);
+                    resetUnstartedRun();
+                  }}
+                  newFolderName={newFolderName}
+                  onNewFolderNameChange={setNewFolderName}
+                  disabled={started || importing}
+                />
+              ) : null
+            }
+            progress={run ? <ImportProgress run={run} importing={importing} /> : null}
           />
         ) : (
           <UploadStep parseError={parseError} onFile={onFile} />
@@ -229,17 +386,51 @@ export function ImportWizard({
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
+          ) : importing ? (
+            <>
+              <Button variant="outline" onClick={close}>
+                Pause
+              </Button>
+              <Button disabled>
+                <Spinner data-icon="inline-start" />
+                Importing...
+              </Button>
+            </>
+          ) : started ? (
+            <>
+              <Button variant="outline" onClick={close}>
+                Close
+              </Button>
+              <Button onClick={startOrResume}>
+                <RotateCcwIcon data-icon="inline-start" />
+                {run?.error ? "Retry" : "Resume"} from batch {(run?.next ?? 0) + 1}
+              </Button>
+            </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setParsed(null)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setParsed(null);
+                  setRun(null);
+                }}
+              >
                 Back
               </Button>
               <Button
-                onClick={commit}
-                disabled={committing || emailCol < 0 || contacts.length === 0}
+                onClick={startOrResume}
+                disabled={
+                  emailCol < 0 ||
+                  contacts.length === 0 ||
+                  tooMany ||
+                  (showFolderPicker &&
+                    folderChoice === NEW_FOLDER &&
+                    !newFolderName.trim())
+                }
               >
-                {committing && <Spinner data-icon="inline-start" />}
-                {committing ? "Importing..." : `Import ${contacts.length}`}
+                {run?.error
+                  ? "Retry"
+                  : `Import ${contacts.length.toLocaleString()}`}
               </Button>
             </>
           )}
@@ -270,7 +461,8 @@ function UploadStep({
             Choose a CSV or Excel file
           </span>
           <span className="text-sm text-muted-foreground">
-            Columns are mapped in the next step.
+            Up to {IMPORT_MAX_ROWS_PER_FILE.toLocaleString()} rows. Columns are
+            mapped in the next step.
           </span>
         </span>
         <Button type="button" variant="outline" asChild>
@@ -306,25 +498,33 @@ function MapStep({
   emailCol,
   nameCol,
   contacts,
+  tooMany,
   parseError,
-  committing,
+  locked,
   setEmailCol,
   setNameCol,
+  folderPicker,
+  progress,
 }: {
   parsed: Parsed;
   emailCol: number;
   nameCol: number;
-  contacts: { email: string; name: string }[];
+  contacts: Contact[];
+  tooMany: boolean;
   parseError: string | null;
-  committing: boolean;
+  /** True once the import has begun: the mapping can no longer change. */
+  locked: boolean;
   setEmailCol: (value: number) => void;
   setNameCol: (value: number) => void;
+  folderPicker: ReactNode;
+  progress: ReactNode;
 }) {
   return (
     <FieldGroup className="gap-5">
       <p className="text-sm text-muted-foreground">
         <span className="font-medium text-foreground">{parsed.fileName}</span> has{" "}
-        {parsed.rows.length} row{parsed.rows.length === 1 ? "" : "s"}.
+        {parsed.rows.length.toLocaleString()} row
+        {parsed.rows.length === 1 ? "" : "s"}.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -334,6 +534,7 @@ function MapStep({
           value={emailCol}
           headers={parsed.headers}
           onChange={setEmailCol}
+          disabled={locked}
         />
         <Mapper
           label="Name column (optional)"
@@ -341,8 +542,11 @@ function MapStep({
           headers={parsed.headers}
           onChange={setNameCol}
           allowNone
+          disabled={locked}
         />
       </div>
+
+      {folderPicker}
 
       <div className="overflow-hidden rounded-lg border border-border">
         <Table>
@@ -372,10 +576,21 @@ function MapStep({
         </Table>
       </div>
 
-      <FieldDescription>
-        {contacts.length} row{contacts.length === 1 ? "" : "s"} with an email
-        will be checked for duplicates, invalid syntax, and unsubscribes.
-      </FieldDescription>
+      {tooMany ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            This file has {contacts.length.toLocaleString()} rows with an email.
+            One import takes up to {IMPORT_MAX_ROWS_PER_FILE.toLocaleString()}.
+            Split the file and import each part.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <FieldDescription>
+          {contacts.length.toLocaleString()} row{contacts.length === 1 ? "" : "s"}{" "}
+          with an email will be checked for duplicates, invalid syntax, and
+          unsubscribes.
+        </FieldDescription>
+      )}
 
       {parseError && (
         <Alert variant="destructive">
@@ -383,13 +598,128 @@ function MapStep({
         </Alert>
       )}
 
-      {committing && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner />
-          Importing contacts...
-        </div>
-      )}
+      {progress}
     </FieldGroup>
+  );
+}
+
+function FolderPicker({
+  folders,
+  loading,
+  loadError,
+  onRetryLoad,
+  value,
+  onChange,
+  newFolderName,
+  onNewFolderNameChange,
+  disabled,
+}: {
+  folders: Folder[];
+  loading: boolean;
+  loadError: string | null;
+  onRetryLoad: () => void;
+  value: string;
+  onChange: (value: string) => void;
+  newFolderName: string;
+  onNewFolderNameChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  // A preselected folder that isn't in the list (deleted, or still loading)
+  // still shows as chosen rather than silently falling back to "No folder".
+  const unknownChoice =
+    value && value !== NEW_FOLDER && !folders.some((folder) => folder.id === value);
+
+  return (
+    <Field>
+      <FieldLabel htmlFor="import-folder">Add to folder</FieldLabel>
+      <NativeSelect
+        id="import-folder"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        className="w-full"
+      >
+        <NativeSelectOption value="">No folder</NativeSelectOption>
+        {unknownChoice && (
+          <NativeSelectOption value={value}>
+            {loading ? "Loading folders…" : "Selected folder"}
+          </NativeSelectOption>
+        )}
+        {folders.map((folder) => (
+          <NativeSelectOption key={folder.id} value={folder.id}>
+            {folder.name}
+          </NativeSelectOption>
+        ))}
+        <NativeSelectOption value={NEW_FOLDER}>New folder…</NativeSelectOption>
+      </NativeSelect>
+      {value === NEW_FOLDER && (
+        <Input
+          value={newFolderName}
+          onChange={(event) => onNewFolderNameChange(event.target.value)}
+          placeholder="Folder name"
+          aria-label="New folder name"
+          disabled={disabled}
+        />
+      )}
+      {loadError ? (
+        <FieldDescription className="text-destructive">
+          Couldn&apos;t load your folders: {loadError}{" "}
+          <button
+            type="button"
+            onClick={onRetryLoad}
+            className="cursor-pointer underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </FieldDescription>
+      ) : (
+        <FieldDescription>
+          Campaigns are sent to folders. Contacts already in your audience are
+          added to the folder too.
+        </FieldDescription>
+      )}
+    </Field>
+  );
+}
+
+function ImportProgress({
+  run,
+  importing,
+}: {
+  run: ImportRun;
+  importing: boolean;
+}) {
+  const count = run.chunks.length;
+  const done = run.next >= count;
+  return (
+    <div className="flex flex-col gap-2" aria-live="polite">
+      <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span>
+          {importing
+            ? `Importing batch ${Math.min(run.next + 1, count)} of ${count}…`
+            : done
+              ? "All batches imported."
+              : run.error
+                ? `Stopped after ${run.next} of ${count} batches.`
+                : `Paused after ${run.next} of ${count} batches.`}
+        </span>
+        <span className="tabular-nums">
+          {run.total.imported.toLocaleString()} new so far
+        </span>
+      </div>
+      <Progress
+        value={importPercent(run.next, count)}
+        className="h-1.5"
+        aria-label="Import progress"
+      />
+      {run.error && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {describeStoppedImport(run.total, run.next, count)} {run.error}
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
   );
 }
 
@@ -400,6 +730,7 @@ function Mapper({
   onChange,
   required,
   allowNone,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -407,6 +738,7 @@ function Mapper({
   onChange: (value: number) => void;
   required?: boolean;
   allowNone?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Field>
@@ -418,6 +750,7 @@ function Mapper({
         id={label}
         value={String(value)}
         onChange={(event) => onChange(Number(event.target.value))}
+        disabled={disabled}
         className="w-full"
       >
         {allowNone && <NativeSelectOption value="-1">None</NativeSelectOption>}
@@ -434,11 +767,14 @@ function Mapper({
   );
 }
 
-function SummaryStep({ summary }: { summary: Summary }) {
-  const deadDomain = summary.deadDomain ?? 0;
-  const disposable = summary.disposable ?? 0;
-  const roleFlagged = summary.roleFlagged ?? 0;
-  const typos = summary.typos ?? 0;
+function SummaryStep({
+  summary,
+  folderName,
+}: {
+  summary: ImportSummary;
+  folderName: string | null;
+}) {
+  const { deadDomain, disposable, roleFlagged, typos } = summary;
 
   return (
     <div className="flex flex-col gap-5">
@@ -465,12 +801,16 @@ function SummaryStep({ summary }: { summary: Summary }) {
         <Stat n={typos} label="Typos (kept)" tone="muted" />
       </div>
       <p className="text-sm text-muted-foreground">
-        {summary.imported} new contact{summary.imported === 1 ? "" : "s"} added
-        from {summary.received} row{summary.received === 1 ? "" : "s"}. Invalid,
-        dead-domain, disposable, duplicate, and suppressed addresses were skipped
-        automatically.
+        {summary.imported.toLocaleString()} new contact
+        {summary.imported === 1 ? "" : "s"} added from{" "}
+        {summary.received.toLocaleString()} row
+        {summary.received === 1 ? "" : "s"}. Invalid, dead-domain, disposable,
+        duplicate, and suppressed addresses were skipped automatically.
         {roleFlagged + typos > 0
           ? " Role addresses and likely typos were imported but flagged for you to review."
+          : ""}
+        {folderName
+          ? ` ${summary.addedToFolder.toLocaleString()} contact${summary.addedToFolder === 1 ? " is" : "s are"} now in the folder “${folderName}”.`
           : ""}
       </p>
     </div>
@@ -497,7 +837,7 @@ function Stat({
             tone === "destructive" && "text-destructive",
           )}
         >
-          {n}
+          {n.toLocaleString()}
         </CardTitle>
         <CardDescription>{label}</CardDescription>
       </CardHeader>
