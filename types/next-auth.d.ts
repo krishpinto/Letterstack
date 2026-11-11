@@ -6,6 +6,9 @@ declare module "next-auth" {
       id: string;
       email: string;
       name?: string | null;
+      // Whether the account has proven it owns `email`. Re-read from the
+      // database on every request by the jwt callback in lib/auth.ts.
+      hasVerifiedEmail: boolean;
     };
   }
 }
@@ -15,5 +18,6 @@ declare module "@auth/core/jwt" {
     id?: string;
     // users.session_version at sign-in; a mismatch signs the session out.
     sv?: number;
+    emailVerified?: boolean;
   }
 }

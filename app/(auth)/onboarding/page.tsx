@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   ArrowRightIcon,
   BriefcaseBusinessIcon,
@@ -51,6 +52,9 @@ const orgTypeCopy: Record<
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const unverifiedEmail =
+    session?.user && !session.user.hasVerifiedEmail ? session.user.email : null;
   const [orgType, setOrgType] = useState<OrgType>("business");
   const [orgName, setOrgName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +107,25 @@ export default function OnboardingPage() {
             <CardContent>
               <form onSubmit={handleSubmit}>
                 <FieldGroup>
+                  {unverifiedEmail && (
+                    <Alert>
+                      <AlertDescription>
+                        <span>
+                          We sent a confirmation link to{" "}
+                          <span className="font-medium text-foreground">
+                            {unverifiedEmail}
+                          </span>
+                          . Confirm it before your first send.{" "}
+                          <Link
+                            href="/verify-email"
+                            className="font-medium text-foreground underline underline-offset-4"
+                          >
+                            Didn&apos;t get it?
+                          </Link>
+                        </span>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <Field>
                     <FieldLabel>Organization type</FieldLabel>
                     <ToggleGroup

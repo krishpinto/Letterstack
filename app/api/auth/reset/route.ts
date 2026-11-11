@@ -1,6 +1,6 @@
 // POST — finish a password reset: redeem the emailed token (single-use,
 // 1-hour expiry) and set the new password. Also signs out every existing
-// session (see resetPassword).
+// session and counts as proof the person owns the email (see resetPassword).
 
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";

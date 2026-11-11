@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sessionIsCurrent } from "./auth-rules";
+import { planGoogleClaim, sessionIsCurrent } from "./auth-rules";
 
 const state = (sessionVersion: number) => ({
   email: "a@example.com",
+  emailVerifiedAt: new Date(),
   sessionVersion,
 });
 
@@ -22,5 +23,36 @@ describe("sessionIsCurrent", () => {
 
   it("rejects a token for a deleted account", () => {
     expect(sessionIsCurrent(0, null)).toBe(false);
+  });
+});
+
+describe("planGoogleClaim", () => {
+  it("creates an account when none exists", () => {
+    expect(planGoogleClaim(null, "Ada")).toEqual({ kind: "create" });
+  });
+
+  it("links to an account that already proved its email", () => {
+    expect(planGoogleClaim({ emailVerifiedAt: new Date(), name: "Ada" }, "Ada G")).toEqual({
+      kind: "link",
+      backfillName: false,
+    });
+  });
+
+  it("takes over an account whose email was never proven", () => {
+    expect(planGoogleClaim({ emailVerifiedAt: null, name: "Ada" }, "Ada")).toEqual({
+      kind: "takeover",
+      backfillName: false,
+    });
+  });
+
+  it("backfills a missing name from Google", () => {
+    expect(planGoogleClaim({ emailVerifiedAt: null, name: null }, "Ada")).toEqual({
+      kind: "takeover",
+      backfillName: true,
+    });
+    expect(planGoogleClaim({ emailVerifiedAt: new Date(), name: null }, null)).toEqual({
+      kind: "link",
+      backfillName: false,
+    });
   });
 });
