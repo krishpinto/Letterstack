@@ -100,8 +100,12 @@ token, and will tell you what is missing rather than failing quietly.
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm run db:push` | Push schema changes with Drizzle |
+| `npm run db:generate` | Draft SQL for a `db/schema.ts` change (never applied as is) |
+| `npm run db:push` | Create the schema on a new, empty database. Refuses production; see [docs/database.md](docs/database.md) |
 | `npm run db:studio` | Open Drizzle Studio |
+
+Schema changes to an existing database are hand-written SQL. See
+[docs/database.md](docs/database.md).
 
 ## Deployment
 
