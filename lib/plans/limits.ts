@@ -41,6 +41,12 @@ export type PlanLimits = {
    * threshold for everybody.
    */
   apiRequestsPerMonth: number;
+  /**
+   * Signup forms a workspace may create. Checked on create only: forms that
+   * already exist keep collecting signups after a downgrade. Infinity means
+   * no cap.
+   */
+  signupForms: number;
 
   // ── Presentation. Read by the pricing page and the billing panel. ──
 
@@ -78,6 +84,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     domains: 1,
     workspaces: 1,
     apiRequestsPerMonth: 0,
+    signupForms: 1,
     rank: 0,
     blurb: "Build a real campaign and send it to a small test list.",
     monthlyPrice: 0,
@@ -94,6 +101,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     domains: 2,
     workspaces: 3,
     apiRequestsPerMonth: 10_000,
+    signupForms: Number.POSITIVE_INFINITY,
     rank: 1,
     blurb: "For a newsletter going out to a few thousand people.",
     monthlyPrice: 1_000,
@@ -107,6 +115,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     domains: 5,
     workspaces: 5,
     apiRequestsPerMonth: 50_000,
+    signupForms: Number.POSITIVE_INFINITY,
     rank: 2,
     blurb: "For orgs sending to a larger list, more than once a month.",
     monthlyPrice: 2_500,
@@ -130,6 +139,7 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
     domains: 10,
     workspaces: 10,
     apiRequestsPerMonth: 250_000,
+    signupForms: Number.POSITIVE_INFINITY,
     rank: 3,
     blurb: "For high-volume senders who need room past Growth.",
     monthlyPrice: null,
@@ -228,7 +238,7 @@ export function nextPlanUp(plan: PlanKey | string): PlanKey | null {
  * which limit and what to do about it.
  */
 export function limitMessage(
-  what: "contacts" | "emails" | "domains" | "workspaces" | "api",
+  what: "contacts" | "emails" | "domains" | "workspaces" | "api" | "signupForms",
   plan: PlanKey | string,
   attempted?: number,
 ): string {
@@ -252,6 +262,11 @@ export function limitMessage(
       return (
         `${limits.label} plans include ${limits.workspaces} workspace${limits.workspaces === 1 ? "" : "s"}. ` +
         `Your existing workspaces aren't affected — you just can't add another. ${upgrade}`
+      );
+    case "signupForms":
+      return (
+        `${limits.label} plans include ${limits.signupForms} signup form${limits.signupForms === 1 ? "" : "s"}. ` +
+        `Your existing forms keep working — you just can't add another. ${upgrade}`
       );
     case "api":
       // Two different walls share this message: no API on the tier at all,

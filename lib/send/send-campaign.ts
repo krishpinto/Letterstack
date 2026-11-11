@@ -189,7 +189,7 @@ async function sendBatchRows(
     try {
       const personalized = personalizeUnsubscribe(
         content,
-        unsubscribePageUrl(base, userId, row.email),
+        unsubscribePageUrl(base, organizationId, userId, row.email),
       );
       await sendEmail({
         to: row.email,
@@ -199,7 +199,7 @@ async function sendBatchRows(
         fromName: content.fromName,
         fromEmail: content.fromEmail,
         replyTo: content.replyTo,
-        listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
+        listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, userId, row.email),
         tags,
       });
     } catch (err) {

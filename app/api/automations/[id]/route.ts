@@ -4,7 +4,10 @@ import {
   getAutomation,
   updateAutomation,
 } from "@/db/automations";
+import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { isValidFlow, type AutomationFlow } from "@/lib/automations/flow";
+import { disallowedSenders, withNormalizedSenders } from "@/lib/automations/senders";
+import { enableProblem } from "@/lib/automations/validate";
 import { currentOrganizationId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -72,7 +75,40 @@ export async function PATCH(
       if (!isValidFlow(body.flow)) {
         return NextResponse.json({ ok: false, error: "Invalid flow" }, { status: 400 });
       }
-      patch.flow = body.flow;
+      patch.flow = withNormalizedSenders(body.flow);
+    }
+
+    const existing = await getAutomation(id, organizationId);
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: "Automation not found" }, { status: 404 });
+    }
+
+    // A live automation must have a trigger and at least one finished step.
+    // Checked when it is switched on and when its flow is saved while live,
+    // so emptying a running flow can't leave it "on" doing nothing. Drafts
+    // may be saved half-finished.
+    const willBeEnabled = (patch.status ?? existing.status) === "enabled";
+    if (willBeEnabled && (patch.flow || patch.status === "enabled")) {
+      const problem = enableProblem(patch.flow ?? (existing.flow as AutomationFlow));
+      if (problem) {
+        return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+      }
+    }
+
+    // Check senders whenever a flow is saved or switched on. Turning on an
+    // older flow re-checks it too, since its domain may have been removed.
+    if (patch.flow || patch.status === "enabled") {
+      const flow = patch.flow ?? (existing.flow as AutomationFlow);
+      const bad = disallowedSenders(flow, await listVerifiedSendingDomains(organizationId));
+      if (bad.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Automations can only send from the shared address or an address on one of this workspace's verified domains. Not allowed: ${bad.join(", ")}`,
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const automation = await updateAutomation(id, organizationId, patch);

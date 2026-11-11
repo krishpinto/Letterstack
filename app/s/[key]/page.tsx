@@ -1,7 +1,7 @@
 // Hosted subscribe page — the "one link" flavor of a signup form. A customer can
 // link straight to /s/<key> (site nav, bio, QR code) and visitors subscribe here
-// without any embedding. Same double opt-in as the embed: this only kicks off
-// the confirmation email.
+// without any embedding. Same single opt-in as the embed: a valid submission
+// joins the audience straight away.
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";

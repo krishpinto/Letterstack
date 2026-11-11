@@ -126,7 +126,7 @@ async function sendGmailRows(
     try {
       const personalized = personalizeUnsubscribe(
         content,
-        unsubscribePageUrl(base, userId, row.email),
+        unsubscribePageUrl(base, organizationId, userId, row.email),
       );
       const sendOnce = async () => {
         const accessToken = await getValidAccessToken(mailbox);
@@ -138,7 +138,7 @@ async function sendGmailRows(
           fromName: content.fromName,
           fromEmail: mailbox.email,
           replyTo: content.replyTo,
-          listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
+          listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, userId, row.email),
         });
       };
 

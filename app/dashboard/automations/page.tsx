@@ -9,6 +9,8 @@ import {
   WorkflowIcon,
 } from "lucide-react";
 
+import { confirmDialog } from "@/components/app-dialogs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +72,7 @@ export default function AutomationsPage() {
   const [list, setList] = useState<AutomationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,25 +114,66 @@ export default function AutomationsPage() {
     setCreating(false);
   }
 
-  async function toggleStatus(automation: AutomationRow) {
-    const next = automation.status === "enabled" ? "disabled" : "enabled";
+  function setStatus(id: string, status: string) {
     setList((current) =>
-      current.map((item) =>
-        item.id === automation.id ? { ...item, status: next } : item,
-      ),
+      current.map((item) => (item.id === id ? { ...item, status } : item)),
     );
-    await fetch(`/api/automations/${automation.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    }).catch(() => void load());
   }
 
-  async function remove(id: string) {
-    setList((current) => current.filter((item) => item.id !== id));
-    await fetch(`/api/automations/${id}`, { method: "DELETE" }).catch(() =>
-      void load(),
-    );
+  async function toggleStatus(automation: AutomationRow) {
+    const previous = automation.status;
+    const next = previous === "enabled" ? "disabled" : "enabled";
+    setError(null);
+    // Flip optimistically, but put it back if the server refuses: a switch
+    // that stays "on" after a 400 tells the owner mail is going out when it
+    // isn't.
+    setStatus(automation.id, next);
+    try {
+      const r = await fetch(`/api/automations/${automation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) {
+        setStatus(automation.id, previous);
+        setError(
+          `Couldn't turn "${automation.name}" ${next === "enabled" ? "on" : "off"}: ${
+            data?.error || "the server refused the change."
+          }`,
+        );
+      }
+    } catch {
+      setStatus(automation.id, previous);
+      setError("Could not reach the server.");
+    }
+  }
+
+  async function remove(automation: AutomationRow) {
+    const ok = await confirmDialog({
+      title: `Delete ${automation.name || "this automation"}?`,
+      description:
+        automation.status === "enabled"
+          ? "It is live: it stops immediately, including for contacts partway through it. This cannot be undone."
+          : "This cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    setError(null);
+    setList((current) => current.filter((item) => item.id !== automation.id));
+    try {
+      const r = await fetch(`/api/automations/${automation.id}`, { method: "DELETE" });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.ok) {
+        setError(data?.error || "Could not delete the automation.");
+        void load();
+      }
+    } catch {
+      setError("Could not reach the server.");
+      void load();
+    }
   }
 
   return (
@@ -145,6 +189,12 @@ export default function AutomationsPage() {
           Create automation
         </Button>
       </header>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="rounded-xl border border-border">
         <Table>
@@ -245,7 +295,7 @@ export default function AutomationsPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           variant="destructive"
-                          onClick={() => remove(automation.id)}
+                          onClick={() => void remove(automation)}
                         >
                           <Trash2Icon />
                           Delete

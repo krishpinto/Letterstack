@@ -130,7 +130,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     for (const email of targets) {
       const personalized = personalizeUnsubscribe(
         { html: campaign.htmlSnapshot, text: campaign.textSnapshot },
-        unsubscribePageUrl(base, userId, email),
+        unsubscribePageUrl(base, campaign.organizationId, userId, email),
       );
       try {
         await sendEmail({
@@ -141,7 +141,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
           fromName: campaign.fromName,
           fromEmail: campaign.fromEmail,
           replyTo: campaign.replyTo ?? undefined,
-          listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, email),
+          listUnsubscribeUrl: unsubscribeOneClickUrl(base, campaign.organizationId, userId, email),
         });
         sent++;
       } catch (err) {

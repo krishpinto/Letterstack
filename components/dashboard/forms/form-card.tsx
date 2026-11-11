@@ -214,9 +214,23 @@ function FormDetailsDialog({
                 {copied === "embed" ? "Copied" : "Copy"}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Paste this one line wherever you want the form to appear.
-            </p>
+            {form.formType === "static" ? (
+              <p className="text-xs text-muted-foreground">
+                Paste this one line wherever you want the form to appear.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Paste this one line anywhere on the page.{" "}
+                {form.formType === "popup"
+                  ? "The popup opens a few seconds after a visitor arrives."
+                  : "The form slides into the corner shortly after a visitor arrives."}{" "}
+                To open it from your own button, add{" "}
+                <code className="font-mono">
+                  data-letterstack-open=&quot;{form.publicKey}&quot;
+                </code>{" "}
+                to it.
+              </p>
+            )}
           </div>
 
           {/* Hosted link */}
