@@ -13,6 +13,7 @@ import {
   updateOrganization,
 } from "@/db/organizations";
 import { requireOwner } from "@/lib/organizations/require-owner";
+import { releaseOrganizationDomainIdentities } from "@/lib/organizations/sending-domains";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,22 @@ export async function DELETE(
         error: "This is your only workspace — create another one before deleting this one.",
       },
       { status: 400 },
+    );
+  }
+
+  // The cascade removes the workspace's sending_domains rows but not their
+  // SES identities, which would stay verified for anyone to re-add. Release
+  // them first; if SES fails, keep the workspace so the delete can be retried.
+  try {
+    await releaseOrganizationDomainIdentities(id);
+  } catch (err) {
+    console.error("DELETE /api/organizations/[id]: releasing domains failed", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Could not disconnect this workspace's sending domains. Please try again.",
+      },
+      { status: 502 },
     );
   }
 

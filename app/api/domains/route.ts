@@ -3,8 +3,9 @@
 //
 // POST   { domain }  — register it in SES and attach it to the org (records returned)
 // GET                — all connected domains + live SES verification state + records
-// DELETE ?domain=x   — detach the domain from the org (SES identity is kept;
-//                      removing identities is an ops action via scripts/connect-domain.ts)
+// DELETE ?domain=x   — detach the domain from the org and delete its SES
+//                      identity, so nobody can inherit it verified (see
+//                      lib/send/domain-ownership.ts)
 
 import { type NextRequest, NextResponse } from "next/server";
 import { getOrganizationForUser } from "@/db/organizations";
@@ -15,13 +16,17 @@ import {
   sendingDomainLimitFor,
   setSendingDomainVerified,
 } from "@/db/sending-domains";
+import { disconnectSendingDomain } from "@/lib/organizations/sending-domains";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import {
+  configureDomainIdentity,
+  createDomainIdentity,
   getDomainIdentityStatus,
   isValidDomain,
-  registerDomainIdentity,
+  releaseDomainIdentity,
   type DomainIdentityStatus,
 } from "@/lib/send/domain-identity";
+import { decideAddIdentity, isPlatformDomain } from "@/lib/send/domain-ownership";
 import { baseSendingDomain } from "@/lib/send/sender-identity";
 
 export const runtime = "nodejs";
@@ -130,32 +135,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const base = baseSendingDomain();
-  if (domain === base || domain.endsWith(`.${base}`)) {
+  if (isPlatformDomain(domain, baseSendingDomain())) {
     return NextResponse.json(
       { ok: false, error: "That domain belongs to LetterStack — connect a domain you own." },
       { status: 400 },
     );
   }
 
+  let added: Awaited<ReturnType<typeof addSendingDomain>>;
   try {
-    const row = await addSendingDomain(organization.id, domain);
-    if (!row) {
-      const limit = await sendingDomainLimitFor(organization.id);
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `Your plan includes ${limit} sending domain${limit === 1 ? "" : "s"}. Disconnect one, or upgrade for more.`,
-        },
-        { status: 400 },
-      );
-    }
-
-    const status = await registerDomainIdentity(domain);
-    if (status.readyToSend !== Boolean(row.verifiedAt)) {
-      await setSendingDomainVerified(organization.id, domain, status.readyToSend);
-    }
-    return NextResponse.json(await domainsPayload(organization.id));
+    added = await addSendingDomain(organization.id, domain);
   } catch (err) {
     if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
       return NextResponse.json(
@@ -164,6 +153,68 @@ export async function POST(request: NextRequest) {
       );
     }
     console.error("POST /api/domains failed", err);
+    return NextResponse.json(
+      { ok: false, error: "Could not connect the domain. Please try again." },
+      { status: 500 },
+    );
+  }
+
+  if (!added) {
+    const limit = await sendingDomainLimitFor(organization.id);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `Your plan includes ${limit} sending domain${limit === 1 ? "" : "s"}. Disconnect one, or upgrade for more.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  const { row, created: rowCreated } = added;
+  let identityCreated = false;
+  try {
+    const identity = await createDomainIdentity(domain);
+    identityCreated = identity === "created";
+
+    const decision = decideAddIdentity({
+      identityExisted: identity === "exists",
+      connectedBeforeRequest: !rowCreated,
+    });
+    if (decision === "refuse") {
+      // The identity is orphaned or operator-managed, and may already be
+      // verified. Undo our row and leave the identity untouched.
+      await removeSendingDomain(organization.id, domain);
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This domain is already registered with our email provider. Contact support to release it.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const status = await configureDomainIdentity(domain);
+    if (status.readyToSend !== Boolean(row.verifiedAt)) {
+      await setSendingDomainVerified(organization.id, domain, status.readyToSend);
+    }
+    return NextResponse.json(await domainsPayload(organization.id));
+  } catch (err) {
+    console.error("POST /api/domains failed", err);
+    // Roll back what this request created, so a retry starts clean. Keeping
+    // the row would let the retry count as "connected before" and adopt
+    // whatever identity is in SES by then; keeping an identity we created
+    // without a row would orphan it.
+    if (rowCreated) {
+      await removeSendingDomain(organization.id, domain).catch((e) =>
+        console.error("POST /api/domains rollback (row) failed", e),
+      );
+      if (identityCreated) {
+        await releaseDomainIdentity(domain).catch((e) =>
+          console.error(`POST /api/domains rollback (SES identity ${domain}) failed`, e),
+        );
+      }
+    }
     return NextResponse.json(
       { ok: false, error: "Could not register the domain with SES. Please try again." },
       { status: 502 },
@@ -183,7 +234,22 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  await removeSendingDomain(organization.id, domain);
+  try {
+    const disconnected = await disconnectSendingDomain(organization.id, domain);
+    if (!disconnected) {
+      return NextResponse.json(
+        { ok: false, error: "That domain isn't connected to this workspace." },
+        { status: 404 },
+      );
+    }
+  } catch (err) {
+    console.error("DELETE /api/domains failed", err);
+    return NextResponse.json(
+      { ok: false, error: "Could not release the domain from SES. Please try again." },
+      { status: 502 },
+    );
+  }
+
   try {
     return NextResponse.json(await domainsPayload(organization.id));
   } catch {
