@@ -74,7 +74,15 @@ async function revokePlan(
       return "nothing";
     }
 
-    const org = await getOrganizationPlan(payment.organizationId);
+    // The workspace was deleted after the payment (the payment row outlives
+    // it); with no workspace there is no plan time left to take back.
+    const organizationId = payment.organizationId;
+    if (!organizationId) {
+      await markPlanRevoked(payment.id);
+      return "nothing";
+    }
+
+    const org = await getOrganizationPlan(organizationId);
     if (!org) return "nothing";
 
     const decision = decidePlanRevocation({
@@ -100,7 +108,7 @@ async function revokePlan(
 
     const applied = await revokePlanForPayment({
       paymentId: payment.id,
-      organizationId: payment.organizationId,
+      organizationId,
       expected: org,
       planExpiresAt: decision.expiresAt,
     });
