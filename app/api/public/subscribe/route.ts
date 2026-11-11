@@ -15,6 +15,7 @@ import {
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { addRecipient } from "@/db/recipients";
 import { checkContactHeadroom } from "@/lib/plans/guards";
+import { enqueueAutomationsForEvent } from "@/lib/automations/run";
 
 export const runtime = "nodejs";
 
@@ -96,12 +97,25 @@ export async function POST(request: Request) {
   }
 
   // Add straight to the audience. onConflictDoNothing returns null when the
-  // address is already present, so we only bump the tally on a new subscriber.
+  // address is already present, so only a new subscriber bumps the tally and
+  // fires "contact added" automations (the welcome flow). Someone already on
+  // the list re-submitting the form must not get the welcome email again.
   const inserted = await addRecipient(form.organizationId, form.userId, {
     email,
     name,
   });
-  if (inserted) await incrementSubscriberCount(form.id);
+  if (inserted) {
+    await incrementSubscriberCount(form.id);
+    // Never throws: an automation failure must not fail the signup.
+    await enqueueAutomationsForEvent(form.organizationId, "contact.added", [
+      {
+        id: inserted.id,
+        email: inserted.email,
+        name: inserted.name,
+        userId: inserted.userId,
+      },
+    ]);
+  }
 
   return json({ ok: true });
 }
