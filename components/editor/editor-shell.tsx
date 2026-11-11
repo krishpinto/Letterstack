@@ -127,6 +127,10 @@ type EditorView = "editor" | "html" | "preview"
 
 type PreviewViewport = "desktop" | "mobile"
 
+// One identity for the canvas's unused column callbacks, so they never make
+// memoized blocks re-render.
+const noop = () => {}
+
 // Clipboard write with an execCommand fallback for non-secure contexts.
 async function copyToClipboard(text: string) {
   if (navigator.clipboard?.writeText) {
@@ -724,32 +728,66 @@ export function EditorShell({
     setInsertTarget(null)
   }, [])
 
+  // Canvas callbacks are stable for the editor's lifetime (they read the
+  // selection through a ref), so memoized blocks on the canvas do not
+  // re-render just because the document changed somewhere else.
+  const selectedBlockIdRef = React.useRef(selectedBlockId)
+  React.useEffect(() => {
+    selectedBlockIdRef.current = selectedBlockId
+  }, [selectedBlockId])
+
+  const handleSelectBlock = React.useCallback((id: string) => {
+    setSelectedBlockId(id)
+    setRightPanel("block")
+  }, [])
+  const handleUpdateBlock = React.useCallback(
+    (id: string, updater: (block: EmailBlock) => EmailBlock) =>
+      updateDocument((current) => updateBlock(current, id, updater)),
+    [updateDocument]
+  )
+  const handleDuplicateBlock = React.useCallback(
+    (id: string) => updateDocument((current) => duplicateBlock(current, id)),
+    [updateDocument]
+  )
+  const handleRemoveBlock = React.useCallback(
+    (id: string) => {
+      updateDocument((current) => removeBlock(current, id))
+      if (selectedBlockIdRef.current === id) {
+        setSelectedBlockId("")
+        setRightPanel(null)
+      }
+    },
+    [updateDocument]
+  )
+  const handleReorderTop = React.useCallback(
+    (from: number, to: number) =>
+      updateDocument((current) => reorderBlocks(current, from, to)),
+    [updateDocument]
+  )
+
   const canvasValue = React.useMemo<CanvasContextValue>(
     () => ({
       document,
       selectedBlockId,
       insertTarget,
-      onSelect: (id) => {
-        setSelectedBlockId(id)
-        setRightPanel("block")
-      },
-      onUpdateBlock: (id, updater) =>
-        updateDocument((current) => updateBlock(current, id, updater)),
-      onDuplicate: (id) =>
-        updateDocument((current) => duplicateBlock(current, id)),
-      onRemove: (id) => {
-        updateDocument((current) => removeBlock(current, id))
-        if (selectedBlockId === id) {
-          setSelectedBlockId("")
-          setRightPanel(null)
-        }
-      },
-      onReorderTop: (from, to) =>
-        updateDocument((current) => reorderBlocks(current, from, to)),
-      onReorderColumn: () => {},
-      onAddToColumn: () => {},
+      onSelect: handleSelectBlock,
+      onUpdateBlock: handleUpdateBlock,
+      onDuplicate: handleDuplicateBlock,
+      onRemove: handleRemoveBlock,
+      onReorderTop: handleReorderTop,
+      onReorderColumn: noop,
+      onAddToColumn: noop,
     }),
-    [document, insertTarget, selectedBlockId, updateDocument]
+    [
+      document,
+      insertTarget,
+      selectedBlockId,
+      handleSelectBlock,
+      handleUpdateBlock,
+      handleDuplicateBlock,
+      handleRemoveBlock,
+      handleReorderTop,
+    ]
   )
 
   return (
