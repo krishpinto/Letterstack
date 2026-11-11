@@ -45,6 +45,16 @@ export const users = pgTable("users", {
   // announcement. Per-user rather than per-org so a second teammate still
   // gets told, and so dismissing it never hides it from someone else.
   planNoticeSeenAt: timestamp("plan_notice_seen_at"),
+  // When this person proved they own `email`: by the emailed verification
+  // link, a password reset, or a Google sign-in. Null means unproven, which
+  // blocks sending and admin access (see lib/auth-rules.ts). Accounts that
+  // existed before verification shipped were backfilled to created_at.
+  emailVerifiedAt: timestamp("email_verified_at"),
+  // Compared against the copy inside every session JWT on each request.
+  // Bumping it signs out every existing session for this account, which is
+  // the only revocation stateless JWTs allow. Bumped on password reset,
+  // password change, and a Google sign-in that claims an unverified account.
+  sessionVersion: integer("session_version").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({
@@ -69,6 +79,31 @@ export const passwordResets = pgTable("password_resets", {
     foreignColumns: [users.id],
   }).onDelete("cascade"),
 ]);
+
+// Email verification tokens: the same shape as passwordResets, for the same
+// reasons. Only the sha256 is stored; the raw token lives in the email link.
+export const emailVerifications = pgTable(
+  "email_verifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("email_verifications_user_id_idx").on(table.userId)],
+);
+
+// Fixed-window request counters shared by every serverless instance (see
+// lib/rate-limit.ts). One row per limited key, e.g. "login:email:a@b.com".
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
+});
 
 export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),

@@ -211,7 +211,7 @@ async function tryBlock<T>(fn: () => Promise<T>) {
 
 export async function GET() {
   const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
+  if (!isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 

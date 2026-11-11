@@ -12,7 +12,7 @@ import {
 } from "@/db/campaigns";
 import { countRecipientsForCampaign } from "@/db/campaign-recipients";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "@/lib/send/qstash";
-import { currentUserId } from "@/lib/auth-helpers";
+import { currentUserId, requireVerifiedEmail } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
 
@@ -25,6 +25,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (!userId) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const unverified = await requireVerifiedEmail();
+  if (unverified) return unverified;
 
   try {
     const body = (await request.json().catch(() => null)) as { scheduledAt?: string } | null;

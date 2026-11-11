@@ -17,7 +17,7 @@ import { listSendingDomains } from "@/db/sending-domains";
 import { listRecipientsForOrganization } from "@/db/recipients";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import { isAdmin } from "@/lib/admin";
-import { GOOGLE_AUTH_ENABLED } from "@/lib/auth";
+import { auth, GOOGLE_AUTH_ENABLED } from "@/lib/auth";
 import { limitsFor } from "@/lib/plans/limits";
 import { SettingsShell } from "@/components/settings/settings-shell";
 
@@ -111,7 +111,7 @@ export default async function SettingsPage() {
           hasPassword: passwordSet,
           googleSignInEnabled: GOOGLE_AUTH_ENABLED,
         }}
-        isAdmin={isAdmin(profile.email)}
+        isAdmin={isAdmin((await auth())?.user)}
       />
     </Suspense>
   );

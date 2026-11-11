@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import crypto from "node:crypto";
 import {
   decryptMailboxRefreshToken,
   markMailboxError,
@@ -7,6 +6,11 @@ import {
   type ConnectedMailbox,
 } from "@/db/connected-mailboxes";
 import { appBaseUrl } from "./qstash";
+import {
+  signGmailState,
+  verifyGmailState as verifyStateWithSecret,
+  type GmailStateClaim,
+} from "./gmail-state";
 
 /**
  * OAuth plumbing for the Gmail connect flow and for keeping a connected
@@ -36,57 +40,28 @@ function oauthClient() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri());
 }
 
-// state binds the consent redirect back to who started it, HMAC-signed so
-// it can't be forged or replayed against a different session — same
-// construction as the unsubscribe tokens in lib/email/unsubscribe.ts,
-// reused here rather than inventing a second signing scheme.
+// The state construction and its checks live in ./gmail-state.ts; this only
+// supplies the secret.
 function stateSecret(): string {
   const s = process.env.AUTH_SECRET;
   if (!s) throw new Error("AUTH_SECRET must be set to start a Gmail connect flow");
   return s;
 }
 
-function b64url(buf: Buffer): string {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+/** Check a callback's state: signature and age. See gmail-state.ts. */
+export function verifyGmailState(state: string): GmailStateClaim | null {
+  return verifyStateWithSecret(state, stateSecret());
 }
 
-function b64urlDecode(s: string): Buffer {
-  return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-}
-
-export function signGmailState(userId: string, organizationId: string): string {
-  const payload = b64url(Buffer.from(JSON.stringify({ u: userId, o: organizationId })));
-  const sig = b64url(crypto.createHmac("sha256", stateSecret()).update(payload).digest());
-  return `${payload}.${sig}`;
-}
-
-export function verifyGmailState(
-  state: string,
-): { userId: string; organizationId: string } | null {
-  const [payload, sig] = (state || "").split(".");
-  if (!payload || !sig) return null;
-
-  const expected = Buffer.from(
-    b64url(crypto.createHmac("sha256", stateSecret()).update(payload).digest()),
-  );
-  const given = Buffer.from(sig);
-  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
-    return null;
-  }
-
-  try {
-    const obj = JSON.parse(b64urlDecode(payload).toString("utf8"));
-    if (typeof obj?.u === "string" && typeof obj?.o === "string") {
-      return { userId: obj.u, organizationId: obj.o };
-    }
-  } catch {
-    // fall through
-  }
-  return null;
-}
-
-/** The URL to send the browser to for Google's consent screen. */
-export function buildGmailConsentUrl(userId: string, organizationId: string): string {
+/**
+ * The URL to send the browser to for Google's consent screen. `nonce` must
+ * also be set as the GMAIL_NONCE_COOKIE cookie on the same response.
+ */
+export function buildGmailConsentUrl(
+  userId: string,
+  organizationId: string,
+  nonce: string,
+): string {
   return oauthClient().generateAuthUrl({
     // offline + consent: without both, Google only issues a refresh token
     // on the very first-ever grant for this account/client pair — a
@@ -95,7 +70,10 @@ export function buildGmailConsentUrl(userId: string, organizationId: string): st
     access_type: "offline",
     prompt: "consent",
     scope: [GMAIL_SEND_SCOPE, USERINFO_EMAIL_SCOPE],
-    state: signGmailState(userId, organizationId),
+    state: signGmailState(
+      { userId, organizationId, nonce, issuedAt: Date.now() },
+      stateSecret(),
+    ),
   });
 }
 

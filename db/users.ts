@@ -1,8 +1,10 @@
 import {
+  and,
   type Column,
   eq,
   getTableColumns,
   getTableName,
+  isNull,
   sql,
   type Table,
 } from "drizzle-orm";
@@ -16,6 +18,7 @@ import {
 } from "./account-deletion";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
+import { planGoogleClaim, type AuthState, type GoogleClaim } from "@/lib/auth-rules";
 
 /** Thrown when deleting the account would orphan a shared workspace. */
 export class SoleOwnerError extends Error {
@@ -214,8 +217,113 @@ export async function getPasswordHash(userId: string): Promise<string | null> {
   return row?.passwordHash ?? null;
 }
 
-/** Replace the password hash. Hashing is the caller's job — this never sees a
- *  plaintext password, so no code path can accidentally log one from here. */
+/**
+ * Replace the password hash and sign out every existing session for the
+ * account (see sessionVersion in db/schema.ts). Hashing is the caller's job —
+ * this never sees a plaintext password, so no code path can accidentally log
+ * one from here.
+ *
+ * Returns the new session version so the caller's own session can be
+ * re-issued at it.
+ */
 export async function setPasswordHash(userId: string, passwordHash: string) {
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  const [row] = await db
+    .update(users)
+    .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning({ sessionVersion: users.sessionVersion });
+  return row?.sessionVersion ?? null;
+}
+
+/**
+ * Finish a password reset. Redeeming the emailed token proves the person
+ * owns the mailbox, so the email counts as verified from here on. Every
+ * existing session is revoked: a reset is what someone does when they think
+ * another person has their password.
+ */
+export async function resetPassword(userId: string, passwordHash: string) {
+  await db
+    .update(users)
+    .set({
+      passwordHash,
+      emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
+      sessionVersion: sql`${users.sessionVersion} + 1`,
+    })
+    .where(eq(users.id, userId));
+}
+
+/** What the jwt callback re-checks on every request. Null if the user is gone. */
+export async function getAuthState(userId: string): Promise<AuthState | null> {
+  const [row] = await db
+    .select({
+      email: users.email,
+      emailVerifiedAt: users.emailVerifiedAt,
+      sessionVersion: users.sessionVersion,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Mark the email proven, keeping the first proof's timestamp. */
+export async function markEmailVerified(userId: string) {
+  await db
+    .update(users)
+    .set({ emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Find-or-create our own user row for a Google sign-in. We don't use a
+ * NextAuth adapter (the users table is ours), so a Google identity is linked
+ * to an account by its Google-verified email. See planGoogleClaim for what
+ * happens when that account never proved it owns the address.
+ */
+export async function claimAccountForGoogle(
+  email: string,
+  googleName: string | null,
+): Promise<{ id: string; kind: GoogleClaim["kind"] }> {
+  const normalized = email.toLowerCase().trim();
+  const [existing] = await db
+    .select({ id: users.id, name: users.name, emailVerifiedAt: users.emailVerifiedAt })
+    .from(users)
+    .where(eq(users.email, normalized))
+    .limit(1);
+
+  const plan = planGoogleClaim(existing ?? null, googleName);
+
+  if (plan.kind === "create" || !existing) {
+    const [created] = await db
+      .insert(users)
+      .values({
+        email: normalized,
+        name: googleName,
+        passwordHash: null,
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    return { id: created.id, kind: "create" };
+  }
+
+  const name = plan.backfillName ? { name: googleName } : {};
+
+  if (plan.kind === "takeover") {
+    // The emailVerifiedAt IS NULL guard makes this a no-op if the account was
+    // verified between the read above and now, so a verified password is
+    // never wiped by a race.
+    await db
+      .update(users)
+      .set({
+        ...name,
+        emailVerifiedAt: new Date(),
+        passwordHash: null,
+        sessionVersion: sql`${users.sessionVersion} + 1`,
+      })
+      .where(and(eq(users.id, existing.id), isNull(users.emailVerifiedAt)));
+  } else if (plan.backfillName) {
+    await db.update(users).set(name).where(eq(users.id, existing.id));
+  }
+
+  return { id: existing.id, kind: plan.kind };
 }

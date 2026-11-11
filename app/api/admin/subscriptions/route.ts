@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
+  if (!isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
@@ -27,7 +27,7 @@ export async function GET() {
  */
 export async function PUT(request: Request) {
   const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
+  if (!isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 

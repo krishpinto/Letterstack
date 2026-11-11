@@ -44,15 +44,23 @@ export default async function InviteAcceptPage({
     title = `Join ${invite.organizationName}`;
     description = `You've been invited to join ${invite.organizationName} as ${capitalize(invite.role)}.`;
 
+    // Both auth pages send the person back here afterwards, so the invite
+    // isn't lost on the way and an invitee who just signed up accepts it
+    // instead of being asked to create a workspace of their own.
+    const authQuery = new URLSearchParams({
+      callbackUrl: `/invite/${token}`,
+      email: invite.email,
+    }).toString();
+
     if (!session?.user) {
       description = `${description} Sign in or create an account with ${invite.email} to accept.`;
       body = (
         <div className="flex flex-col gap-2">
           <Button asChild className="w-full">
-            <Link href="/login">Log in</Link>
+            <Link href={`/login?${authQuery}`}>Log in</Link>
           </Button>
           <Button asChild variant="outline" className="w-full">
-            <Link href="/signup">Create an account</Link>
+            <Link href={`/signup?${authQuery}`}>Create an account</Link>
           </Button>
         </div>
       );
@@ -60,7 +68,7 @@ export default async function InviteAcceptPage({
       description = `This invite was sent to ${invite.email}, but you're signed in as ${session.user.email}.`;
       body = (
         <Button asChild variant="outline" className="w-full">
-          <Link href="/login">Switch account</Link>
+          <Link href={`/login?${authQuery}`}>Switch account</Link>
         </Button>
       );
     } else {

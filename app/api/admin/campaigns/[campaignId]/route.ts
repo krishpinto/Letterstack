@@ -16,7 +16,7 @@ export async function GET(
   { params }: { params: Promise<{ campaignId: string }> },
 ) {
   const session = await auth();
-  if (!isAdmin(session?.user?.email)) {
+  if (!isAdmin(session?.user)) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
