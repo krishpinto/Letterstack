@@ -11,14 +11,13 @@ Last reconciled with the working tree: **2026-06-23**. See
 draft campaign
 -> campaign has pending campaign_recipients
 -> POST /api/campaigns/[id]/send
--> startCampaign()
--> prepareCampaignAudience()
--> mark campaign sending
--> enqueue QStash batches
+-> dispatchCampaign()
+-> reserve quota, then claim the campaign (draft|scheduled|failed -> sending)
+-> enqueue QStash batches of 50, 4s apart, with deduplication ids
 -> /api/send/campaign-worker
--> sendCampaignBatch()
--> mark each campaign_recipient sent or failed
--> mark campaign sent when no pending rows remain
+-> sendCampaignBatch(): claim each row pending -> sending, then send
+-> mark each campaign_recipient sent or failed (or back to pending on throttling)
+-> mark campaign sent (or failed) when no pending or sending rows remain
 ```
 
 Key files:
@@ -31,27 +30,23 @@ Key files:
 
 Deprecated global-recipient send routes:
 
-- `POST /api/campaigns/send-now` returns 410.
 - `POST /api/lab/send-campaign` returns 410.
-- `POST /api/send/worker` verifies QStash and then returns 410.
 
 New sends must use campaign-specific `campaign_recipients`.
 
-`BATCH_SIZE` is currently `2` in `lib/send/send-campaign.ts` for testing and
-must be reviewed before production-volume sends.
-
 ## Idempotency
 
-Workers only load rows where `campaign_recipients.status = 'pending'`.
-QStash retries should not double-send already marked rows. A narrow duplicate
-risk remains if SES accepts a message and the worker dies before recording
-success.
+Workers send to a row only after claiming it (`pending` to `sending` in one
+guarded UPDATE), so QStash retries, duplicate deliveries and Resume do not
+double-send. A row a dead worker left in `sending` is settled after 15 minutes
+without being re-sent: `sent` if SES reported an event for it, otherwise
+`failed` with "unknown delivery state".
 
 ## Suppression
 
 Suppression is organization-wide.
 
-- Before sending, `prepareCampaignAudience()` filters suppressed addresses.
+- Before sending, `readSendableAudience()` filters suppressed addresses; they are not reserved and are marked failed once the send is claimed.
 - During each batch, `sendCampaignBatch()` checks suppression again.
 - Unsubscribes call `suppressEmail()`.
 - SES bounces and complaints call `suppressEmailForOrganization()`.

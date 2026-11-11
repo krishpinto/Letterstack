@@ -1,7 +1,6 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaignRecipients, campaigns, organizationMembers } from "./schema";
-import { getDefaultOrganizationForUser } from "./organizations";
+import { campaigns, organizationMembers } from "./schema";
 import type { EmailDocument } from "@/lib/email/document";
 
 export async function createCampaign(
@@ -117,13 +116,6 @@ export async function listCampaignsForOrganization(organizationId: string) {
     .from(campaigns)
     .where(eq(campaigns.organizationId, organizationId))
     .orderBy(desc(campaigns.createdAt));
-}
-
-export async function listCampaigns(userId: string) {
-  const organization = await getDefaultOrganizationForUser(userId);
-  if (!organization) return [];
-
-  return listCampaignsForOrganization(organization.id);
 }
 
 export async function getCampaign(id: string) {

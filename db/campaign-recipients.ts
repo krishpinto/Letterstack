@@ -257,26 +257,6 @@ export async function countSendingAmong(ids: string[]): Promise<number> {
   return row?.count ?? 0;
 }
 
-export async function userIdsForEmail(email: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ userId: campaigns.userId })
-    .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
-
-  return rows.map((row) => row.userId);
-}
-
-export async function organizationIdsForEmail(email: string): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ organizationId: campaigns.organizationId })
-    .from(campaignRecipients)
-    .innerJoin(campaigns, eq(campaignRecipients.campaignId, campaigns.id))
-    .where(eq(campaignRecipients.email, email));
-
-  return rows.map((row) => row.organizationId);
-}
-
 export async function suppressionTargetsForEmail(
   email: string,
 ): Promise<{ organizationId: string; userId: string }[]> {
