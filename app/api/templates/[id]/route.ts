@@ -4,7 +4,8 @@ import { db } from "@/db/client";
 import { uniqueTemplateName } from "@/db/email-templates";
 import { emailTemplates } from "@/db/schema";
 import { currentOrganizationId } from "@/lib/auth-helpers";
-import type { EmailDocument } from "@/lib/email/document";
+import { isEmailDocument, type EmailDocument } from "@/lib/email/document";
+import { sanitizeEmailDocument } from "@/lib/email/sanitize";
 
 export const runtime = "nodejs";
 
@@ -61,7 +62,11 @@ export async function PATCH(
   try {
     const body = (await request.json().catch(() => null)) as TemplateBody | null;
     const name = body?.name;
-    const document = body?.document;
+    if (body?.document !== undefined && !isEmailDocument(body.document)) {
+      return NextResponse.json({ ok: false, error: "Valid document required" }, { status: 400 });
+    }
+    // Same rule as POST: what is stored is what other editors will open.
+    const document = body?.document ? sanitizeEmailDocument(body.document) : undefined;
 
     const patchData: Partial<typeof emailTemplates.$inferInsert> = {};
     if (name !== undefined) {
@@ -73,9 +78,9 @@ export async function PATCH(
     }
     if (document !== undefined) {
       patchData.document = document;
-      patchData.subject = document?.subject || "";
-      patchData.fromName = document?.fromName || "";
-      patchData.fromEmail = document?.fromEmail || "";
+      patchData.subject = document.subject || "";
+      patchData.fromName = document.fromName || "";
+      patchData.fromEmail = document.fromEmail || "";
     }
     patchData.updatedAt = new Date();
 

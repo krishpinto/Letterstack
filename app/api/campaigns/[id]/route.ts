@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { compileEmailDocument } from "@/lib/email/compiler";
 import { isEmailDocument, normalizeDocument } from "@/lib/email/document";
+import { sanitizeEmailDocument } from "@/lib/email/sanitize";
 import { deleteCampaign, getCampaignForUser, updateCampaignDraft } from "@/db/campaigns";
 import { listVerifiedSendingDomains } from "@/db/sending-domains";
 import { listMailboxesForUser } from "@/db/connected-mailboxes";
@@ -51,7 +52,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     if (!isEmailDocument(body?.document)) {
       return NextResponse.json({ ok: false, error: "Valid document required" }, { status: 400 });
     }
-    const doc = normalizeDocument(body.document);
+    const doc = sanitizeEmailDocument(normalizeDocument(body.document));
     const { html, text } = compileEmailDocument(doc);
 
     // If the sender is being changed, it must be one this org may use.

@@ -64,6 +64,23 @@ import {
 import { BLOCK_LABELS } from "./editor-types";
 import { ImageUploadInput } from "./image-upload-input";
 
+/**
+ * Blocks whose text "Text color" actually recolours, in the canvas and in
+ * the sent email. The others have no text of their own (image, logo,
+ * social, spacer), take theme colours (button), or use fixed muted colours
+ * for small print (video caption, footer) — showing the control there would
+ * be a setting that does nothing.
+ */
+const TEXT_COLOR_BLOCKS: ReadonlySet<EmailBlock["type"]> = new Set([
+  "text",
+  "heading",
+  "paragraph",
+  "articleCard",
+  "columns",
+  "divider",
+  "rawHtml",
+]);
+
 export function BlockInspector({
   block,
   document,
@@ -202,6 +219,7 @@ export function BlockInspector({
                   </div>
                 </Field>
 
+                {TEXT_COLOR_BLOCKS.has(block.type) && (
                 <Field>
                   <FieldLabel>Text color</FieldLabel>
                   <div className="flex items-center gap-2">
@@ -231,6 +249,7 @@ export function BlockInspector({
                     )}
                   </div>
                 </Field>
+                )}
 
                 <SliderField
                   label="Padding top" value={block.paddingTop ?? 0}
