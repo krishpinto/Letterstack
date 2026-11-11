@@ -398,7 +398,11 @@ export const emailEvents = pgTable("email_events", {
   type: text("type").notNull(),
   campaignId: uuid("campaign_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Every analytics read joins this table to campaigns on campaign_id and
+  // groups by type (db/events.ts, db/dashboard.ts).
+  index("email_events_campaign_id_type_idx").on(table.campaignId, table.type),
+]);
 
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -463,6 +467,11 @@ export const campaignRecipients = pgTable("campaign_recipients", {
 }, (table) => [
   unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email),
   index("campaign_recipients_campaign_id_idx").on(table.campaignId),
+  // Bounce, complaint and unsubscribe handling look rows up by email alone
+  // (db/campaign-recipients.ts); the unique above has email second.
+  index("campaign_recipients_email_idx").on(table.email),
+  // Deleting a contact cascades here.
+  index("campaign_recipients_recipient_id_idx").on(table.recipientId),
 ]);
 
 export const categories = pgTable("categories", {
