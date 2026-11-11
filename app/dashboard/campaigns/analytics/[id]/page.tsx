@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeftIcon, MailIcon, SearchIcon, UserRoundIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  MailIcon,
+  SearchIcon,
+  TriangleAlertIcon,
+  UserRoundIcon,
+} from "lucide-react";
 
+import { RefreshStatus } from "@/components/analytics/refresh-status";
+import { ErrorState, useAsyncData } from "@/components/data-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +42,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { campaignRates, formatRate } from "@/lib/analytics/rates";
+import { refreshDelay } from "@/lib/analytics/refresh";
+import { useAutoRefresh } from "@/lib/analytics/use-auto-refresh";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,6 +61,8 @@ type ProgressState = {
   sent: number;
   failed: number;
   pending: number;
+  /** Claimed by a worker but not finished yet (older servers omit it). */
+  sending?: number;
 };
 
 type Campaign = {
@@ -51,8 +70,10 @@ type Campaign = {
   name: string;
   subject: string;
   status: string;
-  fromName: string;
-  fromEmail: string;
+  /** Set when status is "failed": why, in words for the owner. */
+  failureReason?: string | null;
+  fromName?: string;
+  fromEmail?: string;
   senderType?: string;
 };
 
@@ -76,7 +97,14 @@ type Engagement = {
   unsubscribed: number;
 };
 
-type StatusKey = "all" | "sent" | "failed" | "bounced" | "pending";
+type AnalyticsData = {
+  campaign: Campaign;
+  progress: ProgressState;
+  recipients: Recipient[];
+  engagement: Engagement;
+};
+
+type StatusKey = "all" | "sent" | "failed" | "bounced" | "sending" | "pending";
 type MetricTone = "default" | "primary" | "muted" | "destructive";
 
 const STATUS_LABELS: Record<StatusKey, string> = {
@@ -84,15 +112,32 @@ const STATUS_LABELS: Record<StatusKey, string> = {
   sent: "Sent",
   failed: "Failed",
   bounced: "Bounced",
-  pending: "Sending",
+  sending: "Sending",
+  pending: "Queued",
 };
 
 const STATUS_BADGE_VARIANTS = {
   sent: "default",
   failed: "destructive",
   bounced: "destructive",
+  sending: "outline",
   pending: "outline",
 } as const;
+
+const FILTER_ORDER: StatusKey[] = [
+  "all",
+  "sent",
+  "failed",
+  "bounced",
+  "sending",
+  "pending",
+];
+
+// Rendering 50,000 rows at once freezes the tab; show them in pages.
+const RECIPIENT_PAGE = 100;
+
+const ESTIMATE_NOTE =
+  "An estimate. Apple Mail Privacy Protection loads every image in advance, which records an open for each Apple Mail recipient, and some inboxes block or proxy images.";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,70 +159,69 @@ function formatSentAt(iso: string | null) {
   });
 }
 
+/** Is LetterStack still handing recipients to the sender right now? */
+function isLive(data: AnalyticsData) {
+  if (data.campaign.status === "sending") return true;
+  // Older rows can lag the status by a poll; trust in-flight recipients too,
+  // but not the queued audience of a draft or a scheduled campaign.
+  return (
+    data.campaign.status !== "draft" &&
+    data.campaign.status !== "scheduled" &&
+    data.campaign.status !== "failed" &&
+    data.progress.pending > 0
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CampaignAnalyticsPage() {
   const { id } = useParams<{ id: string }>();
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [progress, setProgress] = useState<ProgressState | null>(null);
-  const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [engagement, setEngagement] = useState<Engagement | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
+  const [visibleCount, setVisibleCount] = useState(RECIPIENT_PAGE);
   const [notFound, setNotFound] = useState(false);
-  const campaignRef = useRef<Campaign | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
-  // Fetch + poll
-  useEffect(() => {
-    if (!id) return;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-
-    async function poll() {
-      try {
-        const [progressRes, recipientsRes, engagementRes] = await Promise.all([
-          fetch(`/api/campaigns/${id}/progress`).then((r) => r.json()),
-          fetch(`/api/campaigns/${id}/recipients`).then((r) => r.json()),
-          fetch(`/api/campaigns/${id}/analytics`).then((r) => r.json()),
-        ]);
-
-        if (!alive) return;
-
-        if (!progressRes.ok) {
-          setNotFound(true);
-          return;
-        }
-
-        const merged = {
-          ...(campaignRef.current ?? {}),
-          ...progressRes.campaign,
-        } as Campaign;
-        campaignRef.current = merged;
-        setCampaign(merged);
-        setProgress(progressRes.progress);
-        if (recipientsRes.ok) setRecipients(recipientsRes.recipients);
-        if (engagementRes.ok) setEngagement(engagementRes.engagement);
-
-        // Keep polling while batches are still in flight
-        if (
-          progressRes.progress.pending > 0 ||
-          progressRes.progress.total === 0
-        ) {
-          timer = setTimeout(poll, 1500);
-        }
-      } catch {
-        // silently retry on next scheduled poll
-      }
+  // One load for the whole page. If any part fails, the page says so with a
+  // Retry instead of rendering zeros that look like real results.
+  const state = useAsyncData<AnalyticsData>(async () => {
+    try {
+      const [progressRes, recipientsRes, engagementRes] = await Promise.all([
+        fetchJson<{ campaign: Campaign; progress: ProgressState }>(
+          `/api/campaigns/${id}/progress`,
+        ),
+        fetchJson<{ recipients: Recipient[] }>(`/api/campaigns/${id}/recipients`),
+        fetchJson<{ engagement: Engagement }>(`/api/campaigns/${id}/analytics`),
+      ]);
+      setNotFound(false);
+      setUpdatedAt(Date.now());
+      return {
+        campaign: progressRes.campaign,
+        progress: progressRes.progress,
+        recipients: recipientsRes.recipients ?? [],
+        engagement: engagementRes.engagement,
+      };
+    } catch (error) {
+      setNotFound(error instanceof ApiError && error.status === 404);
+      throw error;
     }
-
-    poll();
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
   }, [id]);
 
+  const data = state.data;
+  const live = data ? isLive(data) : false;
+
+  // Fast while the send is in flight, then every minute while the tab is
+  // visible: delivery, bounce and open events keep arriving for hours.
+  useAutoRefresh({
+    enabled: data !== undefined,
+    busy: state.refreshing,
+    delayMs: refreshDelay(live),
+    refresh: state.reload,
+  });
+
   // ─── Derived ───────────────────────────────────────────────────────────────
+
+  const recipients = useMemo(() => data?.recipients ?? [], [data]);
 
   const counts = useMemo(() => {
     const count: Record<StatusKey, number> = {
@@ -185,6 +229,7 @@ export default function CampaignAnalyticsPage() {
       sent: 0,
       failed: 0,
       bounced: 0,
+      sending: 0,
       pending: 0,
     };
     recipients.forEach((r) => {
@@ -205,49 +250,55 @@ export default function CampaignAnalyticsPage() {
 
   // ─── States ────────────────────────────────────────────────────────────────
 
-  if (notFound) {
+  if (state.status === "loading") {
+    return <PageLoader label="Loading analytics…" />;
+  }
+
+  if (!data) {
     return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Campaign not found.
-      </div>
+      <ErrorState
+        title={notFound ? "Campaign not found" : "Couldn't load analytics"}
+        message={
+          notFound
+            ? "It may have been deleted, or it belongs to a different workspace."
+            : (state.error ?? "Something went wrong. Try again.")
+        }
+        onRetry={notFound ? undefined : () => void state.reload()}
+        retrying={state.refreshing}
+        action={
+          <Button variant={notFound ? "default" : "ghost"} asChild>
+            <Link href="/dashboard/campaigns">
+              <ArrowLeftIcon data-icon="inline-start" />
+              Back to campaigns
+            </Link>
+          </Button>
+        }
+      />
     );
   }
 
-  if (!campaign || !progress) {
-    return (
-      <PageLoader label="Loading analytics…" />
-    );
-  }
+  const { campaign, progress, engagement } = data;
+  const refreshError = state.status === "error" ? state.error : null;
 
   const total = progress.total;
   const done = progress.sent + progress.failed;
-  const finished = total > 0 && progress.pending === 0;
-  const deliveryRate =
-    total > 0 ? Math.round((counts.sent / total) * 100) : 0;
-  const progressPercent =
-    total > 0 ? Math.round((done / total) * 100) : 0;
-  const rate = (part: number) =>
-    counts.sent > 0 ? Math.round((part / counts.sent) * 100) : 0;
-  const openRate = rate(engagement?.opensUnique ?? 0);
-  const clickRate = rate(engagement?.clicksUnique ?? 0);
-  const unsubscribed = engagement?.unsubscribed ?? 0;
-  const complained = engagement?.complained ?? 0;
-  const unsubscribeRate =
-    counts.sent > 0 ? ((unsubscribed / counts.sent) * 100).toFixed(1) : "0.0";
-  const complaintRate =
-    counts.sent > 0 ? ((complained / counts.sent) * 100).toFixed(2) : "0.00";
-  // Click-to-open: of the people who opened, how many clicked. A far better
-  // content-quality signal than raw click rate.
-  const clickToOpenRate =
-    (engagement?.opensUnique ?? 0) > 0
-      ? Math.round(
-          ((engagement?.clicksUnique ?? 0) / (engagement?.opensUnique ?? 1)) * 100,
-        )
-      : 0;
+  const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
+  const sentPercent = total > 0 ? Math.round((progress.sent / total) * 100) : 0;
 
-  const filterKeys = (
-    ["all", "sent", "failed", "bounced", "pending"] as StatusKey[]
-  ).filter((k) => k === "all" || counts[k] > 0);
+  // Same formulas as the analytics overview (lib/analytics/rates.ts), so a
+  // campaign shows the same numbers on both pages.
+  const rates = campaignRates({
+    sent: progress.sent,
+    delivered: engagement.delivered,
+    bounced: engagement.bounced,
+    complained: engagement.complained,
+    opensUnique: engagement.opensUnique,
+    clicksUnique: engagement.clicksUnique,
+    unsubscribed: engagement.unsubscribed,
+  });
+
+  const filterKeys = FILTER_ORDER.filter((k) => k === "all" || counts[k] > 0);
+  const shown = filtered.slice(0, visibleCount);
 
   // Gmail sends have no delivery-events source — no SES webhook equivalent,
   // so delivered/bounced/opens/clicks would just be permanently zero rather
@@ -268,37 +319,49 @@ export default function CampaignAnalyticsPage() {
           </Link>
         </Button>
 
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-2xl font-semibold tracking-normal">
-              {campaign.name}
-            </h1>
-            <Badge variant={finished ? "default" : "outline"}>
-              <span
-                className={cn(
-                  "size-1.5 rounded-full bg-current",
-                  !finished && "animate-pulse",
-                )}
-              />
-              {finished ? "Sent" : "Sending"}
-            </Badge>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-2xl font-semibold tracking-normal">
+                {campaign.name}
+              </h1>
+              <CampaignStatusBadge status={campaign.status} live={live} />
+            </div>
+            <p className="truncate text-sm text-muted-foreground">
+              {campaign.subject}
+            </p>
           </div>
-          <p className="truncate text-sm text-muted-foreground">
-            {campaign.subject}
-          </p>
+          <RefreshStatus
+            updatedAt={updatedAt}
+            refreshing={state.refreshing}
+            error={refreshError}
+            onRefresh={() => void state.reload()}
+            className="shrink-0"
+          />
         </div>
       </div>
+
+      {campaign.status === "failed" && (
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>This campaign failed</AlertTitle>
+          <AlertDescription>
+            {campaign.failureReason ||
+              "The send stopped before every recipient was reached. Open the campaign for details."}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* ── Metrics grid ── */}
       {sentViaGmail ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Metric label="Recipients" value={total} />
-            <Metric label="Sent" value={counts.sent} tone="primary" />
+            <Metric label="Sent" value={progress.sent} tone="primary" />
             <Metric
               label="Failed"
-              value={counts.failed}
-              tone={counts.failed > 0 ? "destructive" : "muted"}
+              value={progress.failed}
+              tone={progress.failed > 0 ? "destructive" : "muted"}
             />
           </div>
           <Alert>
@@ -313,80 +376,85 @@ export default function CampaignAnalyticsPage() {
           </Alert>
         </>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric label="Recipients" value={total} />
-          <Metric label="Delivered" value={counts.sent} tone="primary" />
+          <Metric label="Sent" value={progress.sent} hint="handed to SES" />
+          <Metric
+            label="Delivered"
+            value={engagement.delivered}
+            hint={`${formatRate(rates.deliveryRate)} of sent`}
+            tone="primary"
+          />
           <Metric
             label="Opened"
-            value={`${openRate}%`}
-            hint={`${engagement?.opensUnique ?? 0} unique`}
+            value={formatRate(rates.openRate)}
+            hint={`${engagement.opensUnique} unique · of delivered`}
             tone="primary"
-            soft
+            estimate
           />
           <Metric
             label="Clicked"
-            value={`${clickRate}%`}
-            hint={`${engagement?.clicksUnique ?? 0} unique`}
+            value={formatRate(rates.clickRate)}
+            hint={`${engagement.clicksUnique} unique · of delivered`}
             tone="primary"
-            soft
+            estimate
           />
           <Metric
             label="Click-to-open"
-            value={`${clickToOpenRate}%`}
+            value={formatRate(rates.clickToOpenRate)}
             hint="clicked, of openers"
             tone="primary"
-            soft
+            estimate
           />
           <Metric
             label="Unsubscribed"
-            value={unsubscribed}
-            hint={`${unsubscribeRate}% of delivered`}
-            tone={unsubscribed > 0 ? "destructive" : "muted"}
+            value={engagement.unsubscribed}
+            hint={`${formatRate(rates.unsubscribeRate)} of delivered`}
+            tone={engagement.unsubscribed > 0 ? "destructive" : "muted"}
           />
           <Metric
             label="Spam reports"
-            value={complained}
-            hint={`${complaintRate}% · SES limit 0.5%`}
-            tone={complained > 0 ? "destructive" : "muted"}
-          />
-          <Metric
-            label="Failed"
-            value={counts.failed}
-            tone={counts.failed > 0 ? "destructive" : "muted"}
+            value={engagement.complained}
+            hint={`${formatRate(rates.complaintRate, 2)} · SES limit 0.5%`}
+            tone={engagement.complained > 0 ? "destructive" : "muted"}
           />
           <Metric
             label="Bounced"
-            value={counts.bounced}
-            hint={
-              counts.sent > 0
-                ? `${((counts.bounced / total) * 100).toFixed(1)}% · SES limit 10%`
-                : undefined
-            }
-            tone={counts.bounced > 0 ? "destructive" : "muted"}
+            value={engagement.bounced}
+            hint={`${formatRate(rates.bounceRate)} of sent · SES limit 10%`}
+            tone={engagement.bounced > 0 ? "destructive" : "muted"}
+          />
+          <Metric
+            label="Failed"
+            value={progress.failed}
+            hint="not handed to SES"
+            tone={progress.failed > 0 ? "destructive" : "muted"}
           />
         </div>
       )}
 
-      {/* ── Delivery progress ── */}
+      {/* ── Send progress ── */}
       <Card size="sm">
         <CardContent className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="font-medium">
-              {finished
-                ? `${deliveryRate}% ${sentViaGmail ? "sent" : "delivered"}`
-                : `Sending… ${done}/${total}`}
+              {live
+                ? `Sending… ${done}/${total}`
+                : total === 0
+                  ? "No recipients yet"
+                  : `${sentPercent}% sent`}
             </span>
             <span className="tabular-nums text-muted-foreground">
-              {finished
-                ? `${counts.sent}/${total} ${sentViaGmail ? "sent" : "delivered"}`
-                : `${progressPercent}%`}
+              {live
+                ? `${progressPercent}%`
+                : `${progress.sent}/${total} sent`}
             </span>
           </div>
-          <Progress value={finished ? deliveryRate : progressPercent} />
+          <Progress value={live ? progressPercent : sentPercent} />
           <p className="text-xs text-muted-foreground">
             {sentViaGmail
               ? "This reflects LetterStack's own send attempts, not a delivery confirmation from Gmail — it has no equivalent of SES's delivery webhook."
-              : "Delivered, failed, bounced, unsubscribes, and spam reports are exact. Opens and clicks are estimates — inboxes can block or pre-fetch tracking pixels. Unsubscribes count this campaign's recipients who opted out after the send."}
+              : "Sent, delivered, failed, bounced, unsubscribes and spam reports are exact. Opens and clicks are estimates: Apple Mail Privacy Protection loads images for every Apple Mail recipient, and some inboxes block them. Open, click, unsubscribe and spam rates are of delivered; bounce rate is of sent. Unsubscribes count this campaign's recipients who opted out after the send."}
           </p>
         </CardContent>
       </Card>
@@ -408,7 +476,10 @@ export default function CampaignAnalyticsPage() {
                 <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setVisibleCount(RECIPIENT_PAGE);
+                  }}
                   placeholder="Search name or email…"
                   className="pl-8"
                 />
@@ -417,9 +488,12 @@ export default function CampaignAnalyticsPage() {
                 type="single"
                 value={statusFilter}
                 onValueChange={(v) => {
-                  if (v) setStatusFilter(v as StatusKey);
+                  if (v) {
+                    setStatusFilter(v as StatusKey);
+                    setVisibleCount(RECIPIENT_PAGE);
+                  }
                 }}
-                className="justify-start"
+                className="flex-wrap justify-start"
               >
                 {filterKeys.map((key) => (
                   <ToggleGroupItem
@@ -439,7 +513,7 @@ export default function CampaignAnalyticsPage() {
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           <div className="overflow-hidden rounded-lg border border-border">
             <Table>
               <TableHeader>
@@ -450,8 +524,8 @@ export default function CampaignAnalyticsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length > 0 ? (
-                  filtered.map((r) => (
+                {shown.length > 0 ? (
+                  shown.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="min-w-64">
                         <div className="flex min-w-0 items-center gap-3">
@@ -525,6 +599,22 @@ export default function CampaignAnalyticsPage() {
               </TableBody>
             </Table>
           </div>
+          {filtered.length > shown.length && (
+            <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                Showing {shown.length.toLocaleString()} of{" "}
+                {filtered.length.toLocaleString()}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVisibleCount((n) => n + RECIPIENT_PAGE)}
+              >
+                Show {Math.min(RECIPIENT_PAGE, filtered.length - shown.length)}{" "}
+                more
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -533,18 +623,54 @@ export default function CampaignAnalyticsPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+function CampaignStatusBadge({ status, live }: { status: string; live: boolean }) {
+  if (live) {
+    return (
+      <Badge variant="outline">
+        <span className="size-1.5 animate-pulse rounded-full bg-current" />
+        Sending
+      </Badge>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <Badge variant="destructive">
+        <span className="size-1.5 rounded-full bg-current" />
+        Failed
+      </Badge>
+    );
+  }
+  const label =
+    status === "sent"
+      ? "Sent"
+      : status === "scheduled"
+        ? "Scheduled"
+        : status === "draft"
+          ? "Draft"
+          : status === "sending"
+            ? "Sending"
+            : status;
+  return (
+    <Badge variant={status === "sent" ? "default" : "outline"}>
+      <span className="size-1.5 rounded-full bg-current" />
+      {label}
+    </Badge>
+  );
+}
+
 function Metric({
   label,
   value,
   tone = "default",
   hint,
-  soft,
+  estimate,
 }: {
   label: string;
   value: number | string;
   tone?: MetricTone;
   hint?: string;
-  soft?: boolean;
+  /** Opens and clicks: tracking-pixel based, so marked as an estimate. */
+  estimate?: boolean;
 }) {
   return (
     <Card size="sm">
@@ -557,11 +683,20 @@ function Metric({
             tone === "destructive" && "text-destructive",
           )}
         >
-          {value}
+          {typeof value === "number" ? value.toLocaleString() : value}
         </div>
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           {label}
-          {soft && <Badge variant="outline">est</Badge>}
+          {estimate && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" tabIndex={0} aria-label={ESTIMATE_NOTE}>
+                  est
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-64">{ESTIMATE_NOTE}</TooltipContent>
+            </Tooltip>
+          )}
         </div>
         {hint && (
           <div className="text-xs tabular-nums text-muted-foreground">
@@ -584,6 +719,7 @@ function RecipientStatusBadge({
     status === "sent" ||
     status === "failed" ||
     status === "bounced" ||
+    status === "sending" ||
     status === "pending"
   ) {
     return (
@@ -591,7 +727,12 @@ function RecipientStatusBadge({
         variant={STATUS_BADGE_VARIANTS[status]}
         title={error ?? undefined}
       >
-        <span className="size-1.5 rounded-full bg-current" />
+        <span
+          className={cn(
+            "size-1.5 rounded-full bg-current",
+            status === "sending" && "animate-pulse",
+          )}
+        />
         {STATUS_LABELS[status]}
       </Badge>
     );

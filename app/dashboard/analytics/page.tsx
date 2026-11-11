@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,6 +14,8 @@ import {
   Filter,
 } from "lucide-react";
 
+import { RefreshStatus } from "@/components/analytics/refresh-status";
+import { ErrorState, useAsyncData } from "@/components/data-state";
 import { Badge } from "@/components/ui/badge";
 import { ChartCard } from "@/components/ui/chart-card";
 import { Button } from "@/components/ui/button";
@@ -41,7 +43,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { IconStack } from "@/components/reui/icon-stack";
-import { PageLoader } from "@/components/bar-spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -51,7 +52,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip as HintTooltip,
+  TooltipContent as HintTooltipContent,
+  TooltipTrigger as HintTooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  campaignRates,
+  formatRate,
+  sumRateInputs,
+  toPercent,
+  type RateInputs,
+} from "@/lib/analytics/rates";
+import { IDLE_REFRESH_MS } from "@/lib/analytics/refresh";
+import { useAutoRefresh } from "@/lib/analytics/use-auto-refresh";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import {
   EvilAreaChart,
@@ -101,9 +117,39 @@ type OverviewDataKey =
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function pct(part: number, whole: number, decimals = 1) {
-  if (whole <= 0) return 0;
-  return Math.round((part / whole) * 100 * 10 ** decimals) / 10 ** decimals;
+// Every rate on this page goes through lib/analytics/rates.ts, the same
+// formulas the per-campaign page uses: bounce ÷ sent, opens and clicks
+// (unique) ÷ delivered.
+function rateInputs(row: Row): RateInputs {
+  return {
+    sent: row.sentCount,
+    delivered: row.engagement.delivered,
+    bounced: row.engagement.bounced,
+    complained: row.engagement.complained,
+    opensUnique: row.engagement.opensUnique,
+    clicksUnique: row.engagement.clicksUnique,
+  };
+}
+
+const ESTIMATE_NOTE =
+  "Opens and clicks are estimates. Apple Mail Privacy Protection loads every image in advance, which records an open for each Apple Mail recipient, and some inboxes block or proxy images.";
+
+function EstimateBadge() {
+  return (
+    <HintTooltip>
+      <HintTooltipTrigger asChild>
+        <Badge
+          variant="outline"
+          tabIndex={0}
+          aria-label={ESTIMATE_NOTE}
+          className="normal-case tracking-normal"
+        >
+          est
+        </Badge>
+      </HintTooltipTrigger>
+      <HintTooltipContent className="max-w-64">{ESTIMATE_NOTE}</HintTooltipContent>
+    </HintTooltip>
+  );
 }
 
 function formatDate(iso: string | null) {
@@ -227,32 +273,42 @@ const clickChartConfig = {
 
 export default function AnalyticsPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [dateFilter, setDateFilter] = useState<DateFilter>("7d");
+  // 30 days, not 7: most workspaces send a newsletter a week or a month
+  // apart, so a 7-day default opened on zeros and read as "no data".
+  const [dateFilter, setDateFilter] = useState<DateFilter>("30d");
   const [visibleSeries, setVisibleSeries] = useState<Set<OverviewDataKey>>(
     new Set(OVERVIEW_SERIES.map((s) => s.key)),
   );
+  // Bumped on workspace switch: another workspace is another resource, so
+  // the page shows the loader instead of the previous workspace's numbers.
+  const [organizationVersion, setOrganizationVersion] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
-  const loadAnalytics = useCallback(async () => {
-    setRows(null);
-    try {
-      const response = await fetch("/api/analytics");
-      const data = await response.json();
-      setRows(data.ok ? data.campaigns : []);
-    } catch {
-      setRows([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadAnalytics();
-  }, [loadAnalytics]);
+  const state = useAsyncData(async () => {
+    const data = await fetchJson<{ campaigns: Row[] }>("/api/analytics");
+    setUpdatedAt(Date.now());
+    return data.campaigns ?? [];
+  }, [organizationVersion]);
 
   useEffect(() => {
     return onOrganizationChanged(() => {
-      void loadAnalytics();
+      setOrganizationVersion((version) => version + 1);
     });
-  }, [loadAnalytics]);
+  }, []);
+
+  // Events (deliveries, bounces, opens) keep arriving after a send; refresh
+  // every minute while the tab is visible.
+  useAutoRefresh({
+    enabled: state.data !== undefined,
+    busy: state.refreshing,
+    delayMs: IDLE_REFRESH_MS,
+    refresh: state.reload,
+  });
+
+  const rows = state.data ?? null;
+  const loadFailed = state.status === "error" && state.data === undefined;
+  const refreshError =
+    state.status === "error" && state.data !== undefined ? state.error : null;
 
   // ── Derived data ────────────────────────────────────────────────────────────
 
@@ -260,6 +316,9 @@ export default function AnalyticsPage() {
     () => filterByDate(rows ?? [], dateFilter),
     [rows, dateFilter],
   );
+  const hasAnyCampaign = (rows?.length ?? 0) > 0;
+  // Something was sent, just not in the selected range.
+  const emptyPeriod = hasAnyCampaign && filteredRows.length === 0;
 
   type OverviewPoint = {
     key: string;
@@ -319,7 +378,16 @@ export default function AnalyticsPage() {
       overviewData.map((point) => ({
         key: point.key,
         date: point.date,
-        bounceRate: pct(point.bounced, point.delivered),
+        bounceRate: toPercent(
+          campaignRates({
+            sent: point.sent,
+            delivered: point.delivered,
+            bounced: point.bounced,
+            complained: point.complained,
+            opensUnique: point.opened,
+            clicksUnique: point.clicked,
+          }).bounceRate,
+        ),
       })),
     [overviewData],
   );
@@ -330,31 +398,26 @@ export default function AnalyticsPage() {
       overviewData.map((point) => ({
         key: point.key,
         date: point.date,
-        clickRate: pct(point.clicked, point.sent),
+        clickRate: toPercent(
+          campaignRates({
+            sent: point.sent,
+            delivered: point.delivered,
+            bounced: point.bounced,
+            complained: point.complained,
+            opensUnique: point.opened,
+            clicksUnique: point.clicked,
+          }).clickRate,
+        ),
       })),
     [overviewData],
   );
 
   // Totals for stats badges
-  const totals = useMemo(() => {
-    const t = {
-      sent: 0,
-      delivered: 0,
-      opensUnique: 0,
-      clicksUnique: 0,
-      bounced: 0,
-    };
-    filteredRows.forEach((r) => {
-      t.sent += r.sentCount;
-      t.delivered += r.engagement.delivered;
-      t.opensUnique += r.engagement.opensUnique;
-      t.clicksUnique += r.engagement.clicksUnique;
-      t.bounced += r.engagement.bounced;
-    });
-    return t;
-  }, [filteredRows]);
-
-  const deliveryRate = pct(totals.delivered, totals.sent);
+  const totals = useMemo(
+    () => sumRateInputs(filteredRows.map(rateInputs)),
+    [filteredRows],
+  );
+  const totalRates = campaignRates(totals);
 
   const isLoading = rows === null;
 
@@ -374,6 +437,25 @@ export default function AnalyticsPage() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  // A failed load is an error with a Retry — never zeroed charts, which read
+  // as "nothing was delivered".
+  if (loadFailed) {
+    return (
+      <Card>
+        <CardContent>
+          <ErrorState
+            title="Couldn't load analytics"
+            message={state.error ?? "Something went wrong. Try again."}
+            onRetry={() => void state.reload()}
+            retrying={state.refreshing}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const showAllTime = () => setDateFilter("all");
 
   return (
     <div className="flex flex-col gap-6">
@@ -405,7 +487,7 @@ export default function AnalyticsPage() {
                   <Skeleton className="mt-1 h-8 w-16" />
                 ) : (
                   <p className="mt-1 text-3xl font-bold tabular-nums leading-none">
-                    {deliveryRate}%
+                    {formatRate(totalRates.deliveryRate)}
                   </p>
                 )}
               </div>
@@ -413,6 +495,14 @@ export default function AnalyticsPage() {
 
             {/* Right: filters */}
             <div className="flex flex-wrap items-center gap-2">
+              {!isLoading && (
+                <RefreshStatus
+                  updatedAt={updatedAt}
+                  refreshing={state.refreshing}
+                  error={refreshError}
+                  onRefresh={() => void state.reload()}
+                />
+              )}
               {/* Series filter */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -509,7 +599,18 @@ export default function AnalyticsPage() {
                 </Area>
               )}
             </EvilAreaChart>
-            {!isLoading && overviewData.length < 2 && (
+            {!isLoading && emptyPeriod && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/70 px-4 text-center">
+                <p className="text-sm font-medium">No campaigns sent in this period</p>
+                <p className="text-xs text-muted-foreground">
+                  Nothing went out in the {DATE_LABELS[dateFilter].toLowerCase()}.
+                </p>
+                <Button variant="outline" size="sm" onClick={showAllTime}>
+                  Show all time
+                </Button>
+              </div>
+            )}
+            {!isLoading && !emptyPeriod && overviewData.length < 2 && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <Badge variant="outline" className="gap-1.5 px-3 py-1.5 text-xs text-muted-foreground">
                   <BarChart3Icon className="size-3" />
@@ -535,9 +636,12 @@ export default function AnalyticsPage() {
                 {isLoading ? (
                   <Skeleton className="mt-1 h-8 w-16" />
                 ) : (
-                  <CardTitle className="mt-1 text-3xl font-bold tabular-nums leading-none">
-                    {pct(totals.bounced, totals.delivered)}%
-                  </CardTitle>
+                  <>
+                    <CardTitle className="mt-1 text-3xl font-bold tabular-nums leading-none">
+                      {formatRate(totalRates.bounceRate)}
+                    </CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">of sent</p>
+                  </>
                 )}
               </div>
             </div>
@@ -604,9 +708,10 @@ export default function AnalyticsPage() {
             </div>
             {/* Breakdown legend */}
             {!isLoading && (() => {
-              const bounceRate = pct(totals.bounced, totals.delivered);
-              const isBanRisk = bounceRate >= 10;
-              const isWarning = bounceRate >= 5 && !isBanRisk;
+              const bounceRate = totalRates.bounceRate;
+              const bouncePercent = toPercent(bounceRate);
+              const isBanRisk = bouncePercent >= 10;
+              const isWarning = bouncePercent >= 5 && !isBanRisk;
               return (
                 <div className="border-t px-5 py-3">
                   <div className="flex items-center justify-between gap-2 text-sm">
@@ -618,7 +723,7 @@ export default function AnalyticsPage() {
                       {isBanRisk && (
                         <Badge
                           variant="outline"
-                          className="border-red-500/40 bg-red-500/10 text-[10px] font-semibold text-red-500 px-1.5 py-0.5"
+                          className="border-destructive/40 bg-destructive/10 text-[10px] font-semibold text-destructive px-1.5 py-0.5"
                         >
                           BAN RISK
                         </Badge>
@@ -634,10 +739,10 @@ export default function AnalyticsPage() {
                       {totals.bounced}{" "}
                       <span className={cn(
                         "text-muted-foreground",
-                        isBanRisk && "text-red-500",
+                        isBanRisk && "text-destructive",
                         isWarning && "text-orange-500",
                       )}>
-                        {bounceRate}%
+                        {formatRate(bounceRate)}
                       </span>
                     </span>
                   </div>
@@ -648,20 +753,26 @@ export default function AnalyticsPage() {
 
         {/* Avg Click Rate */}
         <ChartCard
-          title="Avg. Click Rate"
+          title="Click Rate"
           icon={MousePointerClick}
           header={(
             <div className="flex items-start justify-between gap-2">
               <div>
-                <CardDescription className="text-xs font-medium uppercase tracking-wider">
-                  Avg. Click Rate
+                <CardDescription className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider">
+                  Click Rate
+                  <EstimateBadge />
                 </CardDescription>
                 {isLoading ? (
                   <Skeleton className="mt-1 h-8 w-16" />
                 ) : (
-                  <CardTitle className="mt-1 text-3xl font-bold tabular-nums leading-none">
-                    {pct(totals.clicksUnique, totals.sent)}%
-                  </CardTitle>
+                  <>
+                    <CardTitle className="mt-1 text-3xl font-bold tabular-nums leading-none">
+                      {formatRate(totalRates.clickRate)}
+                    </CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      unique clicks, of delivered
+                    </p>
+                  </>
                 )}
               </div>
             </div>
@@ -703,7 +814,7 @@ export default function AnalyticsPage() {
                   <span className="tabular-nums font-medium">
                     {totals.clicksUnique}{" "}
                     <span className="text-muted-foreground">
-                      {pct(totals.clicksUnique, totals.sent)}%
+                      {formatRate(totalRates.clickRate)}
                     </span>
                   </span>
                 </div>
@@ -718,6 +829,8 @@ export default function AnalyticsPage() {
           <CardTitle>Campaign performance</CardTitle>
           <CardDescription>
             Per-campaign delivery and engagement numbers from sent campaigns.
+            Open and click rates are unique opens and clicks of delivered
+            emails, and are estimates; bounces are of sent.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -727,8 +840,8 @@ export default function AnalyticsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Campaign</TableHead>
                   <TableHead className="text-right">Sent</TableHead>
-                  <TableHead className="text-right">Opens</TableHead>
-                  <TableHead className="text-right">Clicks</TableHead>
+                  <TableHead className="text-right">Opens (est.)</TableHead>
+                  <TableHead className="text-right">Clicks (est.)</TableHead>
                   <TableHead className="hidden text-right md:table-cell">
                     Bounced
                   </TableHead>
@@ -761,14 +874,7 @@ export default function AnalyticsPage() {
                   ))
                 ) : filteredRows.length > 0 ? (
                   filteredRows.map((row) => {
-                    const openRate = pct(
-                      row.engagement.opensUnique,
-                      row.sentCount,
-                    );
-                    const clickRate = pct(
-                      row.engagement.clicksUnique,
-                      row.sentCount,
-                    );
+                    const rowRates = campaignRates(rateInputs(row));
 
                     return (
                       <TableRow
@@ -791,8 +897,11 @@ export default function AnalyticsPage() {
                               <MailIcon className="size-4" />
                             </span>
                             <span className="min-w-0">
-                              <span className="block truncate font-medium text-foreground">
-                                {row.name}
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="truncate font-medium text-foreground">
+                                  {row.name}
+                                </span>
+                                <RowStatusBadge status={row.status} />
                               </span>
                               <span className="block truncate text-xs text-muted-foreground">
                                 {row.subject}
@@ -805,7 +914,7 @@ export default function AnalyticsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="block tabular-nums">
-                            {openRate}%
+                            {formatRate(rowRates.openRate)}
                           </span>
                           <span className="block text-xs tabular-nums text-muted-foreground">
                             {row.engagement.opensUnique}
@@ -813,7 +922,7 @@ export default function AnalyticsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="block tabular-nums">
-                            {clickRate}%
+                            {formatRate(rowRates.clickRate)}
                           </span>
                           <span className="block text-xs tabular-nums text-muted-foreground">
                             {row.engagement.clicksUnique}
@@ -848,18 +957,27 @@ export default function AnalyticsPage() {
                               <BarChart3Icon className="size-5" />
                             </IconStack>
                           </EmptyMedia>
-                          <EmptyTitle>No campaigns sent yet</EmptyTitle>
+                          <EmptyTitle>
+                            {emptyPeriod
+                              ? "No campaigns sent in this period"
+                              : "No campaigns sent yet"}
+                          </EmptyTitle>
                           <EmptyDescription>
-                            Once you send a campaign, delivery and engagement
-                            metrics will show up here.
+                            {emptyPeriod
+                              ? `Nothing went out in the ${DATE_LABELS[dateFilter].toLowerCase()}. Pick a wider range to see earlier campaigns.`
+                              : "Once you send a campaign, delivery and engagement metrics will show up here."}
                           </EmptyDescription>
                         </EmptyHeader>
                         <EmptyContent>
-                          <Button asChild>
-                            <Link href="/dashboard/campaigns">
-                              Go to campaigns
-                            </Link>
-                          </Button>
+                          {emptyPeriod ? (
+                            <Button onClick={showAllTime}>Show all time</Button>
+                          ) : (
+                            <Button asChild>
+                              <Link href="/dashboard/campaigns">
+                                Go to campaigns
+                              </Link>
+                            </Button>
+                          )}
                         </EmptyContent>
                       </Empty>
                     </TableCell>
@@ -872,4 +990,24 @@ export default function AnalyticsPage() {
       </Card>
     </div>
   );
+}
+
+// Sent rows need no badge; anything else (still sending, scheduled, failed)
+// says so, because its numbers are partial or will never fill in.
+function RowStatusBadge({ status }: { status: string }) {
+  if (status === "sent") return null;
+  if (status === "failed") {
+    return (
+      <Badge variant="destructive" title="Open the campaign to see why it failed.">
+        Failed
+      </Badge>
+    );
+  }
+  const label =
+    status === "sending"
+      ? "Sending"
+      : status === "scheduled"
+        ? "Scheduled"
+        : status;
+  return <Badge variant="outline">{label}</Badge>;
 }
