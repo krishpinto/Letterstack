@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   addRecipient,
   deleteRecipient,
+  deleteRecipients,
   listRecipientsForOrganization,
   recipientExists,
   updateRecipient,
@@ -14,6 +15,10 @@ import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 export const runtime = "nodejs";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Bulk delete cap per request; the contacts page sends larger selections in
+// several requests.
+const MAX_BULK_DELETE = 1_000;
 
 function unauthorized() {
   return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -173,8 +178,42 @@ export async function DELETE(request: Request) {
   }
 
   const id = new URL(request.url).searchParams.get("id") ?? "";
+
+  // Bulk: a JSON body { ids: [...] }. One statement, scoped to the caller's
+  // organization; ids that did not delete (already gone, another workspace,
+  // malformed) come back as notFound so the page can report them honestly.
   if (!id) {
-    return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+    const body = await request.json().catch(() => null);
+    const raw: unknown[] | null = Array.isArray(body?.ids) ? body.ids : null;
+    if (!raw) {
+      return NextResponse.json({ ok: false, error: "id or ids required" }, { status: 400 });
+    }
+    const ids = [
+      ...new Set(raw.filter((value): value is string => typeof value === "string")),
+    ];
+    if (ids.length === 0) {
+      return NextResponse.json({ ok: false, error: "ids must not be empty" }, { status: 400 });
+    }
+    if (ids.length > MAX_BULK_DELETE) {
+      return NextResponse.json(
+        { ok: false, error: `Delete at most ${MAX_BULK_DELETE} contacts per request` },
+        { status: 400 },
+      );
+    }
+    try {
+      const deleted = await deleteRecipients(
+        organizationId,
+        ids.filter((value) => UUID_RE.test(value)),
+      );
+      const deletedSet = new Set(deleted);
+      return NextResponse.json({
+        ok: true,
+        deleted,
+        notFound: ids.filter((value) => !deletedSet.has(value)),
+      });
+    } catch (error) {
+      return NextResponse.json({ ok: false, error: realError(error) }, { status: 500 });
+    }
   }
 
   try {
