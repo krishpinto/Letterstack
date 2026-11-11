@@ -231,3 +231,36 @@ describe("compileEmailDocument: Outlook", () => {
     ]);
   });
 });
+
+describe("compileEmailDocument: block options match the canvas", () => {
+  it("uses the columns block's own text colour, like the canvas", () => {
+    const { html } = compileEmailDocument(
+      doc([block("columns", { textColor: "#123456", columns: [{ ...createColumn(), heading: "<p>H</p>" }] })]),
+    );
+    const heading = parse(html).querySelector("td.ls-col h3") as HTMLElement;
+    expect(heading.getAttribute("style")).toContain("color:#123456;");
+  });
+
+  it("uses the custom HTML block's own text colour", () => {
+    const { html } = compileEmailDocument(
+      doc([block("rawHtml", { html: "<p>x</p>", textColor: "#654321" })]),
+    );
+    expect(html).toContain("color:#654321;");
+  });
+
+  it("writes reversed columns in a right-to-left row so mobile stacks them last-first", () => {
+    const columns = ["A", "B", "C"].map((heading) => ({ ...createColumn(), heading }));
+    const render = (mobile: "stack" | "stack-reverse") =>
+      parse(compileEmailDocument(doc([block("columns", { mobile, columns })])).html);
+
+    const reversed = render("stack-reverse");
+    const table = reversed.querySelector("td.ls-col")?.closest("table");
+    expect(table?.getAttribute("dir")).toBe("rtl");
+    expect([...reversed.querySelectorAll("td.ls-col")].map((td) => td.getAttribute("dir"))).toEqual(["ltr", "ltr", "ltr"]);
+    expect([...reversed.querySelectorAll("td.ls-col h3")].map((h) => h.textContent)).toEqual(["C", "B", "A"]);
+
+    const stacked = render("stack");
+    expect(stacked.querySelector("td.ls-col")?.closest("table")?.hasAttribute("dir")).toBe(false);
+    expect([...stacked.querySelectorAll("td.ls-col h3")].map((h) => h.textContent)).toEqual(["A", "B", "C"]);
+  });
+});

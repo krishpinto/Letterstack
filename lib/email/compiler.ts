@@ -458,9 +458,18 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
   // On mobile, columns stack to full width unless the block opts to stay in a row.
   const colClass = block.mobile === "row" ? "ls-col ls-row" : "ls-col";
   const ff = document.settings.fontFamily;
-  const textColor = document.settings.textColor;
+  // The block's own text colour, as the canvas shows it.
+  const textColor = block.textColor ?? document.settings.textColor;
 
-  const cells = block.columns
+  // "Reverse" stacks the last column first on mobile. The cells are written
+  // in reverse order inside a dir="rtl" row, so a desktop client still lays
+  // them out left to right; when the media query turns them into blocks they
+  // stack in source order, which is the reversed one. Each cell sets
+  // dir="ltr" back so its own text is unaffected.
+  const reverse = block.mobile === "stack-reverse";
+  const ordered = reverse ? [...block.columns].reverse() : block.columns;
+
+  const cells = ordered
     .map((column) => {
       const widthPct = Math.round(((column.width || 1) / total) * 1000) / 10;
       // A numeric width for Outlook, which ignores width:100% on images and
@@ -496,7 +505,7 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
                         <div style="margin:0 0 ${cta ? "12px" : "0"} 0;color:${textColor};font-family:${ff};font-size:14px;line-height:1.55;">${bodyHtml}</div>
                         ${cta}`;
       return `
-                    <td class="${colClass}" valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}box-sizing:border-box;">
+                    <td class="${colClass}"${reverse ? ' dir="ltr"' : ""} valign="${valign}" width="${widthPct}%" style="width:${widthPct}%;vertical-align:${valign};padding:${block.cellPadding}px;${bg}${border}${radius}box-sizing:border-box;">
                       ${inner}
                     </td>`;
     })
@@ -507,7 +516,7 @@ function renderColumnsBlock(block: ColumnsBlock, document: EmailDocument): strin
   return `
             <tr>
               <td style="padding:4px ${p}px 24px ${p}px;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"${reverse ? ' dir="rtl"' : ""}>
                   <tr>
                     ${cells}
                   </tr>
@@ -566,7 +575,7 @@ function renderArticleCardBlock(
 function renderRawHtmlBlock(block: RawHtmlBlock, document: EmailDocument) {
   return `
             <tr>
-              <td style="padding:24px ${document.settings.padding}px;color:${document.settings.textColor};font-family:${document.settings.fontFamily};font-size:16px;line-height:1.6;">
+              <td style="padding:24px ${document.settings.padding}px;color:${block.textColor ?? document.settings.textColor};font-family:${document.settings.fontFamily};font-size:16px;line-height:1.6;">
                 ${block.html}
               </td>
             </tr>`;
