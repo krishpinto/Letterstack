@@ -1,12 +1,11 @@
 // POST — finish a password reset: redeem the emailed token (single-use,
-// 1-hour expiry) and set the new password.
+// 1-hour expiry) and set the new password. Also signs out every existing
+// session (see resetPassword).
 
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db } from "@/db/client";
-import { users } from "@/db/schema";
 import { consumePasswordResetToken } from "@/db/password-resets";
+import { resetPassword } from "@/db/users";
 import { BCRYPT_COST, MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
 
 export const runtime = "nodejs";
@@ -35,8 +34,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
-    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    await resetPassword(userId, await bcrypt.hash(password, BCRYPT_COST));
 
     return NextResponse.json({ ok: true });
   } catch (err) {

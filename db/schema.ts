@@ -30,6 +30,11 @@ export const users = pgTable("users", {
   // announcement. Per-user rather than per-org so a second teammate still
   // gets told, and so dismissing it never hides it from someone else.
   planNoticeSeenAt: timestamp("plan_notice_seen_at"),
+  // Compared against the copy inside every session JWT on each request.
+  // Bumping it signs out every existing session for this account, which is
+  // the only revocation stateless JWTs allow. Bumped on password reset and
+  // password change.
+  sessionVersion: integer("session_version").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

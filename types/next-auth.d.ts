@@ -10,8 +10,10 @@ declare module "next-auth" {
   }
 }
 
-declare module "next-auth/jwt" {
+declare module "@auth/core/jwt" {
   interface JWT {
     id?: string;
+    // users.session_version at sign-in; a mismatch signs the session out.
+    sv?: number;
   }
 }

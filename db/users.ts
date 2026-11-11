@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
+import type { AuthState } from "@/lib/auth-rules";
 
 /** Thrown when deleting the account would orphan a shared workspace. */
 export class SoleOwnerError extends Error {
@@ -143,8 +144,41 @@ export async function getPasswordHash(userId: string): Promise<string | null> {
   return row?.passwordHash ?? null;
 }
 
-/** Replace the password hash. Hashing is the caller's job — this never sees a
- *  plaintext password, so no code path can accidentally log one from here. */
+/**
+ * Replace the password hash and sign out every existing session for the
+ * account (see sessionVersion in db/schema.ts). Hashing is the caller's job —
+ * this never sees a plaintext password, so no code path can accidentally log
+ * one from here.
+ *
+ * Returns the new session version so the caller's own session can be
+ * re-issued at it.
+ */
 export async function setPasswordHash(userId: string, passwordHash: string) {
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  const [row] = await db
+    .update(users)
+    .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning({ sessionVersion: users.sessionVersion });
+  return row?.sessionVersion ?? null;
+}
+
+/**
+ * Finish a password reset. Every existing session is revoked: a reset is
+ * what someone does when they think another person has their password.
+ */
+export async function resetPassword(userId: string, passwordHash: string) {
+  await db
+    .update(users)
+    .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId));
+}
+
+/** What the jwt callback re-checks on every request. Null if the user is gone. */
+export async function getAuthState(userId: string): Promise<AuthState | null> {
+  const [row] = await db
+    .select({ email: users.email, sessionVersion: users.sessionVersion })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
 }
