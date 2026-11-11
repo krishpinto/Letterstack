@@ -101,6 +101,27 @@ export async function tryReserveSendQuota(
 }
 
 /**
+ * Give back `count` sends reserved by tryReserveSendQuota that never reached
+ * the provider: a send that lost the race to start, an address suppressed
+ * between reservation and send, a message the provider refused, a batch that
+ * was never queued. Never call it for a send the provider accepted — that
+ * email went out and counts.
+ *
+ * Best-effort in the same way as releaseMailboxQuota: once the month has
+ * rolled over the counter already restarted from zero, and taking the
+ * release out of the new month would under-count it, so it is a no-op then.
+ * The floor at zero is belt and braces against a release with no matching
+ * reservation.
+ */
+export async function releaseSendQuota(organizationId: string, count: number): Promise<void> {
+  if (count <= 0) return;
+  await db
+    .update(organizations)
+    .set({ emailsSentCount: sql`greatest(0, ${organizations.emailsSentCount} - ${count})` })
+    .where(and(eq(organizations.id, organizationId), sql`not ${ROLLED_OVER}`));
+}
+
+/**
  * This month's usage against the plan's allowance, for the settings meters
  * and for the message shown when a send is refused. Reports zero once the
  * month has turned even if the stored counter hasn't been rolled over yet —

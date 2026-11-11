@@ -27,17 +27,21 @@ This supersedes the old handoff's user-global recipient model.
 
 ### Trigger and worker routes
 
-- `POST /api/campaigns/[id]/send` in `app/api/campaigns/[id]/send/route.ts`: authenticates, verifies campaign ownership and draft status, then calls `startCampaign(id)`.
-- `POST /api/send/campaign-worker` in `app/api/send/campaign-worker/route.ts`: verifies the QStash signature, loads only pending rows, calls `sendCampaignBatch()`, and marks the campaign sent when none remain pending.
-- `POST /api/campaigns/[id]/test` in `app/api/campaigns/[id]/test/route.ts`: sends directly through SES to at most five addresses without changing the campaign ledger.
+- `POST /api/campaigns/[id]/send` in `app/api/campaigns/[id]/send/route.ts`: authenticates and verifies membership. A draft, scheduled or failed campaign goes to `dispatchCampaign(id, "now", userId)`; a sending campaign goes to `resumeCampaign(id, userId)`, which re-queues only pending rows and reserves no quota.
+- `lib/send/dispatch-campaign.ts`: checks the sender, reads the audience, reserves quota, claims the campaign with one guarded UPDATE, then queues a dispatch round. Only the request that wins the claim queues anything.
+- `POST /api/send/campaign-worker` in `app/api/send/campaign-worker/route.ts`: verifies the QStash signature against its own URL, calls `sendCampaignBatch()`, then `settleCampaign()`.
+- `POST /api/send/gmail-campaign-worker`: sends one chunk of a Gmail run, then queues the next chunk.
+- `POST /api/send/scheduled-dispatch`: starts a scheduled campaign, records refusals as `failed`, and re-queues a partially published round when QStash retries it.
+- `POST /api/campaigns/[id]/test` in `app/api/campaigns/[id]/test/route.ts`: sends directly through SES to at most five addresses without changing the campaign ledger. Counts against the monthly quota, skips suppressed addresses, and is capped at 20 per user per hour.
 
 ### Audience and ledger
 
 - `db/campaign-recipients.ts`
-  - `prepareCampaignAudience()` returns pending non-suppressed rows and marks suppressed pending rows failed.
-  - `listPendingByIds()` is the worker retry/idempotency gate.
-  - `markCampaignRecipient()` records `sent` or `failed`.
-  - `campaignProgress()` powers the live monitor.
+  - `readSendableAudience()` splits pending rows into sendable and suppressed, without writing.
+  - `claimCampaignRecipient()` moves one row `pending` to `sending` with a guarded UPDATE; only the caller that gets the row back sends to it. This is the idempotency gate.
+  - `finishCampaignRecipient()` records `sending` to `sent` or `failed`.
+  - `settleStaleClaims()` settles rows left in `sending` by a dead worker: `sent` if SES has reported an event for them, otherwise `failed` with "unknown delivery state". Never back to `pending`.
+  - `campaignProgress()` powers the live monitor; its `pending` includes rows in flight.
   - `suppressionTargetsForEmail()` maps an SES bounce/complaint to organization/user suppression targets.
 - `GET|POST|DELETE /api/audience`: organization Audience management.
 - `POST /api/audience/import`: CSV/Excel contact import.
@@ -68,23 +72,22 @@ This supersedes the old handoff's user-global recipient model.
 ```text
 draft campaign + pending campaign_recipients
 -> POST /api/campaigns/[id]/send
--> startCampaign()
--> prepareCampaignAudience(campaignId, organizationId)
--> campaign status = sending
--> QStash publishes one job per batch
+-> dispatchCampaign()
+-> check sender, readSendableAudience(), reserve quota
+-> claim: campaign status draft|scheduled|failed -> sending (guarded UPDATE)
+-> QStash publishes one job per batch, with deduplication ids for the round
 -> POST /api/send/campaign-worker
--> verify Upstash signature
--> listPendingByIds()
--> sendCampaignBatch()
+-> verify Upstash signature against the route URL
+-> sendCampaignBatch(): per row, claim pending -> sending
 -> suppression recheck
 -> personalize unsubscribe URL
 -> SES sendEmail()
--> campaign_recipient = sent or failed
--> no pending rows remain
--> campaign status = sent
+-> campaign_recipient = sent, failed, or back to pending on a retryable error
+-> settleCampaign(): no pending or sending rows remain
+-> campaign status = sent (or failed if nobody was reached)
 ```
 
-QStash retries reload only rows still marked `pending`. A crash after SES accepts a message but before success is recorded remains a narrow duplicate-send risk.
+A row is sent only by the worker that claimed it, so QStash retries, duplicate deliveries and Resume cannot send twice. A worker that dies after SES accepts a message leaves its row in `sending`; after 15 minutes it is settled without being re-sent.
 
 ## SES Event Flow
 

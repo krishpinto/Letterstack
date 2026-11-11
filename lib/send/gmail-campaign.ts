@@ -1,13 +1,11 @@
-import { getCampaign, markCampaignSending } from "@/db/campaigns";
-import { markCampaignRecipient, prepareCampaignAudience } from "@/db/campaign-recipients";
-import { isSuppressedForOrganization } from "@/db/suppression";
-import { getSendUsage, tryReserveSendQuota } from "@/db/organizations";
 import {
-  getMailbox,
-  getMailboxSendUsage,
-  releaseMailboxQuota,
-  tryReserveMailboxQuota,
-} from "@/db/connected-mailboxes";
+  claimCampaignRecipient,
+  finishCampaignRecipient,
+  returnCampaignRecipientToPending,
+} from "@/db/campaign-recipients";
+import { isSuppressedForOrganization } from "@/db/suppression";
+import { getMailbox, releaseMailboxQuota } from "@/db/connected-mailboxes";
+import { releaseSendQuota } from "@/db/organizations";
 import { getValidAccessToken, MailboxReauthRequiredError } from "./gmail-auth";
 import { sendGmailMessage } from "./gmail";
 import { appBaseUrl, publishQstashJSON } from "./qstash";
@@ -16,7 +14,22 @@ import {
   unsubscribeOneClickUrl,
   unsubscribePageUrl,
 } from "@/lib/email/unsubscribe";
-import type { FrozenContent } from "./send-campaign";
+import {
+  recordSent,
+  releaseClaimAndThrow,
+  releaseUnreachedQuota,
+  settleProviderError,
+  type FrozenContent,
+  type QueueResult,
+  type UnreachedTally,
+} from "./send-campaign";
+import {
+  GMAIL_CHUNK_SIZE,
+  gmailDeduplicationId,
+  nextGmailChunk,
+  pendingIdsInOrder,
+  type RecipientState,
+} from "./send-policy";
 
 /**
  * Gmail's own send path — deliberately separate functions from
@@ -30,7 +43,7 @@ import type { FrozenContent } from "./send-campaign";
 
 // Gmail's real constraint is roughly 1 message/second per account — a short
 // gap between sends, not a batch size, since (unlike SES) there's no
-// multi-message fan-out for a Gmail campaign at all; see startGmailCampaign.
+// multi-message fan-out for a Gmail campaign at all; see publishGmailRun.
 const SEND_GAP_MS = 1100;
 const RATE_LIMIT_BACKOFF_MS = 3000;
 
@@ -43,42 +56,74 @@ function isRateLimitError(err: unknown): boolean {
   return message.includes("429") || message.toLowerCase().includes("rate limit");
 }
 
-type CampaignBatchRow = { id: string; email: string };
-
 export type GmailBatchResult = {
   sent: number;
   failed: number;
+  unrecorded: number;
   /** True if the run stopped early because the mailbox needs reconnecting. */
   haltedForReconnect: boolean;
 };
 
 export async function sendGmailCampaignBatch(
   content: FrozenContent,
-  rows: CampaignBatchRow[],
+  recipientIds: string[],
   userId: string,
   organizationId: string,
   mailboxId: string,
 ): Promise<GmailBatchResult> {
+  const tally: UnreachedTally = { unreached: 0 };
+  try {
+    return await sendGmailRows(content, recipientIds, userId, organizationId, mailboxId, tally);
+  } finally {
+    // Both ceilings were reserved for these rows; give both back.
+    await releaseUnreachedQuota(tally, async (count) => {
+      await releaseMailboxQuota(mailboxId, count);
+      await releaseSendQuota(organizationId, count);
+    });
+  }
+}
+
+async function sendGmailRows(
+  content: FrozenContent,
+  recipientIds: string[],
+  userId: string,
+  organizationId: string,
+  mailboxId: string,
+  tally: UnreachedTally,
+): Promise<GmailBatchResult> {
   let sent = 0;
   let failed = 0;
+  let unrecorded = 0;
   const base = appBaseUrl();
 
   const mailbox = await getMailbox(mailboxId);
   if (!mailbox) {
-    // Shouldn't happen — startGmailCampaign already checked it exists — but
+    // Shouldn't happen — dispatchCampaign already checked it exists — but
     // leaving everything pending is the safe failure mode either way.
-    return { sent, failed, haltedForReconnect: false };
+    return { sent, failed, unrecorded, haltedForReconnect: false };
   }
 
-  for (const row of rows) {
-    try {
-      if (await isSuppressedForOrganization(organizationId, row.email)) {
-        await markCampaignRecipient(row.id, "failed", "suppressed");
-        failed++;
-        await sleep(SEND_GAP_MS);
-        continue;
-      }
+  for (const id of recipientIds) {
+    // Claimed one at a time, right before its own send — see
+    // sendCampaignBatch. Matters more here: a Gmail run is long, and a
+    // claim taken up front for all of it would strand every unsent row if
+    // the function were killed.
+    const row = await claimCampaignRecipient(id);
+    if (!row) continue;
 
+    let suppressed: boolean;
+    try {
+      suppressed = await isSuppressedForOrganization(organizationId, row.email);
+    } catch (err) {
+      return releaseClaimAndThrow(row.id, err);
+    }
+    if (suppressed) {
+      if (await finishCampaignRecipient(row.id, "failed", "suppressed")) tally.unreached++;
+      failed++;
+      continue;
+    }
+
+    try {
       const personalized = personalizeUnsubscribe(
         content,
         unsubscribePageUrl(base, userId, row.email),
@@ -110,110 +155,137 @@ export async function sendGmailCampaignBatch(
           throw err;
         }
       }
-
-      await markCampaignRecipient(row.id, "sent");
-      sent++;
     } catch (err) {
       if (err instanceof MailboxReauthRequiredError) {
-        // Not a per-recipient failure — the whole mailbox is down. Stop
-        // here and leave everything from this row onward `pending`, so a
-        // "Resume" after reconnecting picks up exactly where this left off
-        // instead of every remaining recipient reading as an individual
-        // bounce.
-        return { sent, failed, haltedForReconnect: true };
+        // Not a per-recipient failure — the whole mailbox is down. Put this
+        // row back and stop, leaving everything from here on "pending", so a
+        // Resume after reconnecting picks up exactly where this left off
+        // instead of every remaining recipient reading as a bounce.
+        await returnCampaignRecipientToPending(row.id);
+        return { sent, failed, unrecorded, haltedForReconnect: true };
       }
-      await markCampaignRecipient(
+      // Still rate-limited after the backoff above, a 5xx, or a network
+      // failure: the row goes back to pending and QStash retries the run.
+      // Anything else fails this one recipient with Gmail's reason.
+      const refused = await settleProviderError(
         row.id,
-        "failed",
-        err instanceof Error ? err.message : "Unknown error",
+        err,
+        { sent, failed, unrecorded },
+        { retryable: isRateLimitError(err) },
       );
+      if (refused) tally.unreached++;
       failed++;
+      await sleep(SEND_GAP_MS);
+      continue;
     }
+
+    if (await recordSent(row.id)) sent++;
+    else unrecorded++;
     await sleep(SEND_GAP_MS);
   }
 
-  return { sent, failed, haltedForReconnect: false };
+  return { sent, failed, unrecorded, haltedForReconnect: false };
 }
 
-export async function startGmailCampaign(campaignId: string) {
-  const campaign = await getCampaign(campaignId);
-  if (!campaign) throw new Error("Campaign not found");
-  if (campaign.senderType !== "mailbox" || !campaign.mailboxId) {
-    throw new Error("This campaign isn't set to send through a connected Gmail account");
-  }
+/**
+ * One QStash message of a Gmail run: the run's full id list, where this
+ * message starts in it, and the dispatch round it belongs to. Messages
+ * queued before chunking existed carry neither offset nor dispatchKey, and
+ * are read as offset 0 of a "legacy" round.
+ */
+export type GmailRunPayload = {
+  content: FrozenContent;
+  userId: string;
+  organizationId: string;
+  mailboxId: string;
+  campaignId?: string;
+  campaignRecipientIds: string[];
+  offset?: number;
+  dispatchKey?: string;
+};
 
-  const mailbox = await getMailbox(campaign.mailboxId);
-  if (!mailbox || mailbox.organizationId !== campaign.organizationId) {
-    throw new Error("The connected Gmail account for this campaign was not found");
-  }
-  if (mailbox.status !== "active") {
-    throw new Error(
-      mailbox.status === "revoked"
-        ? "This Gmail account is no longer connected. Reconnect it or choose a different sender."
-        : "This Gmail account needs to be reconnected before it can send.",
-    );
-  }
-
-  const audience = await prepareCampaignAudience(campaignId, campaign.organizationId);
-  if (audience.length === 0) {
-    throw new Error("Add at least one recipient before sending");
-  }
-
-  // Two ceilings, both enforced: the mailbox's own daily cap (checked and
-  // reserved first — cheaper to fail, no rollback needed) and the org's
-  // monthly plan allowance (same as every other channel). Skipping the
-  // second would let one connected mailbox send far more per month than
-  // the org's plan actually allows — see the Gmail Sending plan's quota
-  // section for the numbers behind why this matters.
-  const mailboxReserved = await tryReserveMailboxQuota(mailbox.id, audience.length);
-  if (!mailboxReserved) {
-    const usage = await getMailboxSendUsage(mailbox.id);
-    const remaining = Math.max(0, usage.limit - usage.used);
-    throw new Error(
-      `This send is ${audience.length.toLocaleString()} emails but your Gmail account can only send ` +
-        `${remaining.toLocaleString()} more today (its own ${usage.limit.toLocaleString()}/day limit). ` +
-        `Try a smaller list, or send the rest tomorrow.`,
-    );
-  }
-
-  const orgReserved = await tryReserveSendQuota(campaign.organizationId, audience.length);
-  if (!orgReserved) {
-    await releaseMailboxQuota(mailbox.id, audience.length);
-    const usage = await getSendUsage(campaign.organizationId);
-    const remaining = Math.max(0, usage.limit - usage.used);
-    throw new Error(
-      `This send is ${audience.length.toLocaleString()} emails but only ${remaining.toLocaleString()} of your ${usage.limit.toLocaleString()} monthly emails are left. ` +
-        `Upgrade in Settings → Billing, or send to a smaller group.`,
-    );
-  }
-
-  await markCampaignSending(campaignId);
-
-  const content: FrozenContent = {
-    subject: campaign.subject,
-    html: campaign.htmlSnapshot,
-    text: campaign.textSnapshot,
-    fromName: campaign.fromName,
-    fromEmail: mailbox.email,
-    replyTo: campaign.replyTo ?? undefined,
-  };
-
-  // No batch fan-out, one QStash message for the whole (already
-  // quota-capped) audience — Gmail's real constraint is roughly 1/sec on
-  // one account, and QStash gives no guarantee against two fanned-out
-  // batches for the same mailbox running concurrently, which would defeat
-  // the serial pacing entirely. One message, one worker invocation, a loop.
-  await publishQstashJSON({
+function publishGmailMessage(payload: GmailRunPayload & { campaignId: string; offset: number; dispatchKey: string }) {
+  return publishQstashJSON({
     url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
-    body: {
-      content,
-      userId: campaign.userId,
-      organizationId: campaign.organizationId,
-      mailboxId: mailbox.id,
-      campaignId,
-      campaignRecipientIds: audience.map((row) => row.id),
-    },
+    deduplicationId: gmailDeduplicationId(payload.campaignId, payload.dispatchKey, payload.offset),
+    body: payload,
   });
+}
 
-  return { total: audience.length, batches: 1 };
+/**
+ * Queue a Gmail campaign's pending rows as a run: one QStash message for
+ * the first chunk, which queues the next when it is done. No parallel
+ * fan-out: Gmail's real constraint is roughly 1/sec on one account, and
+ * QStash gives no guarantee against two fanned-out messages for the same
+ * mailbox running concurrently, which would defeat the serial pacing.
+ */
+export async function publishGmailRun(input: {
+  content: FrozenContent;
+  userId: string;
+  organizationId: string;
+  mailboxId: string;
+  campaignId: string;
+  dispatchKey: string;
+  recipients: RecipientState[];
+}): Promise<QueueResult> {
+  const ids = pendingIdsInOrder(input.recipients);
+  if (ids.length === 0) return { queued: 0, total: 0 };
+
+  try {
+    await publishGmailMessage({
+      content: input.content,
+      userId: input.userId,
+      organizationId: input.organizationId,
+      mailboxId: input.mailboxId,
+      campaignId: input.campaignId,
+      campaignRecipientIds: ids,
+      offset: 0,
+      dispatchKey: input.dispatchKey,
+    });
+    return { queued: 1, total: 1 };
+  } catch (err) {
+    console.error(`publishGmailRun: campaign ${input.campaignId}`, err);
+    return { queued: 0, total: 1 };
+  }
+}
+
+/**
+ * Send one chunk of a Gmail run, then queue the next chunk.
+ *
+ * A whole run used to be one invocation: up to 450 recipients at 1.1s or
+ * more each, against a function limit of 60s, so long runs were killed
+ * partway through, leaving one row stuck "sending" and the rest waiting for
+ * a QStash retry that would be killed the same way. GMAIL_CHUNK_SIZE keeps
+ * every invocation well inside the limit.
+ *
+ * The next chunk is queued after this one finishes, never before, so the
+ * run stays serial. Its deduplication id depends only on where it starts,
+ * so a retried chunk queues the same next message and QStash drops the
+ * copy. A run halted for reconnecting queues nothing; Resume starts a new
+ * run over whatever is still pending.
+ */
+export async function sendGmailChunk(payload: GmailRunPayload) {
+  const ids = payload.campaignRecipientIds ?? [];
+  const { chunk, nextOffset } = nextGmailChunk(ids, payload.offset ?? 0, GMAIL_CHUNK_SIZE);
+
+  const result = await sendGmailCampaignBatch(
+    payload.content,
+    chunk,
+    payload.userId,
+    payload.organizationId,
+    payload.mailboxId,
+  );
+
+  let continued = false;
+  if (!result.haltedForReconnect && nextOffset !== null && payload.campaignId) {
+    await publishGmailMessage({
+      ...payload,
+      campaignId: payload.campaignId,
+      offset: nextOffset,
+      dispatchKey: payload.dispatchKey ?? "legacy",
+    });
+    continued = true;
+  }
+
+  return { ...result, chunk, continued };
 }

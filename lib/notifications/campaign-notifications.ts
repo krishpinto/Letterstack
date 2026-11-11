@@ -77,7 +77,7 @@ async function fanOut(
 /**
  * "Your campaign finished sending."
  *
- * Called from finalizeCampaignIfDone, and only on the call that actually
+ * Called from settleCampaign, and only on the call that actually
  * performed the sending to sent transition. QStash delivers at least once and
  * several workers can finish at the same moment, so anything gated on "is this
  * campaign done?" would mail more than once; gating on "did I just mark it
@@ -140,6 +140,56 @@ export async function notifyCampaignFinished(campaignId: string): Promise<void> 
     });
   } catch (error) {
     console.error("[notify] campaign finished notification failed", error);
+  }
+}
+
+/**
+ * "Your campaign did not go out."
+ *
+ * Sent when a campaign ends in status "failed": the schedule fired but the
+ * send was refused (over quota, no one left to send to, an unusable
+ * sender), or every recipient failed. Without it a scheduled campaign that
+ * could not start just sat there, and its owner found out from their
+ * readers, if at all.
+ *
+ * Same dedup rule as notifyCampaignFinished: call it only from the call
+ * that performed the transition to "failed" (markCampaignFailed returns
+ * whether it did), so a QStash redelivery cannot mail twice. Uses the
+ * campaignFinished preference: it is the same "how did my send go" email,
+ * with the opposite answer.
+ */
+export async function notifyCampaignFailed(campaignId: string, reason: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        name: campaigns.name,
+        subject: campaigns.subject,
+        organizationId: campaigns.organizationId,
+        organizationName: organizations.name,
+      })
+      .from(campaigns)
+      .innerJoin(organizations, eq(campaigns.organizationId, organizations.id))
+      .where(eq(campaigns.id, campaignId))
+      .limit(1);
+
+    if (!row) return;
+
+    const link = `${appBaseUrl()}/dashboard/campaigns/${campaignId}`;
+
+    await fanOut(row.organizationId, "campaignFinished", () => {
+      const email = renderNotificationEmail({
+        heading: `${row.name} did not go out`,
+        lead: row.subject,
+        subhead: row.organizationName,
+        facts: [],
+        note: reason,
+        action: { label: "Open the campaign", href: link },
+        footer: "Turn these off in Settings, Notifications.",
+      });
+      return { subject: `${row.name} could not be sent`, ...email };
+    });
+  } catch (error) {
+    console.error("[notify] campaign failed notification failed", error);
   }
 }
 

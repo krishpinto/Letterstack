@@ -479,6 +479,7 @@ export const campaigns = pgTable("campaigns", {
   document: jsonb("document").$type<EmailDocument>(),
   htmlSnapshot: text("html_snapshot").notNull(),
   textSnapshot: text("text_snapshot").notNull(),
+  // draft | scheduled | sending | sent | failed
   status: text("status").notNull().default("draft"),
   // Where replies land. Optional — most sends use the recipient's normal
   // reply-to-sender behavior; set this to route replies to a real inbox
@@ -499,6 +500,15 @@ export const campaigns = pgTable("campaigns", {
   deliverabilityAlertSentAt: timestamp("deliverability_alert_sent_at", {
     withTimezone: true,
   }),
+  // When the current dispatch round started: the first send, or the latest
+  // Resume. Its value keys the round's QStash deduplication ids, and its age
+  // is what stops Resume from queueing the same rows twice in a minute. See
+  // claimDispatchRound in db/campaigns.ts.
+  lastDispatchedAt: timestamp("last_dispatched_at"),
+  // Why the campaign ended in status "failed", in words for its owner: over
+  // quota or no recipients when the schedule fired, an unusable sender,
+  // every recipient failed. Cleared when it is claimed for sending again.
+  failureReason: text("failure_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),
@@ -520,9 +530,15 @@ export const campaignRecipients = pgTable("campaign_recipients", {
     .references(() => recipients.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   name: text("name"),
+  // pending → sending → sent | failed. "sending" means a worker has claimed
+  // the row and may be talking to the provider right now; see
+  // claimCampaignRecipient in db/campaign-recipients.ts.
   status: text("status").notNull().default("pending"),
   sentAt: timestamp("sent_at"),
   error: text("error"),
+  // When a worker claimed the row (status "sending"). A claim older than
+  // CLAIM_TIMEOUT_MS belongs to a worker that died mid-send.
+  claimedAt: timestamp("claimed_at"),
 }, (table) => [
   unique("campaign_recipients_campaign_email_unq").on(table.campaignId, table.email),
   index("campaign_recipients_campaign_id_idx").on(table.campaignId),

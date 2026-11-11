@@ -1,7 +1,6 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
-import { campaignRecipients, campaigns, organizationMembers } from "./schema";
-import { getDefaultOrganizationForUser } from "./organizations";
+import { campaigns, organizationMembers } from "./schema";
 import type { EmailDocument } from "@/lib/email/document";
 
 export async function createCampaign(
@@ -119,13 +118,6 @@ export async function listCampaignsForOrganization(organizationId: string) {
     .orderBy(desc(campaigns.createdAt));
 }
 
-export async function listCampaigns(userId: string) {
-  const organization = await getDefaultOrganizationForUser(userId);
-  if (!organization) return [];
-
-  return listCampaignsForOrganization(organization.id);
-}
-
 export async function getCampaign(id: string) {
   const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
   return row ?? null;
@@ -187,11 +179,70 @@ export async function cancelCampaignSchedule(id: string) {
   return row ?? null;
 }
 
-export async function markCampaignSending(id: string) {
+/**
+ * Claim the right to send this campaign: move it to "sending" only if it is
+ * still in one of `from`. Returns the new dispatch round's key (see
+ * claimDispatchRound) to the call that made the move, null to everyone else.
+ *
+ * This guarded UPDATE is the only thing that decides who sends. Two "Send
+ * now" clicks a second apart, or "Send now" racing the scheduled dispatch,
+ * both read "draft" or "scheduled"; Postgres serialises the two UPDATEs on
+ * the row lock and re-checks the WHERE for the second, so exactly one of them
+ * gets a row back. The loser must not publish anything.
+ */
+export async function claimCampaignForSending(
+  id: string,
+  from: readonly string[],
+): Promise<Date | null> {
+  const [row] = await db
+    .update(campaigns)
+    .set({
+      status: "sending",
+      sentAt: new Date(),
+      lastDispatchedAt: sql`now()`,
+      failureReason: null,
+    })
+    .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
+    .returning({ dispatchedAt: campaigns.lastDispatchedAt });
+  return row?.dispatchedAt ?? null;
+}
+
+/**
+ * Start a new dispatch round for a campaign that is already sending — the
+ * server side of "Resume". Returns the round's key, or null when the
+ * campaign is not sending or the last round started less than `cooldownMs`
+ * ago.
+ *
+ * One guarded UPDATE, so two Resume clicks racing each other cannot both
+ * start a round. The timestamps are the database's own now() on both sides
+ * of the comparison, so app-server clock skew cannot open the window early.
+ */
+export async function claimDispatchRound(id: string, cooldownMs: number): Promise<Date | null> {
+  const seconds = Math.max(1, Math.floor(cooldownMs / 1000));
+  const [row] = await db
+    .update(campaigns)
+    .set({ lastDispatchedAt: sql`now()` })
+    .where(
+      and(
+        eq(campaigns.id, id),
+        eq(campaigns.status, "sending"),
+        sql`(${campaigns.lastDispatchedAt} is null or ${campaigns.lastDispatchedAt} < now() - interval '${sql.raw(String(seconds))} seconds')`,
+      ),
+    )
+    .returning({ dispatchedAt: campaigns.lastDispatchedAt });
+  return row?.dispatchedAt ?? null;
+}
+
+/**
+ * Undo claimCampaignForSending when not a single batch could be queued, so
+ * the campaign is back where it was and can be sent again. Guarded on
+ * "sending" so it can never pull a campaign back out of "sent".
+ */
+export async function revertCampaignClaim(id: string, to: string): Promise<void> {
   await db
     .update(campaigns)
-    .set({ status: "sending", sentAt: new Date() })
-    .where(eq(campaigns.id, id));
+    .set({ status: to, sentAt: null, lastDispatchedAt: null })
+    .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")));
 }
 
 /**
@@ -209,6 +260,24 @@ export async function markCampaignSent(id: string): Promise<boolean> {
     .update(campaigns)
     .set({ status: "sent" })
     .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")))
+    .returning({ id: campaigns.id });
+  return rows.length > 0;
+}
+
+/**
+ * Mark a campaign failed, with a reason its owner can act on, if it is still
+ * in one of `from`. Returns whether THIS call made the move, so the failure
+ * notification goes out once even when QStash delivers twice.
+ */
+export async function markCampaignFailed(
+  id: string,
+  reason: string,
+  from: readonly string[],
+): Promise<boolean> {
+  const rows = await db
+    .update(campaigns)
+    .set({ status: "failed", failureReason: reason })
+    .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
     .returning({ id: campaigns.id });
   return rows.length > 0;
 }
