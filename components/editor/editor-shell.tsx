@@ -310,8 +310,9 @@ export function EditorShell({
     }, 1400)
   }, [])
 
-  const [saveQueue] = React.useState(() =>
-    createSaveQueue<EmailDocument>(initialDocument ?? initialEmailDocument, {
+  const [saveQueue] = React.useState(() => {
+    let lastStatus: SaveQueueState["status"] = "idle"
+    return createSaveQueue<EmailDocument>(initialDocument ?? initialEmailDocument, {
       delayMs: AUTOSAVE_DELAY_MS,
       // The page's onSave is the only store. This used to write every
       // document, campaigns included, into one global localStorage key that
@@ -325,10 +326,13 @@ export function EditorShell({
         // The queue reports on every edit; only re-render when what the
         // header shows actually changed.
         setSaveState((current) => (sameSaveState(current, state) ? current : state))
-        if (state.status === "saved") flash("saved")
+        // Only a save that just finished earns the flash, not edits being
+        // discarded on "Leave anyway".
+        if (state.status === "saved" && lastStatus === "saving") flash("saved")
+        lastStatus = state.status
       },
     })
-  )
+  })
 
   // Read through refs so the edit callbacks below stay stable. Without a save
   // handler there is nowhere to write to, so edits are not tracked as unsaved
