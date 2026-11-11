@@ -3,10 +3,11 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   ChevronDownIcon,
-  HelpCircleIcon,
   LogOutIcon,
+  MenuIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -24,13 +25,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
 import { type PlanNotice } from "@/lib/plans/notice";
+import { CommandPalette } from "./command-palette";
 import { CreateWorkspaceScreen } from "./create-workspace-screen";
+import { HelpMenu, useModifierKey } from "./help-menu";
 import { NotificationsMenu } from "./notifications-menu";
 import { InviteMembersDialog } from "./invite-members-dialog";
+import { canManageWorkspace } from "./workspace-role";
 
 export type NavbarOrganization = {
   id: string;
@@ -63,6 +67,8 @@ type TopNavbarProps = {
   planUntil?: string | null;
   /** Shown under the bell. Survives the top banner being dismissed. */
   planNotice?: PlanNotice | null;
+  /** Opens the phone navigation sheet. The button only shows below md. */
+  onOpenMobileNav?: () => void;
 };
 
 export function TopNavbar({
@@ -73,6 +79,7 @@ export function TopNavbar({
   plan = "free",
   planUntil = null,
   planNotice = null,
+  onOpenMobileNav,
 }: TopNavbarProps) {
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -84,9 +91,13 @@ export function TopNavbar({
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const modifierKey = useModifierKey();
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
+  // Only owners and admins may invite; the invite API answers 403 to members.
+  const canInvite = canManageWorkspace(activeOrg.role);
 
   async function selectOrganization(id: string) {
     if (id === activeOrg.id) return;
@@ -151,7 +162,18 @@ export function TopNavbar({
         organizationName={activeOrg.name}
       />
 
-      {/* ── Left: org dropdown ── */}
+      {/* ── Left: phone menu button + org dropdown ── */}
+      {onOpenMobileNav && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-mr-1 size-8 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+          onClick={onOpenMobileNav}
+          aria-label="Open navigation"
+        >
+          <MenuIcon className="size-4" />
+        </Button>
+      )}
       <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -189,20 +211,22 @@ export function TopNavbar({
                 </span>
               </span>
             </div>
-            <div className="mt-2.5 flex gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
-                onClick={() => {
-                  setOrgMenuOpen(false);
-                  setInviteOpen(true);
-                }}
-              >
-                <UserPlusIcon className="size-3.5" />
-                Invite members
-              </Button>
-            </div>
+            {canInvite && (
+              <div className="mt-2.5 flex gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 flex-1 gap-1.5 rounded-lg text-xs font-medium"
+                  onClick={() => {
+                    setOrgMenuOpen(false);
+                    setInviteOpen(true);
+                  }}
+                >
+                  <UserPlusIcon className="size-3.5" />
+                  Invite members
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Other workspaces */}
@@ -254,31 +278,54 @@ export function TopNavbar({
             <PlusIcon className="size-4" />
             Create workspace
           </DropdownMenuItem>
+          {/* A link to /login used to sit here, which navigated without
+              ending the session — the user stayed signed in. */}
           <DropdownMenuItem
             variant="destructive"
             className="gap-2 px-2"
-            asChild
+            onSelect={() => void signOut({ callbackUrl: "/login" })}
           >
-            <Link href="/login">
-              <LogOutIcon className="size-4" />
-              Sign out
-            </Link>
+            <LogOutIcon className="size-4" />
+            Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* ── Center: search ── */}
-      <div className="flex flex-1 justify-center">
-        <div className="relative w-full max-w-md">
-          <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search..."
-            className="h-8 rounded-lg border-transparent bg-muted/50 pl-8 text-sm placeholder:text-muted-foreground/60 focus-visible:border-border focus-visible:bg-background focus-visible:ring-0"
-          />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex">
-            ⌘K
-          </kbd>
-        </div>
+      <CommandPalette
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        organizations={orgs}
+        activeOrganizationId={activeOrg.id}
+        onSwitchOrganization={(id) => void selectOrganization(id)}
+        onCreateWorkspace={() => setCreateOpen(true)}
+        onInviteMembers={canInvite ? () => setInviteOpen(true) : undefined}
+      />
+
+      {/* ── Center: search — opens the command palette ── */}
+      <div className="flex flex-1 justify-end sm:justify-center">
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          aria-keyshortcuts="Meta+K Control+K"
+          className="hidden h-8 w-full max-w-md items-center gap-2 rounded-lg bg-muted/50 px-2.5 text-sm text-muted-foreground/70 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+        >
+          <SearchIcon className="size-3.5 text-muted-foreground" />
+          <span className="flex-1 text-left">Search…</span>
+          <KbdGroup>
+            <Kbd>{modifierKey}</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-lg text-muted-foreground hover:text-foreground sm:hidden"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
       </div>
 
       {/* ── Right: actions ── */}
@@ -289,21 +336,15 @@ export function TopNavbar({
           className="hidden h-7 gap-1.5 rounded-lg border-border/60 px-2.5 text-xs font-medium sm:flex"
           asChild
         >
-          <Link href="/dashboard/campaigns">
-            <ZapIcon className="size-3" />
-            Get started
+          <Link href="/dashboard/campaigns?create=1">
+            <PlusIcon className="size-3" />
+            New campaign
           </Link>
         </Button>
 
         <NotificationsMenu notice={planNotice} />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
-        >
-          <HelpCircleIcon className="size-4" />
-        </Button>
+        <HelpMenu onOpenSearch={() => setSearchOpen(true)} />
 
         {/* User avatar */}
         <DropdownMenu>
@@ -370,16 +411,16 @@ export function TopNavbar({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/settings">
+              <Link href="/dashboard/settings?section=appearance">
                 <SlidersHorizontalIcon />
-                Preferences
+                Appearance
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/login">
-                <LogOutIcon />
-                Sign out
-              </Link>
+            <DropdownMenuItem
+              onSelect={() => void signOut({ callbackUrl: "/login" })}
+            >
+              <LogOutIcon />
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

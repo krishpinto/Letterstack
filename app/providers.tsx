@@ -22,8 +22,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // list. There is no way to read the route group from usePathname, so it
   // has to be kept by hand — add the path here in the same commit that adds
   // the page.
-  const isLightRoute =
-    LIGHT_ROUTES.has(pathname) || pathname.startsWith("/landing");
+  const isLightRoute = LIGHT_ROUTES.has(pathname);
 
   // Marketing stays pinned. Inside the app, the theme is the person's own
   // choice (Settings → Appearance), so nothing is forced and next-themes

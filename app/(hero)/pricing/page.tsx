@@ -15,7 +15,7 @@ import { Footer } from "../_components/footer";
 export const metadata: Metadata = {
   title: "Pricing — LetterStack",
   description:
-    "Plans sized by contacts, not send volume. Free to start, " +
+    "Plans sized by contacts and monthly sends. Free to start, " +
     `₹${PLAN_LIMITS.pro.monthlyPrice!.toLocaleString("en-IN")}/month for a few ` +
     "thousand subscribers, and a Business tier for high-volume senders.",
 };

@@ -118,11 +118,12 @@ export function GettingStarted({
 
           <div className="flex items-center gap-2.5 shrink-0">
             {/* Replays the product tour. It auto-opens once per workspace, so
-                this is the way back to it afterwards. */}
+                this is the way back to it afterwards. md and up only: the
+                tour points at the icon rail, which phones don't show. */}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden h-6 px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:inline-flex"
+              className="hidden h-6 px-2 text-xs font-medium text-muted-foreground hover:text-foreground md:inline-flex"
               onClick={(e) => {
                 e.stopPropagation();
                 startTour();
@@ -346,11 +347,11 @@ function StepMockup({ id }: { id: string }) {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between border-b border-border/40 pb-1.5">
               <span className="font-medium text-foreground truncate max-w-[120px]">Lucia Garza</span>
-              <span className="text-emerald-500 font-medium">Active</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">Active</span>
             </div>
             <div className="flex items-center justify-between border-b border-border/40 pb-1.5">
               <span className="font-medium text-foreground truncate max-w-[120px]">Judah Montes</span>
-              <span className="text-emerald-500 font-medium">Active</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">Active</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-medium text-foreground truncate max-w-[120px]">Roselyn McCoy</span>
@@ -418,17 +419,17 @@ function StepMockup({ id }: { id: string }) {
             <div className="grid grid-cols-3 gap-1 border-b border-border/40 pb-1.5">
               <span className="text-muted-foreground">CNAME</span>
               <span className="truncate text-foreground font-medium">mail</span>
-              <span className="text-emerald-500 font-semibold text-right">Verified</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-right">Verified</span>
             </div>
             <div className="grid grid-cols-3 gap-1 border-b border-border/40 pb-1.5">
               <span className="text-muted-foreground">TXT</span>
               <span className="truncate text-foreground font-medium">ls-verify</span>
-              <span className="text-emerald-500 font-semibold text-right">Verified</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-right">Verified</span>
             </div>
             <div className="grid grid-cols-3 gap-1">
               <span className="text-muted-foreground">MX</span>
               <span className="truncate text-foreground font-medium">@</span>
-              <span className="text-emerald-500 font-semibold text-right">Verified</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-right">Verified</span>
             </div>
           </div>
         </div>
@@ -460,7 +461,7 @@ function StepMockup({ id }: { id: string }) {
             </div>
             <div className="w-full border border-border rounded bg-primary/5 px-2 py-1.5 flex items-center justify-between gap-1.5">
               <span className="font-semibold text-primary">Send Welcome Email</span>
-              <span className="text-[9px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-bold uppercase">Action</span>
+              <span className="text-[9px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold uppercase">Action</span>
             </div>
           </div>
         </div>

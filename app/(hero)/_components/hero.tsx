@@ -15,7 +15,7 @@ import { ProgressiveBlur } from "@/components/progressive-blur";
 //   nudged up, for a layered/echoed depth effect.
 
 const BULLETS = [
-  "No per-contact pricing",
+  "Free plan to start",
   "Real HTML, not screenshots",
   "Send from your own domain",
 ];
