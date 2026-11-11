@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import {
   ArrowRightIcon,
@@ -31,14 +31,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth-rules";
+import { safeCallbackPath } from "@/lib/safe-redirect";
 
 // Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts.
 const GOOGLE_AUTH_ENABLED = true;
 
 export default function SignupPage() {
+  // useSearchParams needs a Suspense boundary to prerender this page.
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Set when someone arrives from an invite link: after signing up they go
+  // back to /invite/<token> to accept it, instead of being asked to create a
+  // workspace of their own first.
+  const callbackPath =
+    typeof window === "undefined"
+      ? null
+      : safeCallbackPath(searchParams.get("callbackUrl"), window.location.origin);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,34 +66,49 @@ export default function SignupPage() {
     setError(null);
     setLoading(true);
 
-    const response = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name }),
-    });
-    const data = await response.json();
+    try {
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      });
+      const data = await response.json().catch(() => null);
 
-    if (!data.ok) {
-      setError(data.error || "Could not create account.");
+      if (!data?.ok) {
+        setError(data?.error || "Could not create account.");
+        setLoading(false);
+        return;
+      }
+
+      const signInResult = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (signInResult?.error) {
+        setError("Account created, but sign-in failed. Please log in manually.");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
       setLoading(false);
       return;
     }
 
-    const signInResult = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    setLoading(false);
-
-    if (signInResult?.error) {
-      setError("Account created, but sign-in failed. Please log in manually.");
-      return;
-    }
-
-    router.push("/onboarding");
+    router.push(callbackPath ?? "/onboarding");
+    router.refresh();
   }
+
+  // /dashboard, not /onboarding: Google also signs in people who already
+  // have an account, and the dashboard layout sends anyone without a
+  // workspace on to /onboarding anyway.
+  const googleCallback = callbackPath ?? "/dashboard";
+
+  const loginHref = callbackPath
+    ? `/login?${new URLSearchParams({ callbackUrl: callbackPath })}`
+    : "/login";
 
   return (
     <main className="grid min-h-svh bg-muted/20 lg:grid-cols-[0.92fr_1.08fr]">
@@ -115,8 +148,8 @@ export default function SignupPage() {
               Start with the account, then name your workspace.
             </h1>
             <p className="mt-3 text-sm leading-6 text-sidebar-foreground/70">
-              This creates the user account now. Organization persistence can be
-              wired in once the multi-tenant model is added.
+              Create your account, then set up a workspace for your campaigns,
+              audience and sending domains.
             </p>
           </div>
         </div>
@@ -203,7 +236,7 @@ export default function SignupPage() {
                         variant="outline"
                         className="w-full"
                         type="button"
-                        onClick={() => signIn("google", { callbackUrl: "/onboarding" })}
+                        onClick={() => signIn("google", { callbackUrl: googleCallback })}
                       >
                         Continue with Google
                       </Button>
@@ -211,7 +244,7 @@ export default function SignupPage() {
                     <FieldDescription className="text-center">
                       Already have an account?{" "}
                       <Link
-                        href="/login"
+                        href={loginHref}
                         className="font-medium text-foreground underline-offset-4 hover:underline"
                       >
                         Log in

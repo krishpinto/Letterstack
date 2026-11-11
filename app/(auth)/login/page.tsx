@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import {
   ArrowRightIcon,
@@ -29,13 +29,36 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { safeCallbackPath } from "@/lib/safe-redirect";
 
 // Mirrors GOOGLE_AUTH_ENABLED in lib/auth.ts.
 const GOOGLE_AUTH_ENABLED = true;
 
+/**
+ * Where to go after signing in: the page proxy.ts bounced the person from
+ * (or an invite link), when it is a path on this site, else the dashboard.
+ */
+function useCallbackPath() {
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("callbackUrl");
+  if (typeof window === "undefined") return null;
+  return safeCallbackPath(raw, window.location.origin);
+}
+
 export default function LoginPage() {
+  // useSearchParams needs a Suspense boundary to prerender this page.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const callbackPath = useCallbackPath();
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,21 +68,40 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
 
-    setLoading(false);
-
-    if (result?.error) {
-      setError("Invalid email or password.");
+      if (result?.error) {
+        setError(
+          result.code === "rate_limited"
+            ? "Too many sign-in attempts. Wait a few minutes and try again, or reset your password."
+            : "Invalid email or password.",
+        );
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError("Could not reach the server.");
+      setLoading(false);
       return;
     }
 
-    router.push("/dashboard");
+    router.push(callbackPath ?? "/dashboard");
+    router.refresh();
   }
+
+  // Carry the destination over to signup, so an invitee who picks "create
+  // an account" here still lands back on their invite.
+  const signupHref = callbackPath
+    ? `/signup?${new URLSearchParams({
+        callbackUrl: callbackPath,
+        ...(email ? { email } : {}),
+      })}`
+    : "/signup";
 
   return (
     <main className="grid min-h-svh bg-muted/20 lg:grid-cols-[0.92fr_1.08fr]">
@@ -170,7 +212,7 @@ export default function LoginPage() {
                         variant="outline"
                         className="w-full"
                         type="button"
-                        onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+                        onClick={() => signIn("google", { callbackUrl: callbackPath ?? "/dashboard" })}
                       >
                         Continue with Google
                       </Button>
@@ -178,7 +220,7 @@ export default function LoginPage() {
                     <FieldDescription className="text-center">
                       New here?{" "}
                       <Link
-                        href="/signup"
+                        href={signupHref}
                         className="font-medium text-foreground underline-offset-4 hover:underline"
                       >
                         Create an account
