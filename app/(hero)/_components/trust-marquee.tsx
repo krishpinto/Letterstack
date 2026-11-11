@@ -17,7 +17,7 @@ const CLAIMS: Array<{ label: string; on: boolean }> = [
   { label: "Real HTML, not a flattened image", on: true },
   { label: "Vendor lock-in", on: false },
   { label: "Send from your own domain", on: true },
-  { label: "Gmail clipping your layout", on: false },
+  { label: "Warning before Gmail clips", on: true },
   { label: "Delivery through Amazon SES", on: true },
   { label: "Hidden per-seat fees", on: false },
   { label: "Bounce & suppression handling", on: true },
@@ -123,7 +123,7 @@ export function TrustSection() {
             </h2>
 
             <p className="max-w-xl text-lg leading-relaxed text-[#717171]">
-              No flattened screenshots, no clipped layouts, no per-seat fees.
+              No flattened screenshots, no per-seat fees.
               The HTML you design is the HTML that is sent, from a domain you
               own.
             </p>

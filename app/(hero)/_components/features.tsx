@@ -365,7 +365,7 @@ const FEATURES = [
     tag: "1.0 Create",
     heading: "Design on a block canvas, not in code.",
     description:
-      "Build the email from blocks: headings, images, buttons, columns and more. It compiles to table-based HTML that holds up in Outlook and stays under Gmail's clipping limit.",
+      "Build the email from blocks: headings, images, buttons, columns and more. It compiles to table-based HTML that holds up in Outlook, and the campaign page warns you if it is big enough for Gmail to clip.",
     mockup: <CreateMockup />,
   },
   {
