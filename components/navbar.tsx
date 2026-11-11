@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { MenuIcon } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { RichButton } from "@/components/rich-button";
 import { StartCtaLink } from "@/components/start-cta";
 import { Button } from "@/components/ui/button";
+import { signOutAndClearDrafts } from "@/lib/editor/sign-out";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -130,7 +131,7 @@ export function Navbar() {
               <Button
                 variant="ghost"
                 className={tone.ghost}
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => signOutAndClearDrafts({ callbackUrl: "/" })}
               >
                 Sign out
               </Button>
@@ -238,7 +239,7 @@ function MobileNav({
               <SheetClose asChild>
                 <Button
                   variant="ghost"
-                  onClick={() => signOut({ callbackUrl: "/" })}
+                  onClick={() => signOutAndClearDrafts({ callbackUrl: "/" })}
                 >
                   Sign out
                 </Button>

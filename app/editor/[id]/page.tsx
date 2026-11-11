@@ -12,6 +12,7 @@ import {
   pickCampaignFields,
   type CampaignFields,
 } from "@/lib/editor/campaign-fields";
+import { discardCampaignHandoff } from "@/lib/editor/local-draft";
 import { patchDocument, patchDocumentOnUnload } from "@/lib/editor/save-request";
 
 type Campaign = {
@@ -68,6 +69,14 @@ export default function CampaignEditorPage() {
   }, [id]);
 
   useEffect(() => {
+    // The campaign page leaves a copy of the design in localStorage before
+    // opening this editor. This editor loads from the server, so drop it
+    // before the next /editor visit picks it up as a template.
+    try {
+      discardCampaignHandoff(window.localStorage);
+    } catch {
+      // Storage blocked: nothing was left there.
+    }
     load();
   }, [load]);
 

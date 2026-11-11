@@ -110,7 +110,6 @@ import {
   locateBlock,
   reorderBlocks,
   removeBlock,
-  STORAGE_KEY,
   touchDocument,
   updateBlock,
   type EmailBlock,
@@ -303,10 +302,12 @@ export function EditorShell({
   const [saveQueue] = React.useState(() =>
     createSaveQueue<EmailDocument>(initialDocument ?? initialEmailDocument, {
       delayMs: AUTOSAVE_DELAY_MS,
+      // The page's onSave is the only store. This used to write every
+      // document, campaigns included, into one global localStorage key that
+      // /editor opened on its next visit — so "New template" showed the last
+      // campaign edited in this browser, whoever it belonged to. Pages that
+      // want a browser copy keep one themselves (lib/editor/local-draft.ts).
       save: async (doc) => {
-        // localStorage first and unconditionally: it is the offline copy that
-        // makes a failed remote save recoverable rather than lost.
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc))
         await onSaveRef.current?.(doc)
       },
       onChange: (state) => {
@@ -318,11 +319,21 @@ export function EditorShell({
     })
   )
 
-  // Read through a ref so the edit callbacks below stay stable.
+  // Read through refs so the edit callbacks below stay stable. Without a save
+  // handler there is nowhere to write to, so edits are not tracked as unsaved
+  // (and the leave-page guard never arms).
   const readOnlyRef = React.useRef(readOnly)
+  const persistsRef = React.useRef(Boolean(onSave) && !readOnly)
   React.useEffect(() => {
     readOnlyRef.current = readOnly
-  }, [readOnly])
+    persistsRef.current = Boolean(onSave) && !readOnly
+  }, [onSave, readOnly])
+  const trackEdit = React.useCallback(
+    (next: EmailDocument) => {
+      if (persistsRef.current) saveQueue.update(next)
+    },
+    [saveQueue]
+  )
 
   const updateDocument = React.useCallback(
     (updater: (current: EmailDocument) => EmailDocument) => {
@@ -342,9 +353,9 @@ export function EditorShell({
       documentRef.current = next
       setDocument(next)
       setHistoryTick((tick) => tick + 1)
-      saveQueue.update(next)
+      trackEdit(next)
     },
-    [saveQueue]
+    [trackEdit]
   )
 
   const undo = React.useCallback(() => {
@@ -358,8 +369,8 @@ export function EditorShell({
     documentRef.current = previous
     setDocument(previous)
     setHistoryTick((tick) => tick + 1)
-    saveQueue.update(previous)
-  }, [saveQueue])
+    trackEdit(previous)
+  }, [trackEdit])
 
   const redo = React.useCallback(() => {
     if (readOnlyRef.current) return
@@ -372,8 +383,8 @@ export function EditorShell({
     documentRef.current = next
     setDocument(next)
     setHistoryTick((tick) => tick + 1)
-    saveQueue.update(next)
-  }, [saveQueue])
+    trackEdit(next)
+  }, [trackEdit])
 
   void historyTick // state exists to refresh canUndo/canRedo below
   const canUndo = historyRef.current.past.length > 0
