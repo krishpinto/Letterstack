@@ -117,6 +117,10 @@ import {
   type EmailDocument,
 } from "@/lib/email/document"
 import { compileEmailDocument } from "@/lib/email/compiler"
+import {
+  createSaveQueue,
+  type SaveQueueState,
+} from "@/lib/editor/save-queue"
 import { getEmailContainerShadow } from "@/lib/email/shadow"
 import { cn } from "@/lib/utils"
 
@@ -141,10 +145,21 @@ async function copyToClipboard(text: string) {
   textarea.remove()
 }
 
-// The dock's save indicator. "saving" and "error" exist because autosave
-// happens without anyone asking for it — a silent background write that can
-// fail needs somewhere to say so.
-type DockStatus = "idle" | "saving" | "saved" | "copied" | "error"
+// A short-lived confirmation in the header. Saving, failed and conflict
+// states are not flashes: they come from the save queue and stay up for as
+// long as they are true.
+type DockFlash = "saved" | "copied" | null
+
+const AUTOSAVE_DELAY_MS = 1500
+
+function sameSaveState(a: SaveQueueState, b: SaveQueueState) {
+  return (
+    a.status === b.status &&
+    a.dirty === b.dirty &&
+    a.error?.kind === b.error?.kind &&
+    a.error?.message === b.error?.message
+  )
+}
 
 type ActiveDrag =
   | { kind: "palette"; blockType: EmailBlock["type"] }
@@ -166,6 +181,11 @@ export function EditorShell({
   renderAssistant,
 }: {
   initialDocument?: EmailDocument
+  /**
+   * Persists the document. Must reject when the save did not land (throw a
+   * SaveError from lib/editor/save-queue to say why); the editor only treats
+   * a resolved promise as saved.
+   */
   onSave?: (doc: EmailDocument) => Promise<void>
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
@@ -191,7 +211,7 @@ export function EditorShell({
   const [rightPanel, setRightPanel] = React.useState<"block" | "theme" | "settings" | null>(null)
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
   const [insertTarget, setInsertTarget] = React.useState<InsertTarget | null>(null)
-  const [dockStatus, setDockStatus] = React.useState<DockStatus>("idle")
+  const [dockFlash, setDockFlash] = React.useState<DockFlash>(null)
   const [view, setView] = React.useState<EditorView>("editor")
   const [previewViewport, setPreviewViewport] = React.useState<PreviewViewport>("desktop")
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
@@ -232,6 +252,51 @@ export function EditorShell({
     documentRef.current = document
   }, [document])
 
+  // ── Saving ────────────────────────────────────────────────────────────────
+  // All saving goes through one queue (lib/editor/save-queue.ts): edits are
+  // written shortly after typing stops, at most one save runs at a time, the
+  // newest document is always the one that ends up stored, and only a save
+  // that really succeeded clears the unsaved state. Before this, the autosave
+  // timer gave up whenever a save was already in flight and was never
+  // rescheduled, and a manual Save could start a second PATCH racing the
+  // first.
+  const onSaveRef = React.useRef(onSave)
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+
+  const [saveState, setSaveState] = React.useState<SaveQueueState>({
+    status: "idle",
+    dirty: false,
+    error: null,
+  })
+  const flash = React.useCallback((value: Exclude<DockFlash, null>) => {
+    setDockFlash(value)
+    if (saveStatusTimeoutRef.current) clearTimeout(saveStatusTimeoutRef.current)
+    saveStatusTimeoutRef.current = setTimeout(() => {
+      setDockFlash(null)
+      saveStatusTimeoutRef.current = null
+    }, 1400)
+  }, [])
+
+  const [saveQueue] = React.useState(() =>
+    createSaveQueue<EmailDocument>(initialDocument ?? initialEmailDocument, {
+      delayMs: AUTOSAVE_DELAY_MS,
+      save: async (doc) => {
+        // localStorage first and unconditionally: it is the offline copy that
+        // makes a failed remote save recoverable rather than lost.
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(doc))
+        await onSaveRef.current?.(doc)
+      },
+      onChange: (state) => {
+        // The queue reports on every edit; only re-render when what the
+        // header shows actually changed.
+        setSaveState((current) => (sameSaveState(current, state) ? current : state))
+        if (state.status === "saved") flash("saved")
+      },
+    })
+  )
+
   const updateDocument = React.useCallback(
     (updater: (current: EmailDocument) => EmailDocument) => {
       const current = documentRef.current
@@ -249,8 +314,9 @@ export function EditorShell({
       documentRef.current = next
       setDocument(next)
       setHistoryTick((tick) => tick + 1)
+      saveQueue.update(next)
     },
-    []
+    [saveQueue]
   )
 
   const undo = React.useCallback(() => {
@@ -263,7 +329,8 @@ export function EditorShell({
     documentRef.current = previous
     setDocument(previous)
     setHistoryTick((tick) => tick + 1)
-  }, [])
+    saveQueue.update(previous)
+  }, [saveQueue])
 
   const redo = React.useCallback(() => {
     const history = historyRef.current
@@ -275,7 +342,8 @@ export function EditorShell({
     documentRef.current = next
     setDocument(next)
     setHistoryTick((tick) => tick + 1)
-  }, [])
+    saveQueue.update(next)
+  }, [saveQueue])
 
   void historyTick // state exists to refresh canUndo/canRedo below
   const canUndo = historyRef.current.past.length > 0
@@ -317,99 +385,20 @@ export function EditorShell({
     }
   }, [])
 
-  const showDockStatus = React.useCallback(
-    (status: Exclude<DockStatus, "idle" | "saving">) => {
-      setDockStatus(status)
+  const saveNow = React.useCallback(() => {
+    void saveQueue.flush()
+  }, [saveQueue])
 
-      if (saveStatusTimeoutRef.current) {
-        clearTimeout(saveStatusTimeoutRef.current)
-      }
-      saveStatusTimeoutRef.current = setTimeout(
-        () => {
-          setDockStatus("idle")
-          saveStatusTimeoutRef.current = null
-        },
-        // A failure stays up long enough to be read; a success is just
-        // reassurance and can blink past.
-        status === "error" ? 4000 : 1400
-      )
-    },
-    []
-  )
-
-  // ── Autosave ──────────────────────────────────────────────────────────────
-  // The editor used to write only when someone clicked Save, and nothing
-  // guarded the tab, so closing mid-edit lost the work outright. Edits are now
-  // written back shortly after typing stops.
-  //
-  // Everything here reads through refs rather than through `document`, so the
-  // scheduling effect depends only on the document identity and is not torn
-  // down and rebuilt on each keystroke.
-
-  const AUTOSAVE_DELAY_MS = 1500
-
-  const onSaveRef = React.useRef(onSave)
-  React.useEffect(() => {
-    onSaveRef.current = onSave
-  }, [onSave])
-
-  // The document last written successfully. Compared by reference, which is
-  // sound because updateDocument always produces a new object — so an equal
-  // reference really does mean nothing has changed since.
-  const lastSavedRef = React.useRef<EmailDocument>(
-    initialDocument ?? initialEmailDocument
-  )
-  const savingRef = React.useRef(false)
-  const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  /** Writes the current document. Returns false if the remote save failed. */
-  const persistDocument = React.useCallback(async () => {
-    const snapshot = documentRef.current
-    savingRef.current = true
-    try {
-      // localStorage first and unconditionally: it is the offline copy that
-      // makes a failed remote save recoverable rather than lost.
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-      await onSaveRef.current?.(snapshot)
-      lastSavedRef.current = snapshot
-      return true
-    } catch (err) {
-      console.error("[editor] save failed", err)
-      return false
-    } finally {
-      savingRef.current = false
-    }
-  }, [])
-
-  const saveDocument = React.useCallback(async () => {
-    setDockStatus("saving")
-    const ok = await persistDocument()
-    showDockStatus(ok ? "saved" : "error")
-  }, [persistDocument, showDockStatus])
-
-  React.useEffect(() => {
-    if (document === lastSavedRef.current) return
-
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null
-      // A manual save may already be in flight; its own effect run will
-      // reschedule this one if anything is still unsaved afterwards.
-      if (savingRef.current) return
-      void saveDocument()
-    }, AUTOSAVE_DELAY_MS)
-
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    }
-  }, [document, saveDocument])
+  // A pending autosave timer is cancelled rather than left to fire into an
+  // unmounted editor.
+  React.useEffect(() => () => saveQueue.cancelScheduled(), [saveQueue])
 
   // Last line of defence: if edits are still unwritten — because autosave has
-  // not fired yet, or because the remote save failed — make the browser ask
-  // before the tab goes.
+  // not fired yet, a save is in flight, or the last save failed — make the
+  // browser ask before the tab goes.
   React.useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (documentRef.current === lastSavedRef.current) return
+      if (!saveQueue.isDirty()) return
       event.preventDefault()
       // Legacy browsers need returnValue set; modern ones ignore the string
       // and show their own wording.
@@ -417,12 +406,12 @@ export function EditorShell({
     }
     window.addEventListener("beforeunload", onBeforeUnload)
     return () => window.removeEventListener("beforeunload", onBeforeUnload)
-  }, [])
+  }, [saveQueue])
 
   const copyTemplateJson = React.useCallback(async () => {
-    await copyToClipboard(JSON.stringify(document, null, 2))
-    showDockStatus("copied")
-  }, [document, showDockStatus])
+    await copyToClipboard(JSON.stringify(documentRef.current, null, 2))
+    flash("copied")
+  }, [flash])
 
   // What the HTML and Preview views show — the exact compiler output that a
   // send would use, recompiled whenever the document changes.
@@ -433,8 +422,8 @@ export function EditorShell({
 
   const copyCompiledHtml = React.useCallback(async () => {
     await copyToClipboard(compileEmailDocument(documentRef.current).html)
-    showDockStatus("copied")
-  }, [showDockStatus])
+    flash("copied")
+  }, [flash])
 
   const handlePasteJson = React.useCallback(() => {
     try {
@@ -444,7 +433,6 @@ export function EditorShell({
         updateDocument(() => parsed)
         setPasteOpen(false)
         setPasteJsonText("")
-        showDockStatus("saved")
       } else {
         void alertDialog({
           title: "Invalid template JSON",
@@ -457,7 +445,7 @@ export function EditorShell({
         description: "The pasted text could not be parsed as JSON.",
       })
     }
-  }, [pasteJsonText, showDockStatus, updateDocument])
+  }, [pasteJsonText, updateDocument])
 
   const handleSaveAsTemplateSubmit = React.useCallback(async () => {
     if (!templateName.trim()) return
@@ -481,13 +469,14 @@ export function EditorShell({
   )
 
   const saveAndExit = React.useCallback(async () => {
-    await saveDocument()
+    // Stay put if the save failed: the header says why, with Retry.
+    if (!(await saveQueue.flush())) return
     if (onExit) {
       onExit()
     } else {
       router.push("/")
     }
-  }, [saveDocument, onExit, router])
+  }, [saveQueue, onExit, router])
 
   const addBlock = React.useCallback(
     (type: EmailBlock["type"]) => {
@@ -671,12 +660,15 @@ export function EditorShell({
           documentName={document.name}
           onRename={renameDocument}
           onExit={onExit ?? (() => router.push("/"))}
-          onSave={() => void saveDocument()}
+          onSave={saveNow}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
-          status={dockStatus}
+          saveState={saveState}
+          flash={dockFlash}
+          onRetry={saveNow}
+          onReload={() => window.location.reload()}
           mode={mode}
           onSaveAndExit={() => void saveAndExit()}
           onSaveAsTemplate={() => {
@@ -910,7 +902,10 @@ function EditorHeader({
   canRedo,
   onUndo,
   onRedo,
-  status,
+  saveState,
+  flash,
+  onRetry,
+  onReload,
   mode,
   onSaveAndExit,
   onSaveAsTemplate,
@@ -929,7 +924,10 @@ function EditorHeader({
   canRedo?: boolean
   onUndo?: () => void
   onRedo?: () => void
-  status: DockStatus
+  saveState: SaveQueueState
+  flash: DockFlash
+  onRetry: () => void
+  onReload: () => void
   mode: "campaign" | "template-creator" | "template-editor"
   onSaveAndExit: () => void
   onSaveAsTemplate: () => void
@@ -983,32 +981,12 @@ function EditorHeader({
 
       {/* Right: Actions, Status & Viewport */}
       <div className="flex items-center gap-3">
-        {/* Status Indicator — flashes briefly after a save or copy lands */}
-        {status !== "idle" && (
-          <span
-            className={cn(
-              "flex items-center gap-1 text-xs font-medium select-none mr-1.5",
-              status === "saved" && "text-emerald-500",
-              status === "error" && "text-destructive",
-              (status === "copied" || status === "saving") && "text-muted-foreground"
-            )}
-          >
-            {status === "error" ? (
-              <AlertTriangleIcon className="size-3.5" />
-            ) : status === "saving" ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <CheckIcon className="size-3.5" />
-            )}
-            {status === "saving"
-              ? "Saving…"
-              : status === "saved"
-                ? "Saved"
-                : status === "error"
-                  ? "Not saved"
-                  : "Copied"}
-          </span>
-        )}
+        <SaveIndicator
+          saveState={saveState}
+          flash={flash}
+          onRetry={onRetry}
+          onReload={onReload}
+        />
 
         {/* Undo/Redo Buttons */}
         <div className="flex items-center gap-1">
@@ -1128,6 +1106,74 @@ function EditorHeader({
         </div>
       </div>
     </header>
+  )
+}
+
+// The header's save status. Failures and conflicts stay visible, with the one
+// action that helps, until they are resolved; success just blinks past.
+function SaveIndicator({
+  saveState,
+  flash,
+  onRetry,
+  onReload,
+}: {
+  saveState: SaveQueueState
+  flash: DockFlash
+  onRetry: () => void
+  onReload: () => void
+}) {
+  const base = "flex items-center gap-1 text-xs font-medium select-none mr-1.5"
+  const action =
+    "ml-1 rounded px-1 underline underline-offset-2 hover:bg-muted hover:text-foreground"
+  const message = saveState.error?.message
+
+  let content: React.ReactNode = null
+  if (saveState.status === "blocked") {
+    content = (
+      <span className={cn(base, "text-amber-600 dark:text-amber-500")} title={message}>
+        <AlertTriangleIcon className="size-3.5" />
+        {saveState.error?.kind === "locked" ? "Can no longer be edited" : "Changed elsewhere"}
+        <button type="button" className={action} onClick={onReload}>
+          Reload
+        </button>
+      </span>
+    )
+  } else if (saveState.status === "error") {
+    content = (
+      <span className={cn(base, "text-destructive")} title={message}>
+        <AlertTriangleIcon className="size-3.5" />
+        {saveState.error?.kind === "unauthorized" ? "Signed out, not saved" : "Not saved"}
+        <button type="button" className={action} onClick={onRetry}>
+          Retry
+        </button>
+      </span>
+    )
+  } else if (saveState.status === "saving") {
+    content = (
+      <span className={cn(base, "text-muted-foreground")}>
+        <Spinner className="size-3.5" />
+        Saving…
+      </span>
+    )
+  } else if (flash) {
+    content = (
+      <span
+        className={cn(
+          base,
+          flash === "saved" ? "text-emerald-500" : "text-muted-foreground"
+        )}
+      >
+        <CheckIcon className="size-3.5" />
+        {flash === "saved" ? "Saved" : "Copied"}
+      </span>
+    )
+  }
+
+  // Polite live region so a failed background save is announced, not just drawn.
+  return (
+    <div role="status" aria-live="polite" className="contents">
+      {content}
+    </div>
   )
 }
 
