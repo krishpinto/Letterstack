@@ -13,7 +13,6 @@ import {
   UserIcon,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { type PlanKey } from "@/lib/plans/limits";
 import { AccountPanel } from "@/components/settings/account-panel";
@@ -33,7 +32,6 @@ type SettingsSection = {
   id: string;
   label: string;
   icon: React.ElementType;
-  badge?: string;
 };
 
 const SETTINGS_NAV: SettingsSection[] = [
@@ -44,7 +42,7 @@ const SETTINGS_NAV: SettingsSection[] = [
   { id: "appearance", label: "Appearance", icon: PaletteIcon },
   { id: "security", label: "Security", icon: ShieldIcon },
   { id: "api", label: "API & Integrations", icon: KeyRoundIcon },
-  { id: "billing", label: "Billing & Plans", icon: CreditCardIcon, badge: "Beta" },
+  { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
 ];
 
 function SettingsIcon({ className }: { className?: string }) {
@@ -219,11 +217,6 @@ export function SettingsShell({
               >
                 <Icon className="size-3.5 shrink-0" />
                 <span className="flex-1 truncate text-left">{section.label}</span>
-                {section.badge && (
-                  <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                    {section.badge}
-                  </Badge>
-                )}
               </button>
             );
           })}
