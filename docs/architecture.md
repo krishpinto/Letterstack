@@ -70,6 +70,8 @@ down delivery for everyone on the account.
 
 Hard bounces and complaints are therefore written to a single suppression table,
 checked by every campaign send and every list import, automatically.
+Soft (transient) bounces are recorded as events but never suppress: a full
+mailbox today can accept mail next week.
 
 ## Why correlation rides on SES message tags
 

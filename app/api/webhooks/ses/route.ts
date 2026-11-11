@@ -10,6 +10,7 @@ import {
   parseTopicAllowList,
   verifySnsMessage,
 } from "@/lib/webhooks/sns";
+import { parseSesEvent } from "@/lib/webhooks/ses-event";
 
 export const runtime = "nodejs";
 
@@ -87,38 +88,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const event = typeof message.Message === "string" ? JSON.parse(message.Message) : null;
-  const type: string = event?.eventType ?? event?.notificationType ?? "Unknown";
-  const email: string | null =
-    event?.bounce?.bouncedRecipients?.[0]?.emailAddress ??
-    event?.complaint?.complainedRecipients?.[0]?.emailAddress ??
-    event?.mail?.destination?.[0] ??
-    null;
-  const campaignId: string | null = event?.mail?.tags?.campaignId?.[0] ?? null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(message.Message);
+  } catch {
+    return reject(400, "Message is not JSON");
+  }
+  const event = parseSesEvent(payload);
+  if (!event) return reject(400, "Message is not an SES event");
 
-  if (email) {
-    await recordEvent(email, type, campaignId);
+  for (const { email } of event.recipients) {
+    await recordEvent(email, event.type, event.campaignId);
+  }
 
-    if (type === "Bounce" || type === "Complaint") {
+  const toSuppress = event.recipients.filter((recipient) => recipient.suppress);
+  if (toSuppress.length > 0) {
+    const reason = event.type.toLowerCase();
+    for (const { email } of toSuppress) {
       const targets = await suppressionTargetsForEmail(email);
       await Promise.all(
         targets.map((target) =>
-          suppressEmailForOrganization(
-            target.organizationId,
-            target.userId,
-            email,
-            type.toLowerCase(),
-          ),
+          suppressEmailForOrganization(target.organizationId, target.userId, email, reason),
         ),
       );
-
-      // Only on bounces and complaints, so the overwhelmingly common event
-      // types (Delivery, Open, Click) never pay for the rate query. Suppression
-      // happens first and unconditionally: keeping a bad address out of the
-      // next send is the part that protects the account, and it must not
-      // depend on a notification succeeding.
-      if (campaignId) await maybeAlertDeliverability(campaignId);
     }
+  }
+
+  // Only on bounces and complaints, so the overwhelmingly common event types
+  // (Delivery, Open, Click) never pay for the rate query. Suppression happens
+  // first and unconditionally: keeping a bad address out of the next send is
+  // the part that protects the account, and it must not depend on a
+  // notification succeeding.
+  if ((event.type === "Bounce" || event.type === "Complaint") && event.campaignId) {
+    await maybeAlertDeliverability(event.campaignId);
   }
 
   return NextResponse.json({ ok: true });
