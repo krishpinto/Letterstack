@@ -115,12 +115,7 @@ function moduleForPath(pathname: string): Module | null {
   ) {
     return "campaigns";
   }
-  if (
-    pathname.startsWith("/dashboard/audience") ||
-    pathname.startsWith("/dashboard/contacts")
-  ) {
-    return "audience";
-  }
+  if (pathname.startsWith("/dashboard/audience")) return "audience";
   if (pathname.startsWith("/dashboard/templates")) return "templates";
   if (pathname.startsWith("/dashboard/automations")) return "automations";
   if (pathname.startsWith("/dashboard/forms")) return "forms";
@@ -403,8 +398,7 @@ function AudienceSidebar() {
   const status = searchParams.get("status");
   const folder = searchParams.get("folder");
   const importing = searchParams.get("import") === "1";
-  const onList =
-    pathname === "/dashboard/audience" || pathname === "/dashboard/contacts";
+  const onList = pathname === "/dashboard/audience";
   const folders = useAudienceFolders();
 
   return (
@@ -812,12 +806,6 @@ function DefaultSidebar() {
               icon={MailIcon}
               label="Editor"
               active={pathname.startsWith("/editor")}
-            />
-            <NavItem
-              href="/dashboard/contacts"
-              icon={UsersIcon}
-              label="Contacts"
-              active={pathname.startsWith("/dashboard/contacts")}
             />
           </div>
         )}

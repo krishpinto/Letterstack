@@ -47,12 +47,10 @@ export function ProtectedShell({
   const isDashboardHome = pathname === "/dashboard";
   const contentOnly = isSettings || isDashboardHome;
   // Full-bleed worklist pages: they draw their own toolbar/table/footer
-  // bands edge-to-edge and manage their own scroll. (/dashboard/contacts is
-  // the audience page's legacy route — same component.)
+  // bands edge-to-edge and manage their own scroll.
   const isFullBleedList =
     pathname === "/dashboard/campaigns" ||
     pathname === "/dashboard/audience" ||
-    pathname === "/dashboard/contacts" ||
     pathname === "/dashboard/forms";
 
   return (

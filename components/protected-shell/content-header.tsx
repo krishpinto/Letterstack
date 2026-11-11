@@ -24,7 +24,6 @@ const PAGE_METADATA: Record<string, { title: string; icon: React.ElementType }> 
   "/dashboard": { title: "Dashboard", icon: HomeIcon },
   "/dashboard/campaigns": { title: "Campaigns", icon: SendIcon },
   "/dashboard/audience": { title: "Audience", icon: UsersIcon },
-  "/dashboard/contacts": { title: "Audience", icon: UsersIcon },
   "/dashboard/templates": { title: "Templates", icon: LayoutTemplateIcon },
   "/dashboard/automations": { title: "Automations", icon: WorkflowIcon },
   "/dashboard/forms": { title: "Forms", icon: MailPlusIcon },

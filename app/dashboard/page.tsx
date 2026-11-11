@@ -219,7 +219,7 @@ export default function DashboardHome() {
       heading: "Import your contacts",
       description:
         "Upload a CSV or Excel list — we validate, dedupe, and clean it as it comes in. This is who your campaigns go to.",
-      href: "/dashboard/contacts",
+      href: "/dashboard/audience?import=1",
       cta: "Add contacts",
       icon: UsersIcon,
     },
