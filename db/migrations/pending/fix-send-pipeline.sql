@@ -12,3 +12,10 @@ alter table campaigns add column if not exists last_dispatched_at timestamp;
 
 -- Why a campaign ended in status 'failed', shown to its owner.
 alter table campaigns add column if not exists failure_reason text;
+
+-- Fixed-window counters, first used to cap test sends per user.
+create table if not exists rate_limits (
+  key text primary key,
+  window_start timestamp not null,
+  count integer not null
+);

@@ -638,3 +638,14 @@ export const notificationPreferences = pgTable(
     index("notification_preferences_user_idx").on(table.userId),
   ],
 );
+
+// Fixed-window counters for actions that cost money or reputation per call
+// and need a ceiling per person, such as test sends. One row per key; the
+// window restarts inside the same statement that counts, so two concurrent
+// requests cannot both pass a check they jointly break. See
+// db/rate-limits.ts.
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start").notNull(),
+  count: integer("count").notNull(),
+});

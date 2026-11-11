@@ -237,3 +237,14 @@ export function classifySendError(err: unknown): SendErrorVerdict {
 
   return { retryable, reason: message };
 }
+
+/**
+ * Whether the provider answered with an error, which proves it did not take
+ * the message: an AWS error carries the HTTP status SES returned, a Gmail
+ * error the status Google returned. A network failure or timeout has none,
+ * and the message may have gone out, so it is never refunded.
+ */
+export function providerAnswered(err: unknown): boolean {
+  const e = (err ?? {}) as { $metadata?: { httpStatusCode?: unknown }; status?: unknown };
+  return typeof e.$metadata?.httpStatusCode === "number" || typeof e.status === "number";
+}
