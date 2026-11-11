@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndClearDrafts } from "@/lib/editor/sign-out";
 import { useTheme } from "next-themes";
 import {
   BarChart3Icon,
@@ -391,7 +391,7 @@ export function CommandPalette({
               value="account Sign out"
               keywords={["log out", "logout"]}
               onSelect={() =>
-                run(() => void signOut({ callbackUrl: "/login" }))
+                run(() => void signOutAndClearDrafts({ callbackUrl: "/login" }))
               }
             >
               <LogOutIcon />

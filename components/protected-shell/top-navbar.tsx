@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndClearDrafts } from "@/lib/editor/sign-out";
 import {
   ChevronDownIcon,
   LogOutIcon,
@@ -283,7 +283,7 @@ export function TopNavbar({
           <DropdownMenuItem
             variant="destructive"
             className="gap-2 px-2"
-            onSelect={() => void signOut({ callbackUrl: "/login" })}
+            onSelect={() => void signOutAndClearDrafts({ callbackUrl: "/login" })}
           >
             <LogOutIcon className="size-4" />
             Sign out
@@ -417,7 +417,7 @@ export function TopNavbar({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() => void signOut({ callbackUrl: "/login" })}
+              onSelect={() => void signOutAndClearDrafts({ callbackUrl: "/login" })}
             >
               <LogOutIcon />
               Sign out
