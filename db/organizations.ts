@@ -2,8 +2,8 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { organizationMembers, organizations, users } from "./schema";
 import { activePlanAt, type StoredPlan } from "@/lib/plans/active";
+import { workspaceAllowance } from "@/lib/plans/workspaces";
 import {
-  higherPlan,
   PAID_PLAN_KEYS,
   PLAN_LIMITS,
   type PlanKey,
@@ -602,17 +602,19 @@ export async function createOrganizationForUser(
   // allowances — ten Free workspaces would add up to more monthly sending
   // than the paid tier they'd otherwise have to buy.
   //
-  // The allowance follows the best plan they hold: someone paying for Pro on
-  // one workspace gets the Pro allowance across all of them. Enforced only on
-  // creating a new one, so anybody already over the line keeps everything
-  // they have — the same grandfathering rule as contacts.
-  const bestPlan: PlanKey = existing.reduce<PlanKey>(
-    (best, org) => higherPlan(best, activePlan(org)),
-    "free",
-  );
-  const allowance = PLAN_LIMITS[bestPlan].workspaces;
-  if (existing.length >= allowance) {
-    throw new WorkspaceLimitError(existing.length, allowance, bestPlan);
+  // Only workspaces they own count, and the allowance follows the best plan
+  // among those: someone paying for Starter on one workspace gets the
+  // Starter allowance across all they own, but being invited into somebody
+  // else's paid workspace lends them nothing. Enforced only on creating a
+  // new one, so anybody already over the line keeps everything they have —
+  // the same grandfathering rule as contacts.
+  const allowance = workspaceAllowance(existing, new Date());
+  if (!allowance.ok) {
+    throw new WorkspaceLimitError(
+      allowance.owned,
+      allowance.allowance,
+      allowance.plan,
+    );
   }
 
   // Duplicate names among this user's workspaces get a numeric suffix
