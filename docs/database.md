@@ -155,3 +155,13 @@ workspace is gone is never consulted, and a new workspace can mail an
 address the old one suppressed. Making bounces and complaints block an
 address across all workspaces would be a change to the send path, not to
 the schema.
+
+## Retries
+
+Each query is one HTTP request to Neon. `db/client.ts` retries a request
+twice, with backoff, when it fails on the network or with a 502/503/504,
+but only when it is a single plain `SELECT` (`db/read-retry.ts`). Writes,
+`SELECT ... FOR UPDATE` and batches are sent once: when a request fails
+with no answer, the statement may still have run, and running a write
+twice can reserve send quota twice or allocate two invoice serials. SQL
+errors are never retried.
