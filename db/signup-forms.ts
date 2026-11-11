@@ -48,6 +48,15 @@ export async function createSignupForm(
   return row;
 }
 
+/** How many forms the workspace has, for the plan's create limit. */
+export async function countSignupForms(organizationId: string): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(signupForms)
+    .where(eq(signupForms.organizationId, organizationId));
+  return Number(row?.count ?? 0);
+}
+
 export async function listSignupForms(organizationId: string) {
   return db
     .select()
