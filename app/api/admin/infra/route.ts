@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { GetAccountCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { UTApi } from "uploadthing/server";
-import { and, count, eq, gte, sql } from "drizzle-orm";
+import { count, eq, gte, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
-  aiUsage,
   automations,
   campaignRecipients,
   campaigns,
@@ -17,7 +16,6 @@ import {
 } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
-import { modelQuotas } from "@/lib/agent/budget";
 
 export const runtime = "nodejs";
 
@@ -108,39 +106,6 @@ async function neonUsage() {
   };
 }
 
-/**
- * Gemini quota, per model.
- *
- * Google meters each model separately, so a single combined number hides the
- * thing you actually need to know when the assistant stops: *which* model ran
- * out, and which one still has room. Tokens are reported alongside for cost
- * projection, but requests-per-day is what stops the assistant working.
- */
-async function geminiUsage() {
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-
-  const [models, [failures]] = await Promise.all([
-    modelQuotas(),
-    db
-      .select({ n: count() })
-      .from(aiUsage)
-      .where(and(gte(aiUsage.createdAt, monthStart), eq(aiUsage.ok, false))),
-  ]);
-
-  const monthCalls = models.reduce((sum, m) => sum + m.monthCalls, 0);
-  const monthTokens = models.reduce((sum, m) => sum + m.monthTokens, 0);
-
-  return {
-    models,
-    monthCalls,
-    monthTokens,
-    // Average cost of a call is the early-warning signal for context bloat.
-    avgTokensPerCall: monthCalls > 0 ? Math.round(monthTokens / monthCalls) : 0,
-    failuresThisMonth: Number(failures?.n ?? 0),
-  };
-}
-
 async function platformStats() {
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [
@@ -215,7 +180,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  const [ses, rep7, rep30, qstash, uploads, neon, platform, gemini] =
+  const [ses, rep7, rep30, qstash, uploads, neon, platform] =
     await Promise.all([
       tryBlock(sesAccount),
       tryBlock(() => reputation(7)),
@@ -224,7 +189,6 @@ export async function GET() {
       tryBlock(uploadthingUsage),
       tryBlock(neonUsage),
       tryBlock(platformStats),
-      tryBlock(geminiUsage),
     ]);
 
   return NextResponse.json({
@@ -237,6 +201,5 @@ export async function GET() {
     uploadthing: uploads,
     neon,
     platform,
-    gemini,
   });
 }
