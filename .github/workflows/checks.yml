@@ -29,7 +29,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Warnings are fine and there are currently 16 of them; this fails only
-      # on errors, which the repo has none of.
+      # Warnings are fine; this fails only on errors.
       - name: Lint
         run: npm run lint
+
+      # Unit tests. They never reach a database or the network.
+      - name: Test
+        run: npm test
