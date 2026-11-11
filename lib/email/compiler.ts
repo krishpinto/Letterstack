@@ -14,6 +14,7 @@ import type {
   TextBlock,
   VideoBlock,
 } from "./document";
+import { htmlToText, linkText } from "./plain-text";
 import { normalizeImageUrl, normalizeLinkUrl, sanitizeEmailDocument } from "./sanitize";
 import { getEmailContainerShadow } from "./shadow";
 import { socialIconSrc, socialLabel } from "./social";
@@ -81,16 +82,14 @@ export function compileEmailDocument(input: EmailDocument): CompiledEmail {
   </body>
 </html>`;
 
-  const text = [
-    document.subject,
-    document.settings.previewText,
-    "",
+  // Subject and preview text as a header, then the blocks, then the
+  // unsubscribe line — each section separated by a blank line. Empty
+  // sections are skipped, never the blank lines between them.
+  const text = joinSections([
+    [document.subject, document.settings.previewText].filter(Boolean).join("\n"),
     blocksToPlainText(document),
-    "",
     "To unsubscribe: {{unsubscribe_url}}",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ]);
 
   return { html, text };
 }
@@ -100,8 +99,13 @@ export function compilePlainText(input: EmailDocument) {
 }
 
 function blocksToPlainText(document: EmailDocument) {
-  return document.blocks
-    .flatMap((block) => blockToText(block))
+  return joinSections(document.blocks.flatMap((block) => blockToText(block)));
+}
+
+/** Non-empty sections, a blank line between each. */
+function joinSections(sections: string[]): string {
+  return sections
+    .map((section) => section.trim())
     .filter(Boolean)
     .join("\n\n");
 }
@@ -581,58 +585,67 @@ function renderRawHtmlBlock(block: RawHtmlBlock, document: EmailDocument) {
             </tr>`;
 }
 
+/**
+ * The plain-text part, block by block. Rich text goes through htmlToText(),
+ * so links keep their URLs ("text (url)"), lists keep their bullets and
+ * paragraphs keep their breaks. URLs here are the normalized ones the HTML
+ * uses, so both parts link to the same places.
+ */
 function blockToText(block: EmailBlock): string[] {
   switch (block.type) {
     case "text":
-      return [
-        block.eyebrow ?? "",
-        stripHtml(block.heading),
-        stripHtml(block.body),
-      ];
+      return [block.eyebrow ?? "", htmlToText(block.heading), htmlToText(block.body)];
     case "heading":
-      return [stripHtml(block.text)];
+      return [htmlToText(block.text)];
     case "paragraph":
-      return [stripHtml(block.body)];
+      return [htmlToText(block.body)];
     case "image":
-      return [block.href ? `${block.alt}: ${block.href}` : block.alt];
+      return [block.src && block.href ? linkText(block.alt || "Image", block.href) : ""];
     case "button":
-      return getButtonItems(block).map((button) => `${button.label}: ${button.href}`);
+      return getButtonItems(block).map((button) => linkText(button.label, button.href));
     case "divider":
     case "spacer":
       return [];
     case "columns":
-      return block.columns.flatMap((column) => [
-        stripHtml(column.heading),
-        stripHtml(column.body),
-        column.showCta ? column.linkLabel : "",
-      ]);
+      return block.columns.map((column) =>
+        joinSections([
+          column.eyebrow ?? "",
+          htmlToText(column.heading),
+          htmlToText(column.body),
+          column.showCta && (column.linkLabel || column.linkUrl)
+            ? linkText(column.linkLabel || "Learn more", column.linkUrl)
+            : "",
+        ]),
+      );
     case "articleCard":
       return [
-        stripHtml(block.headline),
-        stripHtml(block.body),
-        (block.showCta ?? Boolean(block.linkUrl)) && block.linkUrl
-          ? `${block.linkLabel}: ${block.linkUrl}`
+        htmlToText(block.headline),
+        htmlToText(block.body),
+        (block.showCta ?? Boolean(block.linkUrl)) && (block.linkLabel || block.linkUrl)
+          ? linkText(block.linkLabel || "Read more", block.linkUrl)
           : "",
       ];
     case "rawHtml":
-      return [block.text];
+      // Derived from the markup at send time: the stored text was a lossy
+      // tag strip, and older documents may not have one at all.
+      return [htmlToText(block.html) || block.text];
     case "video":
-      return [block.url ? `Video: ${block.url}` : ""];
+      return [block.url ? linkText(block.caption || "Watch video", block.url) : ""];
     case "social":
-      // Same filter as the HTML above — a link with no URL isn't in the email,
-      // so it must not be in the plain-text alternative either.
+      // Same filter as the HTML — a link with no usable URL isn't in the
+      // email, so it isn't in the plain-text part either.
       return [
         block.links
-          .filter((l) => l.url.trim())
+          .filter((l) => l.url)
           .map((l) => `${socialLabel(l)}: ${l.url}`)
-          .join(" | "),
+          .join("\n"),
       ];
     case "logo":
-      return [block.alt];
+      return [block.src && block.href ? linkText(block.alt, block.href) : ""];
     case "footer":
       // The compiler already appends a guaranteed unsubscribe section to every
       // email, so the footer block carries only the identity lines.
-      return [block.companyName, block.address];
+      return [[block.companyName, block.address].filter(Boolean).join("\n")];
     default:
       return [];
   }
@@ -649,18 +662,6 @@ export function escapeHtml(value: string) {
 
 function escapeAttribute(value: string) {
   return escapeHtml(value).replaceAll("`", "&#096;");
-}
-
-export function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function stripOuterP(html: string): string {

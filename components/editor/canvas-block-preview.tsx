@@ -21,17 +21,13 @@ import {
   type RawHtmlBlock,
   type TextBlock,
 } from "@/lib/email/document";
+import { htmlToText } from "@/lib/email/plain-text";
 import { safeColor, safeFontFamily } from "@/lib/email/sanitize";
 import { socialIconSrc, socialLabel } from "@/lib/email/social";
 
 function stripOuterP(html: string): string {
   const stripped = html.replace(/^<p[^>]*>([\s\S]*?)<\/p>\s*$/i, "$1").trim();
   return stripped || html;
-}
-
-/** Plain-text fallback kept in sync with the HTML for the plain-text email. */
-function htmlToPlain(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -82,7 +78,7 @@ function EditableHtmlBlock({
         onInput={(e) => {
           // A paste lands in the DOM before anything can check it.
           const html = sanitizePreviewHtml(e.currentTarget.innerHTML);
-          onUpdateBlock((b) => ({ ...b, html, text: htmlToPlain(html) }) as RawHtmlBlock);
+          onUpdateBlock((b) => ({ ...b, html, text: htmlToText(html) }) as RawHtmlBlock);
         }}
         className="min-h-[44px] rounded-md border border-dashed border-muted-foreground/30 p-3 text-sm outline-none focus:border-ring"
         style={{ color: textColor, fontFamily: settings.fontFamily }}

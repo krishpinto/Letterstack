@@ -264,3 +264,41 @@ describe("compileEmailDocument: block options match the canvas", () => {
     expect([...stacked.querySelectorAll("td.ls-col h3")].map((h) => h.textContent)).toEqual(["A", "B", "C"]);
   });
 });
+
+describe("compileEmailDocument: plain-text part", () => {
+  it("lays out header, blocks and unsubscribe line with blank lines between", () => {
+    const document = doc([
+      block("heading", { text: "<p>Hello</p>" }),
+      block("paragraph", { body: "<p>Fish&nbsp;&amp;&nbsp;chips</p><ul><li><p>One</p></li><li><p>Two</p></li></ul>" }),
+    ]);
+    document.subject = "Subject";
+    document.settings.previewText = "Preview";
+    expect(compileEmailDocument(document).text).toBe(
+      "Subject\nPreview\n\nHello\n\nFish & chips\n\n- One\n- Two\n\nTo unsubscribe: {{unsubscribe_url}}",
+    );
+  });
+
+  it("keeps the URLs of links, buttons and column and article CTAs", () => {
+    const { text } = compileEmailDocument(
+      doc([
+        block("paragraph", { body: '<p>See <a href="https://a.com/post">the post</a></p>' }),
+        block("button", { label: "Buy", href: "shop.com" }),
+        block("columns", {
+          columns: [{ ...createColumn(), heading: "<p>Col</p>", body: "<p>Body</p>", showCta: true, linkLabel: "Go", linkUrl: "https://c.com" }],
+        }),
+        block("articleCard", { headline: "<p>Story</p>", body: "<p>Text</p>", showCta: true, linkLabel: "Read", linkUrl: "https://d.com" }),
+      ]),
+    );
+    expect(text).toContain("See the post (https://a.com/post)");
+    expect(text).toContain("Buy (https://shop.com)");
+    expect(text).toContain("Col\n\nBody\n\nGo (https://c.com)");
+    expect(text).toContain("Story\n\nText\n\nRead (https://d.com)");
+  });
+
+  it("derives custom HTML text from the markup, not the stored text", () => {
+    const { text } = compileEmailDocument(
+      doc([block("rawHtml", { html: '<p>Hi <a href="https://e.com">there</a></p>', text: "Hi there" })]),
+    );
+    expect(text).toContain("Hi there (https://e.com)");
+  });
+});

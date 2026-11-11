@@ -18,6 +18,7 @@
 // there is no DOMParser, so we fail closed and report it instead of pretending
 // the content was checked.
 
+import { htmlToText } from "./plain-text";
 import { sanitizeEmailHtml } from "./sanitize";
 
 /** Removed outright — dangerous, or meaningless once inlined into an email. */
@@ -74,16 +75,6 @@ function collectCssWarnings(styleValue: string, warnings: Set<string>) {
   if (/var\s*\(\s*--/.test(css)) {
     warnings.add("CSS variables don't resolve in email — use literal values.");
   }
-}
-
-/** Collapse runs of whitespace so the text part doesn't inherit HTML indenting. */
-function tidyText(value: string): string {
-  return value
-    .replace(/ /g, " ")
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n");
 }
 
 export function normalizeRawHtml(input: string): NormalizeRawHtmlResult {
@@ -160,7 +151,7 @@ export function normalizeRawHtml(input: string): NormalizeRawHtmlResult {
   for (const el of doomed) el.remove();
 
   const html = sanitizeEmailHtml(doc.body.innerHTML.trim());
-  const text = tidyText(doc.body.textContent ?? "");
+  const text = htmlToText(html);
 
   if (html && !text) {
     warnings.add("This block has no readable text, so it will be blank in the plain-text email.");
