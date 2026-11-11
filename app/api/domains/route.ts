@@ -1,14 +1,14 @@
 // Custom sending domains for the active organization, capped by its plan
 // (sendingDomainLimitFor — Free 1, Starter 2, Growth 5, Business 10).
 //
-// POST   { domain }  — register it in SES and attach it to the org (records returned)
+// POST   { domain }  — register it in SES and attach it to the org (records
+//                      returned). Owner/admin only.
 // GET                — all connected domains + live SES verification state + records
-// DELETE ?domain=x   — detach the domain from the org and delete its SES
+// DELETE ?domain=x   — owner/admin only. Detach the domain from the org and delete its SES
 //                      identity, so nobody can inherit it verified (see
 //                      lib/send/domain-ownership.ts)
 
 import { type NextRequest, NextResponse } from "next/server";
-import { getOrganizationForUser } from "@/db/organizations";
 import {
   addSendingDomain,
   listSendingDomains,
@@ -16,6 +16,7 @@ import {
   sendingDomainLimitFor,
   setSendingDomainVerified,
 } from "@/db/sending-domains";
+import { requireManager, requireMember } from "@/lib/organizations/require-owner";
 import { disconnectSendingDomain } from "@/lib/organizations/sending-domains";
 import { currentOrganizationId, currentUserId } from "@/lib/auth-helpers";
 import {
@@ -31,7 +32,12 @@ import { baseSendingDomain } from "@/lib/send/sender-identity";
 
 export const runtime = "nodejs";
 
-async function requireOrganization() {
+/**
+ * The caller's active workspace. Reading domain status is open to every
+ * member; connecting and disconnecting is "manager": owners and admins only,
+ * since a domain decides who the whole workspace can send as.
+ */
+async function requireOrganization(level: "member" | "manager" = "member") {
   const userId = await currentUserId();
   if (!userId) {
     return {
@@ -47,16 +53,12 @@ async function requireOrganization() {
       ),
     };
   }
-  const organization = await getOrganizationForUser(userId, organizationId);
-  if (!organization) {
-    return {
-      error: NextResponse.json(
-        { ok: false, error: "Organization not found" },
-        { status: 404 },
-      ),
-    };
-  }
-  return { organization };
+  const result =
+    level === "manager"
+      ? await requireManager(organizationId)
+      : await requireMember(organizationId);
+  if (result.error) return { error: result.error };
+  return { organization: result.organization! };
 }
 
 function domainEntry(status: DomainIdentityStatus) {
@@ -118,7 +120,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const { organization, error } = await requireOrganization();
+  const { organization, error } = await requireOrganization("manager");
   if (error) return error;
 
   const body = await request.json().catch(() => null);
@@ -223,7 +225,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const { organization, error } = await requireOrganization();
+  const { organization, error } = await requireOrganization("manager");
   if (error) return error;
 
   const domain = request.nextUrl.searchParams.get("domain")?.trim().toLowerCase();
