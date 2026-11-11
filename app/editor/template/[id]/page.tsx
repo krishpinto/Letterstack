@@ -6,6 +6,7 @@ import { alertDialog } from "@/components/app-dialogs";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { Spinner } from "@/components/ui/spinner";
 import { type EmailDocument } from "@/lib/email/document";
+import { patchDocument } from "@/lib/editor/save-request";
 
 export default function EditTemplatePage() {
   const params = useParams();
@@ -37,27 +38,12 @@ export default function EditTemplatePage() {
     loadTemplate();
   }, [id, router]);
 
+  // Rejects on any failure so the editor keeps the edit marked unsaved and
+  // shows the error with Retry in its header. It used to resolve after an
+  // alert, so the editor then reported "Saved" — and since autosave calls it,
+  // a dead connection meant a fresh alert every 1.5 seconds.
   async function handleSave(doc: EmailDocument) {
-    try {
-      const r = await fetch(`/api/templates/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: doc }),
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        await alertDialog({
-          title: "Could not save template",
-          description: data.error || "Something went wrong. Please try again.",
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      await alertDialog({
-        title: "Could not save template",
-        description: "Something went wrong. Please try again.",
-      });
-    }
+    await patchDocument(`/api/templates/${id}`, { document: doc });
   }
 
   async function handleExit() {

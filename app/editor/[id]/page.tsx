@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Spinner } from "@/components/ui/spinner";
 import { EditorShell } from "@/components/editor/editor-shell";
 import { type EmailDocument } from "@/lib/email/document";
+import { patchDocument } from "@/lib/editor/save-request";
 
 type Campaign = {
   id: string;
@@ -43,20 +44,12 @@ export default function CampaignEditorPage() {
     load();
   }, [load]);
 
+  // Rejects on any failure (a 404 for a campaign that is no longer a draft,
+  // a 401 after the session expired, a login page instead of JSON). This used
+  // to log and resolve, so the editor reported "Saved" and disarmed its
+  // unsaved-changes guard for edits that never reached the server.
   const handleSave = useCallback(async (doc: EmailDocument) => {
-    try {
-      const r = await fetch(`/api/campaigns/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document: doc }),
-      });
-      const data = await r.json();
-      if (!data.ok) {
-        console.error("Save failed:", data.error);
-      }
-    } catch (err) {
-      console.error("Save error:", err);
-    }
+    await patchDocument(`/api/campaigns/${id}`, { document: doc });
   }, [id]);
 
   const handleExit = useCallback(() => {
