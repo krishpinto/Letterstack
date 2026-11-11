@@ -114,6 +114,9 @@ async function sesChannel(campaign: Campaign): Promise<Channel> {
     text: campaign.textSnapshot,
     fromName: campaign.fromName,
     fromEmail: campaign.fromEmail,
+    // sendCampaignBatch passes this to SES as ReplyToAddresses. It was left
+    // out here, so SES campaigns ignored the reply-to their owner had set.
+    replyTo: campaign.replyTo ?? undefined,
   };
   return {
     reserve: (count) => reserveOrgQuota(campaign.organizationId, count),

@@ -360,3 +360,17 @@ describe("sender checks", () => {
     expect(claimDispatchRound).not.toHaveBeenCalled();
   });
 });
+
+describe("frozen content", () => {
+  it("carries the campaign's reply-to into SES batches", async () => {
+    vi.mocked(getCampaign).mockResolvedValue({ ...campaign, replyTo: "team@acme.test" } as never);
+
+    await dispatchCampaign("c1", "now", "u1");
+
+    expect(publishSesBatches).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({ replyTo: "team@acme.test" }),
+      }),
+    );
+  });
+});
