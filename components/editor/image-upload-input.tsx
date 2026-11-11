@@ -6,20 +6,7 @@ import { Loader2Icon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUploadThing } from "@/lib/upload/client";
-import { extractUploadThingKey } from "@/lib/upload/key";
-
-// Fire-and-forget: remove the file an upload just replaced. Never blocks the
-// editor — an orphaned file is a storage-cost problem, not a UX one.
-function deleteReplacedImage(oldUrl: string) {
-  if (!oldUrl || !extractUploadThingKey(oldUrl)) return;
-  fetch("/api/uploadthing/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: oldUrl }),
-  }).catch((error) => {
-    console.error("Failed to clean up replaced image", error);
-  });
-}
+import { EMAIL_IMAGE_ACCEPT } from "@/lib/upload/limits";
 
 // Emails stay light: anything wider than this gets scaled down before upload.
 const MAX_WIDTH = 1200;
@@ -27,8 +14,9 @@ const JPEG_QUALITY = 0.85;
 
 /**
  * Shrink oversized raster images on the client so a raw Photoshop export
- * doesn't ship 8MB into a newsletter. GIFs and SVGs pass through untouched
- * (canvas would flatten animation / rasterize vectors).
+ * doesn't ship 8MB into a newsletter. GIFs pass through untouched (canvas
+ * would flatten the animation). SVG is refused by the upload route — email
+ * clients don't render it.
  */
 async function resizeForEmail(file: File): Promise<File> {
   if (file.type === "image/gif" || file.type === "image/svg+xml") return file;
@@ -88,9 +76,10 @@ export function ImageUploadInput({
     onClientUploadComplete: (res) => {
       const url = res?.[0]?.ufsUrl;
       if (!url) return;
-      const previousUrl = value;
+      // The image this replaces is deliberately left in place. The same URL
+      // may be in a sent email, a reused campaign, a template, or this
+      // document's undo history — deleting it would break all of them.
       onChange(url);
-      if (previousUrl && previousUrl !== url) deleteReplacedImage(previousUrl);
     },
     onUploadError: (e) => {
       setError(e.message || "Upload failed. Try again.");
@@ -133,7 +122,7 @@ export function ImageUploadInput({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={EMAIL_IMAGE_ACCEPT}
           className="hidden"
           onChange={handleFile}
         />
