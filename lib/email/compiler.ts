@@ -14,6 +14,7 @@ import type {
   TextBlock,
   VideoBlock,
 } from "./document";
+import { sanitizeEmailDocument } from "./sanitize";
 import { getEmailContainerShadow } from "./shadow";
 import { socialIconSrc, socialLabel } from "./social";
 
@@ -22,7 +23,11 @@ export type CompiledEmail = {
   text: string;
 };
 
-export function compileEmailDocument(document: EmailDocument): CompiledEmail {
+export function compileEmailDocument(input: EmailDocument): CompiledEmail {
+  // Sanitized on every compile, not only on save: documents stored before
+  // write-time sanitizing existed are still sent and previewed, and this is
+  // the one function every preview and every send goes through.
+  const document = withAttributeSafeStyles(sanitizeEmailDocument(input));
   const body = document.blocks
     .map((block) => renderBlock(block, document))
     .join("");
@@ -69,7 +74,7 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
     document.subject,
     document.settings.previewText,
     "",
-    compilePlainText(document),
+    blocksToPlainText(document),
     "",
     "To unsubscribe: {{unsubscribe_url}}",
   ]
@@ -79,11 +84,51 @@ export function compileEmailDocument(document: EmailDocument): CompiledEmail {
   return { html, text };
 }
 
-export function compilePlainText(document: EmailDocument) {
+export function compilePlainText(input: EmailDocument) {
+  return blocksToPlainText(sanitizeEmailDocument(input));
+}
+
+function blocksToPlainText(document: EmailDocument) {
   return document.blocks
     .flatMap((block) => blockToText(block))
     .filter(Boolean)
     .join("\n\n");
+}
+
+const BLOCK_STYLE_FIELDS = [
+  "backgroundColor",
+  "textColor",
+  "borderColor",
+  "columnBackgroundColor",
+] as const;
+
+/**
+ * Colours and the font list are interpolated straight into style="…" by the
+ * renderers below. sanitizeEmailDocument() has already checked that each one
+ * is the kind of value it claims to be; escaping them as well means a quote
+ * can never close the attribute early — and font lists legitimately contain
+ * quotes ('Trebuchet MS'). Every other attribute value is escaped where it is
+ * written, or is a number or an enum.
+ */
+function withAttributeSafeStyles(document: EmailDocument): EmailDocument {
+  const settings = { ...document.settings } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(settings)) {
+    if (key !== "previewText" && typeof value === "string") {
+      settings[key] = escapeAttribute(value);
+    }
+  }
+  const blocks = document.blocks.map((block) => {
+    const copy = { ...block } as Record<string, unknown>;
+    for (const key of BLOCK_STYLE_FIELDS) {
+      if (typeof copy[key] === "string") copy[key] = escapeAttribute(copy[key] as string);
+    }
+    return copy as EmailBlock;
+  });
+  return {
+    ...document,
+    settings: settings as EmailDocument["settings"],
+    blocks,
+  };
 }
 
 function renderBlock(block: EmailBlock, document: EmailDocument): string {
