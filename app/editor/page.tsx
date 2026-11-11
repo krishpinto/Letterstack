@@ -178,6 +178,9 @@ export default function EditorPage() {
       initialDocument={start.doc}
       onSave={handleSave}
       onSaveOnUnload={handleSaveOnUnload}
+      // Autosave here only reaches this browser; the template exists for the
+      // workspace once "Save as template" is used. Plain "Saved" said otherwise.
+      savedLabel="Draft saved on this device"
       onSaveAsTemplate={handleSaveAsTemplate}
       onExit={() => router.push("/dashboard/templates")}
     />

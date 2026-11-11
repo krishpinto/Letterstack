@@ -175,6 +175,7 @@ export function EditorShell({
   initialDocument,
   onSave,
   onSaveOnUnload,
+  savedLabel = "Saved",
   onExit,
   onSaveAsTemplate,
   mode = "campaign",
@@ -195,6 +196,12 @@ export function EditorShell({
    * outlives the page, such as fetch with `keepalive`.
    */
   onSaveOnUnload?: (doc: EmailDocument) => void
+  /**
+   * Header text after a successful save. Says where the document went when
+   * that is not the server, so a browser-only draft isn't taken for a saved
+   * template.
+   */
+  savedLabel?: string
   onExit?: () => void
   onSaveAsTemplate?: (doc: EmailDocument, name: string) => Promise<void>
   mode?: "campaign" | "template-creator" | "template-editor"
@@ -759,6 +766,7 @@ export function EditorShell({
           onRedo={redo}
           saveState={saveState}
           flash={dockFlash}
+          savedLabel={savedLabel}
           onRetry={saveNow}
           onReload={() => window.location.reload()}
           readOnly={readOnly}
@@ -998,6 +1006,7 @@ function EditorHeader({
   onRedo,
   saveState,
   flash,
+  savedLabel,
   onRetry,
   onReload,
   readOnly,
@@ -1021,6 +1030,7 @@ function EditorHeader({
   onRedo?: () => void
   saveState: SaveQueueState
   flash: DockFlash
+  savedLabel: string
   onRetry: () => void
   onReload: () => void
   readOnly: boolean
@@ -1088,6 +1098,7 @@ function EditorHeader({
         <SaveIndicator
           saveState={saveState}
           flash={flash}
+          savedLabel={savedLabel}
           onRetry={onRetry}
           onReload={onReload}
         />
@@ -1222,11 +1233,13 @@ function EditorHeader({
 function SaveIndicator({
   saveState,
   flash,
+  savedLabel,
   onRetry,
   onReload,
 }: {
   saveState: SaveQueueState
   flash: DockFlash
+  savedLabel: string
   onRetry: () => void
   onReload: () => void
 }) {
@@ -1272,7 +1285,7 @@ function SaveIndicator({
         )}
       >
         <CheckIcon className="size-3.5" />
-        {flash === "saved" ? "Saved" : "Copied"}
+        {flash === "saved" ? savedLabel : "Copied"}
       </span>
     )
   }
