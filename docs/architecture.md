@@ -21,7 +21,9 @@ the way it is.
    per address.
 6. **Feedback.** An SES configuration set publishes delivery, bounce, complaint,
    open and click events to SNS, which posts them to
-   [`/api/webhooks/ses`](../app/api/webhooks/ses/route.ts).
+   [`/api/webhooks/ses`](../app/api/webhooks/ses/route.ts). The webhook checks
+   the SNS signature and the topic ARN before it reads anything else, because
+   the URL is public and a forged complaint would suppress a real address.
 
 ## Why the output is table-based HTML
 

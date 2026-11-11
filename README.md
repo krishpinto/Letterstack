@@ -109,7 +109,10 @@ LetterStack is deployed on [Vercel](https://vercel.com) with Neon and Upstash.
 Any host that runs Next.js with Node serverless functions works. Point
 `APP_URL` at your deployment so QStash can reach the worker routes, and add your
 webhook endpoint as an HTTPS subscriber to the SNS topic behind your SES
-configuration set.
+configuration set. Set `SES_EVENTS_TOPIC_ARN` to that topic's ARN before you
+subscribe: the webhook verifies every SNS signature, and only confirms
+subscriptions to allow-listed topics. Leave raw message delivery off on the
+subscription, because raw messages carry no signature and are rejected.
 
 ## Contributing
 
