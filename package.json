@@ -93,5 +93,8 @@
     "sharp@0.34.5": true,
     "msgpackr-extract@3.0.4": true,
     "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "jsdom": "26.1.0"
   }
 }
