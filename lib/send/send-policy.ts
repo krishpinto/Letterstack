@@ -13,7 +13,9 @@
  * row becomes "failed" with UNKNOWN_DELIVERY_STATE rather than going back to
  * "pending": the worker may have died after the provider accepted the
  * message but before we recorded it, and re-sending would mail that person
- * twice. We choose at-most-once for these few rows, and say so in the error.
+ * twice. We choose at-most-once for these few rows, and say so in the error
+ * — unless SES has reported on the message by then, which proves it went;
+ * see settleStaleClaims.
  */
 export const CLAIM_TIMEOUT_MS = 15 * 60 * 1000;
 

@@ -1,5 +1,5 @@
 import { Receiver } from "@upstash/qstash";
-import { failStaleClaims, recipientStatusCounts } from "@/db/campaign-recipients";
+import { recipientStatusCounts, settleStaleClaims } from "@/db/campaign-recipients";
 import { markCampaignFailed, markCampaignSent } from "@/db/campaigns";
 import {
   notifyCampaignFailed,
@@ -49,7 +49,7 @@ export async function verifyQstashRequest(request: Request): Promise<string | nu
  * often as it completed.
  */
 export async function settleCampaign(campaignId: string): Promise<{ inFlight: number }> {
-  await failStaleClaims(campaignId, CLAIM_TIMEOUT_MS);
+  await settleStaleClaims(campaignId, CLAIM_TIMEOUT_MS);
   const counts = await recipientStatusCounts(campaignId);
   const outcome = decideCampaignOutcome(counts);
   if (outcome === "sent") {

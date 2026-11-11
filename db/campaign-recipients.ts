@@ -200,28 +200,51 @@ export async function returnCampaignRecipientToPending(id: string): Promise<void
 }
 
 /**
- * Fail rows whose claim is older than `timeoutMs`: the worker holding them
- * is gone. They become "failed" with UNKNOWN_DELIVERY_STATE, never "pending"
- * — see CLAIM_TIMEOUT_MS for why this side of the trade-off. Returns how
- * many rows it settled.
+ * Settle rows whose claim is older than `timeoutMs`: the worker holding them
+ * is gone, and we do not know whether the provider got the message.
  *
- * `timeoutMs` is our own constant, rendered as a literal so Postgres can
- * type the interval.
+ * Rows SES has since reported on (any email_events row for this campaign
+ * and address — Send, Delivery, Bounce, Open…) did reach SES, so they become
+ * "sent". The event is our record of SES's message: the campaignId tag rides
+ * on the message and SES echoes it back. Everything else becomes "failed"
+ * with UNKNOWN_DELIVERY_STATE, never "pending" — see CLAIM_TIMEOUT_MS for
+ * why this side of the trade-off. Gmail sends produce no events, so a
+ * stale Gmail row always lands in the second group.
+ *
+ * Returns how many rows it settled each way. `timeoutMs` is our own
+ * constant, rendered as a literal so Postgres can type the interval. The
+ * event check is hand-written SQL for the same reason as
+ * claimCampaignRecipient.
  */
-export async function failStaleClaims(campaignId: string, timeoutMs: number): Promise<number> {
+export async function settleStaleClaims(
+  campaignId: string,
+  timeoutMs: number,
+): Promise<{ sent: number; failed: number }> {
   const seconds = Math.max(1, Math.floor(timeoutMs / 1000));
-  const rows = await db
+  const stale = and(
+    eq(campaignRecipients.campaignId, campaignId),
+    eq(campaignRecipients.status, "sending"),
+    sql`(${campaignRecipients.claimedAt} is null or ${campaignRecipients.claimedAt} < now() - interval '${sql.raw(String(seconds))} seconds')`,
+  );
+
+  const sent = await db
     .update(campaignRecipients)
-    .set({ status: "failed", sentAt: null, error: UNKNOWN_DELIVERY_STATE })
+    .set({ status: "sent", sentAt: sql`coalesce(claimed_at, now())`, error: null })
     .where(
       and(
-        eq(campaignRecipients.campaignId, campaignId),
-        eq(campaignRecipients.status, "sending"),
-        sql`(${campaignRecipients.claimedAt} is null or ${campaignRecipients.claimedAt} < now() - interval '${sql.raw(String(seconds))} seconds')`,
+        stale,
+        sql`exists (select 1 from email_events e where e.campaign_id = campaign_recipients.campaign_id and lower(e.email) = lower(campaign_recipients.email))`,
       ),
     )
     .returning({ id: campaignRecipients.id });
-  return rows.length;
+
+  const failed = await db
+    .update(campaignRecipients)
+    .set({ status: "failed", sentAt: null, error: UNKNOWN_DELIVERY_STATE })
+    .where(stale)
+    .returning({ id: campaignRecipients.id });
+
+  return { sent: sent.length, failed: failed.length };
 }
 
 /** How many of these recipients are claimed right now. */
