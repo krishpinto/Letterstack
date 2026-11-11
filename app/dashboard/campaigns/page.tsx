@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronRightIcon,
@@ -14,13 +13,17 @@ import {
   PlusIcon,
   SearchIcon,
   Trash2Icon,
+  TriangleAlertIcon,
 } from "lucide-react";
 
 import { PREBUILT_TEMPLATES } from "@/lib/email/templates";
 import { onOrganizationChanged } from "@/lib/dashboard-events";
+import { errorMessage, fetchJson } from "@/lib/fetch-json";
 import { paginationRange } from "@/lib/pagination";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { confirmDialog } from "@/components/app-dialogs";
+import { ErrorState, useAsyncData } from "@/components/data-state";
+import { toast } from "@/components/toast";
 import { SelectionPill } from "@/components/selection-pill";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,6 +83,11 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { PageLoader } from "@/components/bar-spinner";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Table,
   TableBody,
   TableCell,
@@ -100,9 +108,11 @@ type Campaign = {
   sentAt: string | null;
   audienceCount: number;
   sentCount: number;
+  /** Set when status is "failed". The list route may not include it yet. */
+  failureReason?: string | null;
 };
 
-type StatusKey = "all" | "draft" | "scheduled" | "sending" | "sent";
+type StatusKey = "all" | "draft" | "scheduled" | "sending" | "sent" | "failed";
 
 const STATUS_LABELS: Record<StatusKey, string> = {
   all: "All",
@@ -110,14 +120,18 @@ const STATUS_LABELS: Record<StatusKey, string> = {
   scheduled: "Scheduled",
   sending: "Sending",
   sent: "Sent",
+  failed: "Failed",
 };
 
 type SectionKey = Exclude<StatusKey, "all">;
 
 // The pipeline strip reads left-to-right in lifecycle order; the table groups
 // campaigns attention-first (live sends on top, finished work at the bottom).
+// "Failed" is not a lifecycle stage, so its chip sits after the strip and
+// shows only when something failed. In the table it sits right under live
+// sends, because a failed send is the next thing that needs attention.
 const PIPELINE_ORDER: SectionKey[] = ["draft", "scheduled", "sending", "sent"];
-const SECTION_ORDER: SectionKey[] = ["sending", "scheduled", "draft", "sent"];
+const SECTION_ORDER: SectionKey[] = ["sending", "failed", "scheduled", "draft", "sent"];
 
 const SECTION_META: Record<
   SectionKey,
@@ -147,10 +161,18 @@ const SECTION_META: Record<
     iconClass: "text-emerald-500",
     barClass: "[&_[data-slot=progress-indicator]]:bg-emerald-500",
   },
+  failed: {
+    icon: TriangleAlertIcon,
+    iconClass: "text-destructive",
+    barClass: "[&_[data-slot=progress-indicator]]:bg-destructive",
+  },
 };
 
 function normalizeStatus(status: string): SectionKey {
-  return status === "scheduled" || status === "sending" || status === "sent"
+  return status === "scheduled" ||
+    status === "sending" ||
+    status === "sent" ||
+    status === "failed"
     ? status
     : "draft";
 }
@@ -165,13 +187,32 @@ function formatDate(iso: string) {
   });
 }
 
-const STATUS_KEYS: StatusKey[] = ["all", "draft", "scheduled", "sending", "sent"];
+const STATUS_KEYS: StatusKey[] = [
+  "all",
+  "draft",
+  "scheduled",
+  "sending",
+  "sent",
+  "failed",
+];
 
 export default function CampaignsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [list, setList] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Bumped on a workspace switch. Another workspace is another resource, so
+  // the list shows the loader instead of the previous workspace's rows.
+  const [organizationVersion, setOrganizationVersion] = useState(0);
+  const campaignsState = useAsyncData(
+    () =>
+      fetchJson<{ campaigns?: Campaign[] }>("/api/campaigns").then(
+        (data) => data.campaigns ?? [],
+      ),
+    [organizationVersion],
+  );
+  const { reload: reloadCampaigns, setData: setList } = campaignsState;
+  const list = useMemo(() => campaignsState.data ?? [], [campaignsState.data]);
+  const loading = campaignsState.status === "loading";
+  const loadFailed = campaignsState.status === "error" && !campaignsState.data;
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -195,22 +236,16 @@ export default function CampaignsPage() {
     [router],
   );
 
-  const loadCampaigns = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/campaigns");
-      const data = await response.json();
-      setList(data.ok ? data.campaigns : []);
-    } catch {
-      setList([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // A failed background refresh keeps the list on screen. Say so.
+  const refreshError =
+    campaignsState.status === "error" && campaignsState.data
+      ? campaignsState.error
+      : null;
   useEffect(() => {
-    void loadCampaigns();
-  }, [loadCampaigns]);
+    if (refreshError) {
+      toast.error("Couldn't refresh campaigns", { description: refreshError });
+    }
+  }, [refreshError]);
 
   // The module sidebar's "New campaign" buttons land here as ?create=1 —
   // open the dialog and strip the flag (keeping any status filter).
@@ -229,9 +264,9 @@ export default function CampaignsPage() {
       setQuery("");
       setStatusFilter("all");
       setPage(1);
-      void loadCampaigns();
+      setOrganizationVersion((version) => version + 1);
     });
-  }, [loadCampaigns, setStatusFilter]);
+  }, [setStatusFilter]);
 
   // Query narrows first; the pipeline chips show per-stage counts of the
   // searched set so search and stage filters compose visibly.
@@ -249,6 +284,7 @@ export default function CampaignsPage() {
       scheduled: 0,
       sending: 0,
       sent: 0,
+      failed: 0,
     };
     for (const campaign of searched) {
       counts[normalizeStatus(campaign.status)] += 1;
@@ -312,18 +348,21 @@ export default function CampaignsPage() {
     });
   }
 
+  // Deletes each campaign and reports exactly what happened: how many were
+  // deleted, how many were not, and the server's reason for a failure.
   async function deleteCampaigns(ids: string[]) {
     const results = await Promise.all(
       ids.map((id) =>
-        fetch(`/api/campaigns/${id}`, { method: "DELETE" })
-          .then((r) => r.json())
-          .then((d) => ({ id, ok: Boolean(d.ok) }))
-          .catch(() => ({ id, ok: false })),
+        fetchJson(`/api/campaigns/${id}`, { method: "DELETE" })
+          .then(() => ({ id, error: null as string | null }))
+          .catch((error: unknown) => ({ id, error: errorMessage(error) })),
       ),
     );
     const deleted = new Set(
-      results.filter((result) => result.ok).map((result) => result.id),
+      results.filter((result) => result.error === null).map((result) => result.id),
     );
+    const firstError = results.find((result) => result.error !== null)?.error;
+    const failedCount = ids.length - deleted.size;
 
     setList((prev) => prev.filter((campaign) => !deleted.has(campaign.id)));
     setSelected((prev) => {
@@ -331,15 +370,48 @@ export default function CampaignsPage() {
       deleted.forEach((id) => next.delete(id));
       return next;
     });
+
+    if (failedCount === 0) {
+      toast.success(
+        deleted.size === 1 ? "Campaign deleted" : `${deleted.size} campaigns deleted`,
+      );
+    } else if (deleted.size === 0) {
+      toast.error(
+        ids.length === 1
+          ? "Couldn't delete the campaign"
+          : `Couldn't delete ${ids.length} campaigns`,
+        { description: firstError ?? undefined },
+      );
+    } else {
+      toast.error(`Deleted ${deleted.size} of ${ids.length} campaigns`, {
+        description: `${failedCount} failed: ${firstError}`,
+      });
+    }
   }
 
+  // A campaign that is sending is not deleted from here: its workers are
+  // still reading it, and the delete route does not stop them.
   async function handleBulkDelete() {
-    const ids = [...selected];
-    if (ids.length === 0) return;
+    const chosen = list.filter((campaign) => selected.has(campaign.id));
+    const liveCount = chosen.filter((campaign) => campaign.status === "sending").length;
+    const ids = chosen
+      .filter((campaign) => campaign.status !== "sending")
+      .map((campaign) => campaign.id);
+    if (ids.length === 0) {
+      if (liveCount > 0) {
+        toast.info("A campaign that is sending can't be deleted", {
+          description: "Wait for the send to finish, then delete it.",
+        });
+      }
+      return;
+    }
 
     const ok = await confirmDialog({
       title: `Delete ${ids.length} campaign${ids.length === 1 ? "" : "s"}?`,
-      description: "This cannot be undone.",
+      description:
+        liveCount > 0
+          ? `This cannot be undone. ${liveCount} selected campaign${liveCount === 1 ? " is" : "s are"} sending right now and will be kept.`
+          : "This cannot be undone.",
       confirmLabel: "Delete",
       destructive: true,
     });
@@ -387,6 +459,20 @@ export default function CampaignsPage() {
                 />
               </Fragment>
             ))}
+            {(stageCounts.failed > 0 || statusFilter === "failed") && (
+              <>
+                <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+                <PipelineChip
+                  label={STATUS_LABELS.failed}
+                  count={stageCounts.failed}
+                  active={statusFilter === "failed"}
+                  tone="destructive"
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "failed" ? "all" : "failed")
+                  }
+                />
+              </>
+            )}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="relative min-w-0 sm:w-72">
@@ -439,15 +525,32 @@ export default function CampaignsPage() {
                 </TableRow>
               )}
 
-              {!loading && filtered.length === 0 && (
-                <TableRow>
+              {loadFailed && (
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={7}>
-                    <CampaignEmptyState hasCampaigns={list.length > 0} />
+                    <ErrorState
+                      title="Couldn't load campaigns"
+                      message={campaignsState.error ?? ""}
+                      onRetry={() => void reloadCampaigns()}
+                      retrying={campaignsState.refreshing}
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!loading && !loadFailed && filtered.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={7}>
+                    <CampaignEmptyState
+                      hasCampaigns={list.length > 0}
+                      onCreate={() => setCreateOpen(true)}
+                    />
                   </TableCell>
                 </TableRow>
               )}
 
               {!loading &&
+                !loadFailed &&
                 pageItems.map((campaign, index) => {
                   const status = normalizeStatus(campaign.status);
                   const meta = SECTION_META[status];
@@ -520,6 +623,8 @@ export default function CampaignsPage() {
                       <TableCell>
                         {status === "draft" ? (
                           <span className="text-muted-foreground">—</span>
+                        ) : status === "failed" ? (
+                          <FailedDelivery campaign={campaign} />
                         ) : status === "scheduled" ? (
                           <span className="text-xs text-muted-foreground">
                             {campaign.scheduledAt
@@ -584,6 +689,7 @@ export default function CampaignsPage() {
                             <DropdownMenuGroup>
                               <DropdownMenuItem
                                 variant="destructive"
+                                disabled={campaign.status === "sending"}
                                 onClick={() => handleRowDelete(campaign)}
                               >
                                 <Trash2Icon data-icon="inline-start" />
@@ -603,7 +709,9 @@ export default function CampaignsPage() {
 
         <div className="flex shrink-0 flex-col gap-3 border-t border-border px-4 py-2 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {firstShown}-{lastShown} of {filtered.length}
+            {loading || loadFailed
+              ? " "
+              : `Showing ${firstShown}-${lastShown} of ${filtered.length}`}
           </p>
           <div className="flex items-center gap-3">
           <Select
@@ -699,23 +807,29 @@ function PipelineChip({
   label,
   count,
   active,
+  tone,
   onClick,
 }: {
   label: string;
   count: number;
   active: boolean;
+  tone?: "destructive";
   onClick: () => void;
 }) {
+  const toneClass =
+    tone === "destructive"
+      ? active
+        ? "bg-destructive/10 font-medium text-destructive"
+        : "text-destructive hover:bg-destructive/10"
+      : active
+        ? "bg-secondary font-medium text-secondary-foreground"
+        : "text-muted-foreground hover:bg-muted hover:text-foreground";
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors ${
-        active
-          ? "bg-secondary font-medium text-secondary-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
+      className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors ${toneClass}`}
     >
       {label}
       <span className="text-xs tabular-nums opacity-70">{count}</span>
@@ -723,7 +837,41 @@ function PipelineChip({
   );
 }
 
-function CampaignEmptyState({ hasCampaigns }: { hasCampaigns: boolean }) {
+// A failed send: how far it got, and why it stopped when the list route
+// includes the reason. The campaign page always shows it.
+function FailedDelivery({ campaign }: { campaign: Campaign }) {
+  const reason = campaign.failureReason?.trim();
+  const label = (
+    <span className="flex min-w-0 items-center gap-2 text-xs">
+      <span className="font-medium text-destructive">Failed</span>
+      <span className="tabular-nums text-muted-foreground">
+        {campaign.sentCount}/{campaign.audienceCount} sent
+      </span>
+    </span>
+  );
+  if (!reason) return label;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block max-w-56">
+          {label}
+          <span className="block truncate text-xs text-muted-foreground">
+            {reason}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function CampaignEmptyState({
+  hasCampaigns,
+  onCreate,
+}: {
+  hasCampaigns: boolean;
+  onCreate: () => void;
+}) {
   return (
     <Empty className="border-0 py-14">
       <EmptyHeader>
@@ -736,20 +884,16 @@ function CampaignEmptyState({ hasCampaigns }: { hasCampaigns: boolean }) {
           {hasCampaigns ? "No campaigns match your filters" : "No campaigns yet"}
         </EmptyTitle>
         <EmptyDescription>
-          {hasCampaigns ? (
-            "Try a different search or status filter."
-          ) : (
-            <>
-              Compose one in the{" "}
-              <Link href="/editor">editor</Link>, then send it.
-            </>
-          )}
+          {hasCampaigns
+            ? "Try a different search or status filter."
+            : "Create a campaign, pick a starting design and a folder of contacts, and send yourself a test before it goes out."}
         </EmptyDescription>
       </EmptyHeader>
       {!hasCampaigns && (
         <EmptyContent>
-          <Button asChild>
-            <Link href="/editor">Open editor</Link>
+          <Button onClick={onCreate}>
+            <PlusIcon data-icon="inline-start" />
+            Create campaign
           </Button>
         </EmptyContent>
       )}
@@ -793,34 +937,42 @@ function CreateCampaignDialog({
   const [savedTemplates, setSavedTemplates] = useState<
     { id: string; name: string }[]
   >([]);
+  // Option lists that failed to load. The dialog still works (shared sender,
+  // built-in templates), but says what is missing instead of hiding it.
+  const [optionErrors, setOptionErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
-    fetch("/api/templates")
-      .then((r) => r.json())
+    let cancelled = false;
+    setOptionErrors([]);
+    const noteError = (what: string) => (error: unknown) => {
+      if (cancelled) return;
+      setOptionErrors((current) => [...current, `${what}: ${errorMessage(error)}`]);
+    };
+    fetchJson<{ templates?: { id: string; name: string }[] }>("/api/templates")
       .then((data) => {
-        if (data.ok) {
-          setSavedTemplates(
-            (data.templates ?? []).map((t: { id: string; name: string }) => ({
-              id: t.id,
-              name: t.name,
-            })),
-          );
-        }
+        if (cancelled) return;
+        setSavedTemplates(
+          (data.templates ?? []).map((t) => ({ id: t.id, name: t.name })),
+        );
       })
-      .catch(() => {});
-    fetch("/api/domains")
-      .then((r) => r.json())
+      .catch(noteError("Your saved templates couldn't be loaded"));
+    fetchJson<{
+      sharedFromEmail?: string;
+      domains?: { domain: string; readyToSend: boolean }[];
+    }>("/api/domains")
       .then((data) => {
-        if (!data.ok) return;
+        if (cancelled) return;
         setSharedFromEmail(data.sharedFromEmail ?? "");
-        const list: { domain: string; readyToSend: boolean }[] =
-          data.domains ?? [];
+        const list = data.domains ?? [];
         setDomains(list);
         const firstVerified = list.find((d) => d.readyToSend);
         if (firstVerified) setSenderSource(firstVerified.domain);
       })
-      .catch(() => {});
+      .catch(noteError("Your sending domains couldn't be loaded"));
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   const fromEmail =
@@ -833,26 +985,17 @@ function CreateCampaignDialog({
     setError(null);
 
     try {
-      const res = await fetch("/api/campaigns", {
+      const data = await fetchJson<{ id: string }>("/api/campaigns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        json: {
           name: name.trim() || "Untitled Campaign",
           templateId,
           fromEmail: fromEmail || undefined,
-        }),
+        },
       });
-      const data = await res.json();
-
-      if (!data.ok) {
-        setError(data.error || "Could not create campaign");
-        setCreating(false);
-        return;
-      }
-
       router.push(`/dashboard/campaigns/${data.id}`);
-    } catch {
-      setError("Could not reach the server.");
+    } catch (createError) {
+      setError(errorMessage(createError, "Could not create the campaign."));
       setCreating(false);
     }
   }
@@ -863,7 +1006,8 @@ function CreateCampaignDialog({
         <DialogHeader>
           <DialogTitle>Create a new email</DialogTitle>
           <DialogDescription>
-            Choose a starting point and name the campaign before opening the editor.
+            Name it and choose a starting point. On the next page you edit the
+            design, choose who gets it and send yourself a test.
           </DialogDescription>
         </DialogHeader>
 
@@ -970,6 +1114,19 @@ function CreateCampaignDialog({
               </SelectContent>
             </Select>
           </Field>
+
+          {optionErrors.length > 0 && (
+            <Alert>
+              <TriangleAlertIcon />
+              <AlertDescription>
+                {optionErrors.map((message) => (
+                  <span key={message} className="block">
+                    {message}
+                  </span>
+                ))}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {error && (
             <Alert variant="destructive">
