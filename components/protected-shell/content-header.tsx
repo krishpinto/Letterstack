@@ -71,7 +71,8 @@ export function ContentHeader({
         variant="ghost"
         size="icon-xs"
         className={cn(
-          "shrink-0 text-muted-foreground hover:text-foreground transition-colors",
+          // Desktop only: on phones the sidebar is in the MobileNav sheet.
+          "hidden shrink-0 text-muted-foreground transition-colors hover:text-foreground md:inline-flex",
           !sidebarOpen && "text-foreground",
         )}
         onClick={onToggleSidebar}
@@ -79,7 +80,7 @@ export function ContentHeader({
       >
         <PanelLeftIcon className="size-3.5" />
       </Button>
-      <Separator orientation="vertical" className="h-3.5" />
+      <Separator orientation="vertical" className="hidden h-3.5 md:block" />
 
       {/* Breadcrumb / title */}
       <div className="flex items-center gap-1.5 text-sm">

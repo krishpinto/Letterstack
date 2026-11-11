@@ -118,11 +118,12 @@ export function GettingStarted({
 
           <div className="flex items-center gap-2.5 shrink-0">
             {/* Replays the product tour. It auto-opens once per workspace, so
-                this is the way back to it afterwards. */}
+                this is the way back to it afterwards. md and up only: the
+                tour points at the icon rail, which phones don't show. */}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden h-6 px-2 text-xs font-medium text-muted-foreground hover:text-foreground sm:inline-flex"
+              className="hidden h-6 px-2 text-xs font-medium text-muted-foreground hover:text-foreground md:inline-flex"
               onClick={(e) => {
                 e.stopPropagation();
                 startTour();

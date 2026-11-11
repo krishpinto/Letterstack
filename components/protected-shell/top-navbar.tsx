@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 import {
   ChevronDownIcon,
   LogOutIcon,
+  MenuIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -65,6 +66,8 @@ type TopNavbarProps = {
   planUntil?: string | null;
   /** Shown under the bell. Survives the top banner being dismissed. */
   planNotice?: PlanNotice | null;
+  /** Opens the phone navigation sheet. The button only shows below md. */
+  onOpenMobileNav?: () => void;
 };
 
 export function TopNavbar({
@@ -75,6 +78,7 @@ export function TopNavbar({
   plan = "free",
   planUntil = null,
   planNotice = null,
+  onOpenMobileNav,
 }: TopNavbarProps) {
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -155,7 +159,18 @@ export function TopNavbar({
         organizationName={activeOrg.name}
       />
 
-      {/* ── Left: org dropdown ── */}
+      {/* ── Left: phone menu button + org dropdown ── */}
+      {onOpenMobileNav && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="-mr-1 size-8 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+          onClick={onOpenMobileNav}
+          aria-label="Open navigation"
+        >
+          <MenuIcon className="size-4" />
+        </Button>
+      )}
       <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button

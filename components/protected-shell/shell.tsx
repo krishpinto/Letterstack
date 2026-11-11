@@ -8,6 +8,7 @@ import { type PlanKey } from "@/lib/plans/limits";
 import { type PlanNotice } from "@/lib/plans/notice";
 import { ContentHeader } from "./content-header";
 import { IconRail } from "./icon-rail";
+import { MobileNav } from "./mobile-nav";
 import { NavSidebar } from "./nav-sidebar";
 import { TopNavbar, type NavbarOrganization } from "./top-navbar";
 
@@ -34,7 +35,10 @@ export function ProtectedShell({
   planNotice = null,
   headerActions,
 }: ProtectedShellProps) {
+  // Desktop only: whether the module sidebar is expanded. Phones never show
+  // it inline — it lives in the MobileNav sheet, closed by default.
   const [navOpen, setNavOpen] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const pathname = usePathname();
 
   const isSettings = pathname.startsWith("/dashboard/settings");
@@ -52,7 +56,9 @@ export function ProtectedShell({
     pathname === "/dashboard/forms";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    // h-dvh, not h-screen: on phones 100vh includes the area under the
+    // browser's toolbar, which pushed the bottom of every page off screen.
+    <div className="flex h-dvh flex-col overflow-hidden">
       {/* ── Global top navbar — full width ── */}
       <TopNavbar
         organization={organization}
@@ -62,19 +68,30 @@ export function ProtectedShell({
         plan={plan}
         planUntil={planUntil}
         planNotice={planNotice}
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+      />
+
+      <MobileNav
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        showModuleSidebar={!contentOnly}
       />
 
       {/* ── Body ── */}
       <div className="flex flex-1 gap-2 overflow-hidden px-2 pb-2">
 
-        {/* Icon rail — always visible */}
+        {/* Icon rail — md and up; phones use the MobileNav sheet */}
         <IconRail />
 
         {/* ── Main bordered container ── */}
         <div className="flex flex-1 overflow-hidden rounded-xl border border-border bg-muted/30 shadow-sm">
 
           {/* Left nav sidebar — hidden on content-only routes */}
-          {!contentOnly && navOpen && <NavSidebar />}
+          {!contentOnly && navOpen && (
+            <div className="hidden md:flex">
+              <NavSidebar />
+            </div>
+          )}
 
           {/* ── Content column ── */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
