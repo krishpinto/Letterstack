@@ -37,6 +37,16 @@ export async function settlePaidOrder(
   const item = getPaymentItem(row.item);
   if (!item?.grantsPlan) return { settled: true, planGranted: null };
 
+  // The workspace was deleted between checkout and settlement. The payment
+  // row survives that (it is a financial record), but there is nothing left
+  // to grant the plan to; the payment needs a refund by hand.
+  if (!row.organizationId) {
+    console.error(
+      `Payment ${row.id} settled for a deleted workspace; no plan granted.`,
+    );
+    return { settled: true, planGranted: null };
+  }
+
   await activatePlanForOrganization(
     row.organizationId,
     item.grantsPlan,
