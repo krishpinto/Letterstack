@@ -133,6 +133,25 @@ export function planBatches(input: {
   return out;
 }
 
+/**
+ * Recipients one Gmail worker invocation sends to. At the 1.1s pacing gap
+ * plus a Gmail API call and three small queries per row, 15 rows take
+ * roughly 25-30s, leaving room inside a 60s function limit for one
+ * rate-limit backoff and a slow cold start.
+ */
+export const GMAIL_CHUNK_SIZE = 15;
+
+/** This invocation's slice of a Gmail run, and where the next one starts. */
+export function nextGmailChunk(
+  ids: string[],
+  offset: number,
+  size: number,
+): { chunk: string[]; nextOffset: number | null } {
+  const start = Math.max(0, Math.floor(offset));
+  const end = start + size;
+  return { chunk: ids.slice(start, end), nextOffset: end < ids.length ? end : null };
+}
+
 /** The pending ids of a campaign, in the same stable order planBatches uses. */
 export function pendingIdsInOrder(recipients: RecipientState[]): string[] {
   return recipients

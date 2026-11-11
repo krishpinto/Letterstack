@@ -12,6 +12,9 @@ import {
 } from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
+// One batch of 50 is three small queries and one SES call per row, about
+// 20s at worst. 60s is the most Vercel Hobby allows without Fluid compute.
+export const maxDuration = 60;
 
 type Payload =
   | { settleOnly: true; campaignId: string }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { countSendingAmong } from "@/db/campaign-recipients";
-import { sendGmailCampaignBatch } from "@/lib/send/gmail-campaign";
-import { RetryableSendError, type FrozenContent } from "@/lib/send/send-campaign";
+import { sendGmailChunk, type GmailRunPayload } from "@/lib/send/gmail-campaign";
+import { RetryableSendError } from "@/lib/send/send-campaign";
 import {
   scheduleSettleCheck,
   settleCampaign,
@@ -9,6 +9,10 @@ import {
 } from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
+// Vercel Hobby allows 60s without Fluid compute and 300s with it. A chunk
+// is sized to finish well inside 60s (GMAIL_CHUNK_SIZE), so this holds on
+// either setting.
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const body = await verifyQstashRequest(request, "/api/send/gmail-campaign-worker");
@@ -20,29 +24,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { content, userId, organizationId, mailboxId, campaignId, campaignRecipientIds } =
-      JSON.parse(body) as {
-        content: FrozenContent;
-        userId: string;
-        organizationId: string;
-        mailboxId: string;
-        campaignId?: string;
-        campaignRecipientIds: string[];
-      };
-    const ids = campaignRecipientIds ?? [];
+    const payload = JSON.parse(body) as GmailRunPayload;
 
-    const result = await sendGmailCampaignBatch(content, ids, userId, organizationId, mailboxId);
+    const result = await sendGmailChunk(payload);
 
     // A reconnect halt leaves the rest "pending" on purpose; settling is
     // still safe because pending rows keep the campaign open.
-    if (campaignId) {
-      await settleCampaign(campaignId);
-      if ((await countSendingAmong(ids)) > 0) await scheduleSettleCheck(campaignId);
+    if (payload.campaignId) {
+      await settleCampaign(payload.campaignId);
+      if ((await countSendingAmong(result.chunk)) > 0) {
+        await scheduleSettleCheck(payload.campaignId);
+      }
     }
 
     console.log(
-      `gmail-campaign-worker: batch done - sent ${result.sent}, failed ${result.failed}, unrecorded ${result.unrecorded}` +
-        (result.haltedForReconnect ? " (halted: mailbox needs reconnecting)" : ""),
+      `gmail-campaign-worker: chunk done - sent ${result.sent}, failed ${result.failed}, unrecorded ${result.unrecorded}` +
+        (result.haltedForReconnect ? " (halted: mailbox needs reconnecting)" : "") +
+        (result.continued ? " (next chunk queued)" : ""),
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {

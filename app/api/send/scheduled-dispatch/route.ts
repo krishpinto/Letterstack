@@ -21,6 +21,9 @@ import {
 import { verifyQstashRequest } from "@/lib/send/qstash-worker";
 
 export const runtime = "nodejs";
+// Reads the audience, reserves quota and publishes every batch. 60s is the
+// most Vercel Hobby allows without Fluid compute.
+export const maxDuration = 60;
 
 // Postgres keeps microseconds and JS keeps milliseconds; allow a small skew
 // when matching the message's timestamp against the row.

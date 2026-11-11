@@ -23,7 +23,13 @@ import {
   type QueueResult,
   type UnreachedTally,
 } from "./send-campaign";
-import { gmailDeduplicationId, pendingIdsInOrder, type RecipientState } from "./send-policy";
+import {
+  GMAIL_CHUNK_SIZE,
+  gmailDeduplicationId,
+  nextGmailChunk,
+  pendingIdsInOrder,
+  type RecipientState,
+} from "./send-policy";
 
 /**
  * Gmail's own send path — deliberately separate functions from
@@ -182,11 +188,36 @@ async function sendGmailRows(
 }
 
 /**
- * Queue a Gmail campaign's pending rows as one QStash message. No batch
+ * One QStash message of a Gmail run: the run's full id list, where this
+ * message starts in it, and the dispatch round it belongs to. Messages
+ * queued before chunking existed carry neither offset nor dispatchKey, and
+ * are read as offset 0 of a "legacy" round.
+ */
+export type GmailRunPayload = {
+  content: FrozenContent;
+  userId: string;
+  organizationId: string;
+  mailboxId: string;
+  campaignId?: string;
+  campaignRecipientIds: string[];
+  offset?: number;
+  dispatchKey?: string;
+};
+
+function publishGmailMessage(payload: GmailRunPayload & { campaignId: string; offset: number; dispatchKey: string }) {
+  return publishQstashJSON({
+    url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
+    deduplicationId: gmailDeduplicationId(payload.campaignId, payload.dispatchKey, payload.offset),
+    body: payload,
+  });
+}
+
+/**
+ * Queue a Gmail campaign's pending rows as a run: one QStash message for
+ * the first chunk, which queues the next when it is done. No parallel
  * fan-out: Gmail's real constraint is roughly 1/sec on one account, and
- * QStash gives no guarantee against two fanned-out batches for the same
- * mailbox running concurrently, which would defeat the serial pacing
- * entirely.
+ * QStash gives no guarantee against two fanned-out messages for the same
+ * mailbox running concurrently, which would defeat the serial pacing.
  */
 export async function publishGmailRun(input: {
   content: FrozenContent;
@@ -201,21 +232,60 @@ export async function publishGmailRun(input: {
   if (ids.length === 0) return { queued: 0, total: 0 };
 
   try {
-    await publishQstashJSON({
-      url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
-      deduplicationId: gmailDeduplicationId(input.campaignId, input.dispatchKey, 0),
-      body: {
-        content: input.content,
-        userId: input.userId,
-        organizationId: input.organizationId,
-        mailboxId: input.mailboxId,
-        campaignId: input.campaignId,
-        campaignRecipientIds: ids,
-      },
+    await publishGmailMessage({
+      content: input.content,
+      userId: input.userId,
+      organizationId: input.organizationId,
+      mailboxId: input.mailboxId,
+      campaignId: input.campaignId,
+      campaignRecipientIds: ids,
+      offset: 0,
+      dispatchKey: input.dispatchKey,
     });
     return { queued: 1, total: 1 };
   } catch (err) {
     console.error(`publishGmailRun: campaign ${input.campaignId}`, err);
     return { queued: 0, total: 1 };
   }
+}
+
+/**
+ * Send one chunk of a Gmail run, then queue the next chunk.
+ *
+ * A whole run used to be one invocation: up to 450 recipients at 1.1s or
+ * more each, against a function limit of 60s, so long runs were killed
+ * partway through, leaving one row stuck "sending" and the rest waiting for
+ * a QStash retry that would be killed the same way. GMAIL_CHUNK_SIZE keeps
+ * every invocation well inside the limit.
+ *
+ * The next chunk is queued after this one finishes, never before, so the
+ * run stays serial. Its deduplication id depends only on where it starts,
+ * so a retried chunk queues the same next message and QStash drops the
+ * copy. A run halted for reconnecting queues nothing; Resume starts a new
+ * run over whatever is still pending.
+ */
+export async function sendGmailChunk(payload: GmailRunPayload) {
+  const ids = payload.campaignRecipientIds ?? [];
+  const { chunk, nextOffset } = nextGmailChunk(ids, payload.offset ?? 0, GMAIL_CHUNK_SIZE);
+
+  const result = await sendGmailCampaignBatch(
+    payload.content,
+    chunk,
+    payload.userId,
+    payload.organizationId,
+    payload.mailboxId,
+  );
+
+  let continued = false;
+  if (!result.haltedForReconnect && nextOffset !== null && payload.campaignId) {
+    await publishGmailMessage({
+      ...payload,
+      campaignId: payload.campaignId,
+      offset: nextOffset,
+      dispatchKey: payload.dispatchKey ?? "legacy",
+    });
+    continued = true;
+  }
+
+  return { ...result, chunk, continued };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifySendError,
   decideCampaignOutcome,
+  nextGmailChunk,
   planBatches,
   type RecipientState,
 } from "./send-policy";
@@ -115,5 +116,23 @@ describe("classifySendError", () => {
 
   it("treats an unknown throw as permanent", () => {
     expect(classifySendError("boom")).toEqual({ retryable: false, reason: "Unknown error" });
+  });
+});
+
+describe("nextGmailChunk", () => {
+  const ids = ["a", "b", "c", "d", "e"];
+
+  it("walks a run in fixed chunks and stops at the end", () => {
+    expect(nextGmailChunk(ids, 0, 2)).toEqual({ chunk: ["a", "b"], nextOffset: 2 });
+    expect(nextGmailChunk(ids, 2, 2)).toEqual({ chunk: ["c", "d"], nextOffset: 4 });
+    expect(nextGmailChunk(ids, 4, 2)).toEqual({ chunk: ["e"], nextOffset: null });
+  });
+
+  it("ends exactly on the last id", () => {
+    expect(nextGmailChunk(["a", "b"], 0, 2)).toEqual({ chunk: ["a", "b"], nextOffset: null });
+  });
+
+  it("is empty past the end", () => {
+    expect(nextGmailChunk(ids, 9, 2)).toEqual({ chunk: [], nextOffset: null });
   });
 });
