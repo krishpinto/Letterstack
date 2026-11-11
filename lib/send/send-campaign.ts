@@ -6,6 +6,7 @@ import {
 } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
+import { planBatches, type RecipientState } from "./send-policy";
 import {
   personalizeUnsubscribe,
   unsubscribeOneClickUrl,
@@ -139,48 +140,62 @@ export async function sendCampaignBatch(
   return { sent, failed, unrecorded };
 }
 
+/** How much of a dispatch round made it onto the queue. */
+export type QueueResult = { queued: number; total: number };
+
 /**
- * Queue one campaign's audience as QStash batches of BATCH_SIZE, each
- * delayed one stagger interval more than the last.
+ * Queue every batch of a campaign that still has pending rows, as one
+ * dispatch round. See planBatches for how batches are cut and why their
+ * deduplication ids are stable within a round.
+ *
+ * Publishes are settled one by one rather than all-or-nothing, so the
+ * caller learns how many batches are really on the queue. Calling this
+ * again for the same round re-publishes only what QStash does not already
+ * hold.
  */
 export async function publishSesBatches(input: {
   content: FrozenContent;
   userId: string;
   organizationId: string;
   campaignId: string;
-  recipientIds: string[];
-}) {
+  dispatchKey: string;
+  recipients: RecipientState[];
+}): Promise<QueueResult> {
   const appUrl = appBaseUrl();
-  const batches = chunk(input.recipientIds, BATCH_SIZE);
+  const batches = planBatches({
+    campaignId: input.campaignId,
+    dispatchKey: input.dispatchKey,
+    recipients: input.recipients,
+    size: BATCH_SIZE,
+    staggerMs: BATCH_STAGGER_MS,
+    nowMs: Date.now(),
+  });
 
-  const now = Date.now();
-  await Promise.all(
-    batches.map((ids, index) =>
+  const results = await Promise.allSettled(
+    batches.map((batch) =>
       publishQstashJSON({
         url: `${appUrl}/api/send/campaign-worker`,
-        // First batch fires immediately; each one after waits another stagger
-        // interval so worker invocations land staggered, not all at once.
-        notBefore: index === 0 ? undefined : qstashNotBefore(now + index * BATCH_STAGGER_MS),
+        notBefore: batch.notBeforeMs === undefined ? undefined : qstashNotBefore(batch.notBeforeMs),
+        deduplicationId: batch.deduplicationId,
         body: {
           content: input.content,
           userId: input.userId,
           organizationId: input.organizationId,
           campaignId: input.campaignId,
-          campaignRecipientIds: ids,
+          campaignRecipientIds: batch.ids,
         },
       }),
     ),
   );
 
-  return { batches: batches.length };
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-
-  for (let i = 0; i < items.length; i += size) {
-    out.push(items.slice(i, i + size));
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error(`publishSesBatches: campaign ${input.campaignId}`, result.reason);
+    }
   }
 
-  return out;
+  return {
+    queued: results.filter((result) => result.status === "fulfilled").length,
+    total: batches.length,
+  };
 }

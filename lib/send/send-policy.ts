@@ -19,6 +19,14 @@ export const CLAIM_TIMEOUT_MS = 15 * 60 * 1000;
 
 export const UNKNOWN_DELIVERY_STATE = "unknown delivery state";
 
+/**
+ * Minimum gap between two dispatch rounds of one campaign (the first send and
+ * each Resume). Resume is safe at any time, because workers claim each
+ * recipient before sending; the gap only stops a burst of clicks from
+ * queueing the same pending rows several times over.
+ */
+export const RESUME_COOLDOWN_MS = 60_000;
+
 export type RecipientCounts = {
   pending: number;
   sending: number;
@@ -33,4 +41,92 @@ export type RecipientCounts = {
 export function decideCampaignOutcome(counts: RecipientCounts): "in_progress" | "sent" {
   if (counts.pending > 0 || counts.sending > 0) return "in_progress";
   return "sent";
+}
+
+/** One recipient row, as the batch planner needs it. */
+export type RecipientState = { id: string; status: string };
+
+/** One QStash message's worth of recipients, and when it may run. */
+export type PlannedBatch = {
+  index: number;
+  ids: string[];
+  /** Unset for the first batch, which runs immediately. */
+  notBeforeMs?: number;
+  deduplicationId: string;
+};
+
+/**
+ * The QStash deduplication id of one batch in one dispatch round.
+ *
+ * `dispatchKey` names the round (campaigns.last_dispatched_at). A retry of
+ * the same round — the scheduled dispatch retried after a partial publish —
+ * produces the same ids, so QStash drops the batches it already holds and
+ * only the missing ones go out. A Resume starts a new round with new ids, so
+ * a batch QStash gave up on can be queued again.
+ *
+ * QStash only remembers ids for about ten minutes. That is enough for the
+ * retry case; correctness never depends on it, because workers claim every
+ * row before sending (see claimCampaignRecipient).
+ */
+export function batchDeduplicationId(campaignId: string, dispatchKey: string, index: number) {
+  return `${campaignId}-${dispatchKey}-b${index}`;
+}
+
+/** Same idea for the Gmail chain, keyed by where in the list a chunk starts. */
+export function gmailDeduplicationId(campaignId: string, dispatchKey: string, offset: number) {
+  return `${campaignId}-${dispatchKey}-g${offset}`;
+}
+
+/**
+ * Split a campaign's recipients into QStash batches, and keep only the
+ * batches that still have pending rows.
+ *
+ * Chunks are cut over EVERY row of the campaign, ordered by id, not over the
+ * pending rows alone. Rows never join or leave a campaign once it is sending,
+ * so batch N always means the same people, however much of the campaign has
+ * already gone out. That is what lets a retry reuse batch N's
+ * deduplication id safely: cutting over pending rows would shift every
+ * chunk after the first finished one, and an id QStash already holds would
+ * silently swallow a batch of different people.
+ *
+ * Each kept batch carries only its pending ids, and is delayed one stagger
+ * interval more than the one before it, so worker invocations land spread
+ * out. The first one runs immediately.
+ */
+export function planBatches(input: {
+  campaignId: string;
+  dispatchKey: string;
+  recipients: RecipientState[];
+  size: number;
+  staggerMs: number;
+  nowMs: number;
+}): PlannedBatch[] {
+  const ordered = [...input.recipients].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const out: PlannedBatch[] = [];
+
+  for (let start = 0, index = 0; start < ordered.length; start += input.size, index++) {
+    const ids = ordered
+      .slice(start, start + input.size)
+      .filter((row) => row.status === "pending")
+      .map((row) => row.id);
+    if (ids.length === 0) continue;
+
+    const position = out.length;
+    out.push({
+      index,
+      ids,
+      notBeforeMs: position === 0 ? undefined : input.nowMs + position * input.staggerMs,
+      deduplicationId: batchDeduplicationId(input.campaignId, input.dispatchKey, index),
+    });
+  }
+
+  return out;
+}
+
+/** The pending ids of a campaign, in the same stable order planBatches uses. */
+export function pendingIdsInOrder(recipients: RecipientState[]): string[] {
+  return recipients
+    .filter((row) => row.status === "pending")
+    .map((row) => row.id)
+    .sort();
 }

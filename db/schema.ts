@@ -344,6 +344,11 @@ export const campaigns = pgTable("campaigns", {
   // a time — without a stamp it would mail on every bounce past the
   // threshold instead of once. See lib/notifications/deliverability.ts.
   deliverabilityAlertSentAt: timestamp("deliverability_alert_sent_at"),
+  // When the current dispatch round started: the first send, or the latest
+  // Resume. Its value keys the round's QStash deduplication ids, and its age
+  // is what stops Resume from queueing the same rows twice in a minute. See
+  // claimDispatchRound in db/campaigns.ts.
+  lastDispatchedAt: timestamp("last_dispatched_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),

@@ -13,7 +13,13 @@ import {
   unsubscribeOneClickUrl,
   unsubscribePageUrl,
 } from "@/lib/email/unsubscribe";
-import { recordSent, releaseClaimAndThrow, type FrozenContent } from "./send-campaign";
+import {
+  recordSent,
+  releaseClaimAndThrow,
+  type FrozenContent,
+  type QueueResult,
+} from "./send-campaign";
+import { gmailDeduplicationId, pendingIdsInOrder, type RecipientState } from "./send-policy";
 
 /**
  * Gmail's own send path — deliberately separate functions from
@@ -147,10 +153,11 @@ export async function sendGmailCampaignBatch(
 }
 
 /**
- * Queue a Gmail campaign's audience as one QStash message. No batch fan-out:
- * Gmail's real constraint is roughly 1/sec on one account, and QStash gives
- * no guarantee against two fanned-out batches for the same mailbox running
- * concurrently, which would defeat the serial pacing entirely.
+ * Queue a Gmail campaign's pending rows as one QStash message. No batch
+ * fan-out: Gmail's real constraint is roughly 1/sec on one account, and
+ * QStash gives no guarantee against two fanned-out batches for the same
+ * mailbox running concurrently, which would defeat the serial pacing
+ * entirely.
  */
 export async function publishGmailRun(input: {
   content: FrozenContent;
@@ -158,18 +165,28 @@ export async function publishGmailRun(input: {
   organizationId: string;
   mailboxId: string;
   campaignId: string;
-  recipientIds: string[];
-}) {
-  await publishQstashJSON({
-    url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
-    body: {
-      content: input.content,
-      userId: input.userId,
-      organizationId: input.organizationId,
-      mailboxId: input.mailboxId,
-      campaignId: input.campaignId,
-      campaignRecipientIds: input.recipientIds,
-    },
-  });
-  return { batches: 1 };
+  dispatchKey: string;
+  recipients: RecipientState[];
+}): Promise<QueueResult> {
+  const ids = pendingIdsInOrder(input.recipients);
+  if (ids.length === 0) return { queued: 0, total: 0 };
+
+  try {
+    await publishQstashJSON({
+      url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
+      deduplicationId: gmailDeduplicationId(input.campaignId, input.dispatchKey, 0),
+      body: {
+        content: input.content,
+        userId: input.userId,
+        organizationId: input.organizationId,
+        mailboxId: input.mailboxId,
+        campaignId: input.campaignId,
+        campaignRecipientIds: ids,
+      },
+    });
+    return { queued: 1, total: 1 };
+  } catch (err) {
+    console.error(`publishGmailRun: campaign ${input.campaignId}`, err);
+    return { queued: 0, total: 1 };
+  }
 }

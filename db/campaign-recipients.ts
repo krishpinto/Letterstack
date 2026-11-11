@@ -12,13 +12,19 @@ type AudiencePerson = {
   name?: string | null;
 };
 
-export async function prepareCampaignAudience(
-  campaignId: string,
-  organizationId: string,
-) {
+/**
+ * The audience a send would go to right now: the campaign's pending rows,
+ * split into those we may send to and those on the suppression list.
+ *
+ * Read-only on purpose. It runs before the campaign is claimed, and a
+ * request that then loses the claim (or is refused for quota) must not have
+ * changed anything; the caller fails the suppressed rows with
+ * failPendingRecipients only after it has won.
+ */
+export async function readSendableAudience(campaignId: string, organizationId: string) {
   const [rows, blocked] = await Promise.all([
     db
-      .select()
+      .select({ id: campaignRecipients.id, email: campaignRecipients.email })
       .from(campaignRecipients)
       .where(
         and(
@@ -29,17 +35,22 @@ export async function prepareCampaignAudience(
     listSuppressedSetForOrganization(organizationId),
   ]);
 
-  const allowed = rows.filter((row) => !blocked.has(row.email));
-  const suppressed = rows.filter((row) => blocked.has(row.email));
-
-  await Promise.all(suppressed.map((row) => failPendingRecipient(row.id, "suppressed")));
-
-  return allowed;
+  return {
+    allowed: rows.filter((row) => !blocked.has(row.email)),
+    suppressed: rows.filter((row) => blocked.has(row.email)),
+  };
 }
 
-/** @deprecated Existing callers should use prepareCampaignAudience. */
-export async function freezeAudience(campaignId: string, organizationId: string) {
-  return prepareCampaignAudience(campaignId, organizationId);
+/**
+ * Every row of a campaign with its status, ordered by id. The batch planner
+ * cuts batches over this list; see planBatches in lib/send/send-policy.ts.
+ */
+export async function listRecipientStates(campaignId: string) {
+  return db
+    .select({ id: campaignRecipients.id, status: campaignRecipients.status })
+    .from(campaignRecipients)
+    .where(eq(campaignRecipients.campaignId, campaignId))
+    .orderBy(campaignRecipients.id);
 }
 
 export async function addCampaignRecipient(
@@ -96,15 +107,16 @@ export async function addCampaignRecipientsBulk(
 }
 
 /**
- * Fail a recipient that no worker has claimed yet — the audience-preparation
- * step uses it for addresses already on the suppression list. Guarded on
- * "pending" so it can never overwrite a row a worker is sending or has sent.
+ * Fail recipients that no worker has claimed yet — addresses found on the
+ * suppression list when the send starts. Guarded on "pending" so it can
+ * never overwrite a row a worker is sending or has sent.
  */
-export async function failPendingRecipient(id: string, error: string) {
+export async function failPendingRecipients(ids: string[], error: string): Promise<void> {
+  if (ids.length === 0) return;
   await db
     .update(campaignRecipients)
     .set({ status: "failed", sentAt: null, error })
-    .where(and(eq(campaignRecipients.id, id), eq(campaignRecipients.status, "pending")));
+    .where(and(inArray(campaignRecipients.id, ids), eq(campaignRecipients.status, "pending")));
 }
 
 /**

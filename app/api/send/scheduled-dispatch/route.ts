@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { Receiver } from "@upstash/qstash";
 import { getCampaign } from "@/db/campaigns";
-import { dispatchCampaign } from "@/lib/send/dispatch-campaign";
+import { dispatchCampaign, ensureCampaignQueued } from "@/lib/send/dispatch-campaign";
 import {
   appBaseUrl,
   publishQstashJSON,
@@ -49,11 +49,27 @@ export async function POST(request: Request) {
       // Deleted after scheduling — nothing to do, and retrying won't help.
       return NextResponse.json({ ok: true, skipped: "campaign missing" });
     }
+    const rowMs = campaign.scheduledAt?.getTime() ?? 0;
+    const matchesRow = Math.abs(rowMs - scheduledAtMs) <= MATCH_TOLERANCE_MS;
+
+    // QStash retrying this message after an attempt that claimed the
+    // campaign but did not get every batch onto the queue. The claim
+    // happening at or after the scheduled time is what says it was this
+    // schedule that started it, not an earlier "Send now". Re-running the
+    // round queues only what is missing; see ensureCampaignQueued.
+    if (
+      campaign.status === "sending" &&
+      matchesRow &&
+      (campaign.sentAt?.getTime() ?? 0) >= rowMs - MATCH_TOLERANCE_MS
+    ) {
+      const queued = await ensureCampaignQueued(campaignId);
+      return NextResponse.json({ ok: true, ensured: true, ...queued });
+    }
+
     if (campaign.status !== "scheduled") {
       return NextResponse.json({ ok: true, skipped: "not scheduled" });
     }
-    const rowMs = campaign.scheduledAt?.getTime() ?? 0;
-    if (Math.abs(rowMs - scheduledAtMs) > MATCH_TOLERANCE_MS) {
+    if (!matchesRow) {
       return NextResponse.json({ ok: true, skipped: "rescheduled" });
     }
 

@@ -189,7 +189,8 @@ export async function cancelCampaignSchedule(id: string) {
 
 /**
  * Claim the right to send this campaign: move it to "sending" only if it is
- * still in one of `from`. Returns whether THIS call made the move.
+ * still in one of `from`. Returns the new dispatch round's key (see
+ * claimDispatchRound) to the call that made the move, null to everyone else.
  *
  * This guarded UPDATE is the only thing that decides who sends. Two "Send
  * now" clicks a second apart, or "Send now" racing the scheduled dispatch,
@@ -200,13 +201,39 @@ export async function cancelCampaignSchedule(id: string) {
 export async function claimCampaignForSending(
   id: string,
   from: readonly string[],
-): Promise<boolean> {
-  const rows = await db
+): Promise<Date | null> {
+  const [row] = await db
     .update(campaigns)
-    .set({ status: "sending", sentAt: new Date() })
+    .set({ status: "sending", sentAt: new Date(), lastDispatchedAt: sql`now()` })
     .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
-    .returning({ id: campaigns.id });
-  return rows.length > 0;
+    .returning({ dispatchedAt: campaigns.lastDispatchedAt });
+  return row?.dispatchedAt ?? null;
+}
+
+/**
+ * Start a new dispatch round for a campaign that is already sending — the
+ * server side of "Resume". Returns the round's key, or null when the
+ * campaign is not sending or the last round started less than `cooldownMs`
+ * ago.
+ *
+ * One guarded UPDATE, so two Resume clicks racing each other cannot both
+ * start a round. The timestamps are the database's own now() on both sides
+ * of the comparison, so app-server clock skew cannot open the window early.
+ */
+export async function claimDispatchRound(id: string, cooldownMs: number): Promise<Date | null> {
+  const seconds = Math.max(1, Math.floor(cooldownMs / 1000));
+  const [row] = await db
+    .update(campaigns)
+    .set({ lastDispatchedAt: sql`now()` })
+    .where(
+      and(
+        eq(campaigns.id, id),
+        eq(campaigns.status, "sending"),
+        sql`(${campaigns.lastDispatchedAt} is null or ${campaigns.lastDispatchedAt} < now() - interval '${sql.raw(String(seconds))} seconds')`,
+      ),
+    )
+    .returning({ dispatchedAt: campaigns.lastDispatchedAt });
+  return row?.dispatchedAt ?? null;
 }
 
 /**
@@ -217,7 +244,7 @@ export async function claimCampaignForSending(
 export async function revertCampaignClaim(id: string, to: string): Promise<void> {
   await db
     .update(campaigns)
-    .set({ status: to, sentAt: null })
+    .set({ status: to, sentAt: null, lastDispatchedAt: null })
     .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")));
 }
 
