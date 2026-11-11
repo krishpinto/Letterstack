@@ -19,7 +19,6 @@ import {
   MailCheckIcon,
   MailIcon,
   MailPlusIcon,
-  MoreHorizontalIcon,
   PenLineIcon,
   PlusIcon,
   SendIcon,
@@ -710,22 +709,16 @@ function DefaultSidebar() {
         <span className="text-sm font-semibold text-sidebar-foreground">
           LetterStack
         </span>
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-          >
-            <MoreHorizontalIcon className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-          >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link href="/dashboard/campaigns?create=1" aria-label="New campaign">
             <PlusIcon className="size-3.5" />
-          </Button>
-        </div>
+          </Link>
+        </Button>
       </div>
 
       {/* ── Quick add ── */}
