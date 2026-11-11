@@ -1,5 +1,6 @@
 // DELETE — remove a member, or leave (removing yourself). Owners can remove
-// anyone but themselves; everyone else can only remove themselves.
+// anyone but themselves; everyone else can only remove themselves. Either
+// way the person's API keys and Gmail mailbox for this workspace are revoked.
 
 import { NextResponse } from "next/server";
 import {
@@ -8,6 +9,7 @@ import {
   NotOrganizationOwnerError,
   removeOrganizationMember,
 } from "@/db/organizations";
+import { revokeApiKeysCreatedBy } from "@/db/api-keys";
 import { listRevocableMailboxesForOrgMember, markMailboxRevoked } from "@/db/connected-mailboxes";
 import { revokeMailboxToken } from "@/lib/send/gmail-auth";
 import { requireMember } from "@/lib/organizations/require-owner";
@@ -31,6 +33,13 @@ export async function DELETE(
     // of it. Best-effort: a mailbox revoke failing shouldn't undo the
     // membership removal that already succeeded.
     if (result?.removedUserId) {
+      // API keys they minted act with their authority, so they go with the
+      // membership. findActiveApiKey also refuses a key whose creator is no
+      // longer a member, so a failure here can't leave a working key behind.
+      await revokeApiKeysCreatedBy(id, result.removedUserId).catch((err) =>
+        console.error("Revoking a removed member's API keys failed", err),
+      );
+
       const mailboxes = await listRevocableMailboxesForOrgMember(id, result.removedUserId);
       await Promise.all(
         mailboxes.map(async (mailbox) => {
