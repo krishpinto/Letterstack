@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   ChevronDownIcon,
   HelpCircleIcon,
@@ -254,15 +255,15 @@ export function TopNavbar({
             <PlusIcon className="size-4" />
             Create workspace
           </DropdownMenuItem>
+          {/* A link to /login used to sit here, which navigated without
+              ending the session — the user stayed signed in. */}
           <DropdownMenuItem
             variant="destructive"
             className="gap-2 px-2"
-            asChild
+            onSelect={() => void signOut({ callbackUrl: "/login" })}
           >
-            <Link href="/login">
-              <LogOutIcon className="size-4" />
-              Sign out
-            </Link>
+            <LogOutIcon className="size-4" />
+            Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -375,11 +376,11 @@ export function TopNavbar({
                 Preferences
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/login">
-                <LogOutIcon />
-                Sign out
-              </Link>
+            <DropdownMenuItem
+              onSelect={() => void signOut({ callbackUrl: "/login" })}
+            >
+              <LogOutIcon />
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
