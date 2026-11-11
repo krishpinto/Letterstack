@@ -7,12 +7,14 @@
 // 2xx, so this is what actually guarantees a captured payment gets recorded.
 //
 // Configure it in the Razorpay dashboard (Settings → Webhooks) against
-// <APP_URL>/api/payments/webhook, subscribed to payment.captured and
-// payment.failed, and put the signing secret in RAZORPAY_WEBHOOK_SECRET.
+// <APP_URL>/api/payments/webhook, subscribed to payment.captured,
+// payment.failed and refund.processed, and put the signing secret in
+// RAZORPAY_WEBHOOK_SECRET.
 
 import { NextResponse } from "next/server";
 import { getPaymentByOrderIdUnscoped, markPaymentFailed } from "@/db/payments";
 import { isValidWebhookSignature } from "@/lib/payments/razorpay";
+import { settleRefund } from "@/lib/payments/refund";
 import { settlePaidOrder } from "@/lib/payments/settle";
 
 export const runtime = "nodejs";
@@ -26,6 +28,19 @@ type RazorpayWebhookEvent = {
         order_id?: string;
         amount?: number;
         currency?: string;
+        /** Running total refunded on this payment, in paise. */
+        amount_refunded?: number;
+        /** "full" | "partial" | null */
+        refund_status?: string | null;
+        /** False on Razorpay's auto-refund of a payment that was never captured. */
+        captured?: boolean;
+      };
+    };
+    refund?: {
+      entity?: {
+        id?: string;
+        amount?: number;
+        payment_id?: string;
       };
     };
   };
@@ -94,10 +109,47 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ignored: "amount-mismatch" });
       }
 
-      const result = await settlePaidOrder(orderId, paymentId);
-      // settled:false means another caller (the browser callback, or a retry
-      // of this event) got there first — the normal case, not an error.
-      return NextResponse.json({ ok: true, ...result });
+      try {
+        const result = await settlePaidOrder(orderId, paymentId);
+        // settled:false means another caller (the browser callback, or a
+        // retry of this event) marked it paid first — the normal case, not an
+        // error. Any step still missing was finished by this call.
+        return NextResponse.json({ ok: true, ...result });
+      } catch (err) {
+        // The money is taken, so a failed step must be retried: 500 makes
+        // Razorpay redeliver, and the redelivery resumes from the step that
+        // failed instead of seeing "already paid" and stopping.
+        console.error(`Settling order ${orderId} failed; Razorpay will retry`, err);
+        return NextResponse.json(
+          { ok: false, error: "Settlement incomplete" },
+          { status: 500 },
+        );
+      }
+    }
+
+    // Fires once the money is actually back with the customer — Razorpay's
+    // recommended signal for a refund's final state. Refunds are issued from
+    // the Razorpay dashboard; nothing in the app starts one.
+    case "refund.processed": {
+      try {
+        const result = await settleRefund({
+          razorpayOrderId: orderId,
+          chargedPaise: existing.amount,
+          amountRefundedPaise:
+            typeof entity.amount_refunded === "number"
+              ? entity.amount_refunded
+              : (event.payload?.refund?.entity?.amount ?? null),
+          refundStatus: entity.refund_status ?? null,
+          captured: typeof entity.captured === "boolean" ? entity.captured : null,
+        });
+        return NextResponse.json({ ok: true, refund: result });
+      } catch (err) {
+        console.error(`Recording the refund on order ${orderId} failed; Razorpay will retry`, err);
+        return NextResponse.json(
+          { ok: false, error: "Refund not recorded" },
+          { status: 500 },
+        );
+      }
     }
 
     case "payment.failed": {

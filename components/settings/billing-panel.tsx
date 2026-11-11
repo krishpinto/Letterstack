@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -29,11 +30,14 @@ function UsageRow({
   label,
   used,
   limit,
+  hint,
 }: {
   icon: React.ElementType;
   label: string;
   used: number;
   limit: number;
+  /** A short line under the meter, e.g. when the allowance resets. */
+  hint?: string;
 }) {
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const near = pct >= 90;
@@ -51,6 +55,7 @@ function UsageRow({
         </span>
       </div>
       <Progress value={pct} className="h-1.5" />
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
@@ -64,6 +69,39 @@ function quotaLine(plan: PlanKey) {
     `${limits.emailsPerMonth.toLocaleString("en-IN")}${plus} emails a month · ` +
     `${limits.domains}${plus} sending domain${limits.domains === 1 ? "" : "s"}`
   );
+}
+
+type Quote =
+  | { allowed: true; summary: string }
+  | { allowed: false; message: string }
+  | null;
+
+/**
+ * What each button would do, fetched from the server so the end date and
+ * any days converted from unused time are stated before paying — by the
+ * same rule settlement applies afterwards. Silent on failure: the buttons
+ * still work, and checkout refuses anything that can't be bought.
+ */
+function usePlanQuote(plan: PlanKey, enabled: boolean) {
+  const [quote, setQuote] = useState<{ monthly: Quote; yearly: Quote } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch(`/api/payments/quote?plan=${plan}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.ok) {
+          setQuote({ monthly: data.monthly, yearly: data.yearly });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [plan, enabled]);
+  return quote;
 }
 
 /**
@@ -85,6 +123,11 @@ function PlanOffer({
   const items = checkoutItemsFor(plan);
   // Null on Free and Business — nothing to discount, nothing to cross out.
   const annual = yearlyPricing(plan);
+  const quote = usePlanQuote(plan, items !== null);
+  // Both periods are refused for the same reason (a lower tier while a
+  // higher one runs), so one message stands in for both buttons.
+  const refused =
+    quote?.yearly && !quote.yearly.allowed ? quote.yearly.message : null;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -93,7 +136,9 @@ function PlanOffer({
         <span className="text-xs text-muted-foreground">{quotaLine(plan)}</span>
       </div>
 
-      {items ? (
+      {items && refused ? (
+        <p className="text-xs text-muted-foreground">{refused}</p>
+      ) : items ? (
         <>
           <div className="flex flex-col gap-2 sm:flex-row">
             {/* Annual first: it's the better deal and, until recurring billing
@@ -115,6 +160,12 @@ function PlanOffer({
               onPaid={onPaid}
             />
           </div>
+          {quote?.yearly?.allowed && quote.monthly?.allowed ? (
+            <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <li>Yearly: {quote.yearly.summary}</li>
+              <li>Monthly: {quote.monthly.summary}</li>
+            </ul>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {annual ? (
               <>
@@ -283,7 +334,17 @@ export function BillingPanel({
           </Link>
         </div>
         <UsageRow icon={UsersIcon} label="Contacts" used={contacts.used} limit={contacts.limit} />
-        <UsageRow icon={MailIcon} label="Emails this month" used={sends.used} limit={sends.limit} />
+        {/* The counter rolls over with the UTC calendar month (see
+            tryReserveSendQuota), which is 05:30 on the 1st in India. Stated
+            rather than implied, so a send refused late on the 31st isn't a
+            mystery. */}
+        <UsageRow
+          icon={MailIcon}
+          label="Emails this month"
+          used={sends.used}
+          limit={sends.limit}
+          hint="Resets on the 1st of each month at 5:30 AM IST."
+        />
         <UsageRow icon={GlobeIcon} label="Sending domains" used={domains.used} limit={domains.limit} />
       </div>
 

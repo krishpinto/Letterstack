@@ -274,9 +274,28 @@ export const payments = pgTable("payments", {
   amount: integer("amount").notNull(), // paise
   currency: text("currency").notNull().default("INR"),
   receipt: text("receipt").notNull(),
-  status: text("status").notNull().default("created"), // created | paid | failed
+  status: text("status").notNull().default("created"), // created | paid | failed | refunded
   createdAt: timestamp("created_at").defaultNow().notNull(),
   paidAt: timestamp("paid_at"),
+  // Settlement steps, each recorded on its own so a retry finishes whatever a
+  // failed pass left undone, and never repeats what it finished. See
+  // lib/payments/settle.ts.
+  //
+  // Set once the plan grant for this payment has been applied (or ruled out,
+  // for items that grant nothing). Written in the same statement that moves
+  // the workspace's expiry, so the extension happens exactly once.
+  planGrantedAt: timestamp("plan_granted_at"),
+  // The tier this payment's days landed on, and how many. Usually the tier
+  // bought; differs when a downgrade that slipped past checkout was converted
+  // into time on the higher tier. A full refund takes back exactly these days.
+  planGrantedPlan: text("plan_granted_plan"),
+  planGrantedDays: integer("plan_granted_days"),
+  // Running total refunded, in paise. A full refund also sets status
+  // 'refunded'; a partial one is recorded here and changes nothing else.
+  amountRefunded: integer("amount_refunded").notNull().default(0),
+  refundedAt: timestamp("refunded_at"),
+  // Set once a full refund has taken this payment's days back.
+  planRevokedAt: timestamp("plan_revoked_at"),
 }, (table) => [
   foreignKey({
     name: "payments_organization_id_fkey",
@@ -313,6 +332,11 @@ export const invoices = pgTable("invoices", {
   sentTo: text("sent_to"),
   sentAt: timestamp("sent_at"),
   sesMessageId: text("ses_message_id"),
+  // Claimed by the settlement call that is sending the email right now, so
+  // the browser callback and the webhook settling the same payment at once
+  // don't both mail it. Released on failure; a stale claim (a crashed send)
+  // expires and can be taken again. See claimInvoiceEmail.
+  emailClaimedAt: timestamp("email_claimed_at"),
 }, (table) => [
   uniqueIndex("invoices_payment_unq").on(table.paymentId),
   // Backstop for the allocate-then-insert race in db/invoices.ts.

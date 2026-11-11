@@ -4,7 +4,12 @@
 // entitlements: it calls one function here and doesn't care how a serial is
 // allocated or what the document looks like.
 
-import { issueInvoiceForPayment, markInvoiceSent } from "@/db/invoices";
+import {
+  claimInvoiceEmail,
+  issueInvoiceForPayment,
+  markInvoiceSent,
+  releaseInvoiceEmail,
+} from "@/db/invoices";
 
 import {
   describePurchase,
@@ -67,42 +72,53 @@ export function buildInvoice(
 }
 
 /**
- * Issues the invoice for a settled payment and emails it.
+ * Issues the invoice for a settled payment and emails it, doing only what a
+ * previous pass left undone.
  *
- * Idempotent by payment: the serial is allocated once, so a webhook retry
- * re-sends the same invoice number rather than minting a second one.
+ * Issuing is idempotent by payment: the serial is allocated once, so a retry
+ * finds the same invoice rather than minting a second number. It throws on
+ * failure, so the webhook answers 500 and Razorpay retries until the invoice
+ * exists — previously only the first settlement pass ever issued one.
  *
- * Never throws. Settlement has already granted the plan by the time this runs,
- * and an invoice that failed to render is not a reason to unwind a payment the
- * customer has made — the failure is logged and the invoice can be resent.
- * The row records whether the email actually went out.
+ * Emailing never throws. A PDF that won't render or an SES error is not a
+ * reason to keep a payment webhook failing (Razorpay disables a webhook that
+ * fails for a day). The send is claimed first so two concurrent settlements
+ * don't both mail it, and a failure releases the claim so the next
+ * settlement call for this payment tries again.
  */
 export async function issueAndSendInvoice(
   payment: SettledPayment,
-): Promise<{ number: string; sent: boolean } | null> {
+): Promise<{ number: string; sent: boolean }> {
+  const record = await issueInvoiceForPayment({
+    paymentId: payment.paymentId,
+    organizationId: payment.organizationId,
+    amount: payment.amount,
+    currency: payment.currency,
+    issuedAt: payment.paidAt,
+  });
+
+  if (record.sentAt) return { number: record.number, sent: true };
+
+  if (!payment.buyerEmail) {
+    console.warn(
+      `Invoice ${record.number} issued with no buyer email — not sent.`,
+    );
+    return { number: record.number, sent: false };
+  }
+
+  if (!(await claimInvoiceEmail(record.id))) {
+    // Another settlement call is sending it right now, or already has.
+    return { number: record.number, sent: false };
+  }
+
   try {
-    const record = await issueInvoiceForPayment({
-      paymentId: payment.paymentId,
-      organizationId: payment.organizationId,
-      amount: payment.amount,
-      currency: payment.currency,
-      issuedAt: payment.paidAt,
-    });
-
-    if (!payment.buyerEmail) {
-      console.warn(
-        `Invoice ${record.number} issued with no buyer email — not sent.`,
-      );
-      return { number: record.number, sent: false };
-    }
-
     const invoice = buildInvoice(payment, record.number);
     const messageId = await sendInvoiceEmail(invoice, payment.buyerEmail);
     await markInvoiceSent(record.id, payment.buyerEmail, messageId);
-
     return { number: record.number, sent: true };
   } catch (error) {
-    console.error("Could not issue or send the invoice", error);
-    return null;
+    console.error(`Could not send invoice ${record.number}`, error);
+    await releaseInvoiceEmail(record.id).catch(() => {});
+    return { number: record.number, sent: false };
   }
 }
