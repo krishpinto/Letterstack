@@ -194,6 +194,12 @@ export default function DashboardHome() {
   const today = `Today, ${todayDate.getDate()} ${todayDate.toLocaleDateString(undefined, { month: "short" })}`;
   const activeDomain =
     services.domainsVerified[0] ?? services.defaultSendingDomain;
+  // A workspace with nothing in it yet is someone's first visit (or a fresh
+  // workspace): greet them, don't say "welcome back".
+  const isNewWorkspace =
+    stats.audience === 0 &&
+    services.campaignsTotal === 0 &&
+    services.templatesTotal === 0;
 
   // The onboarding guide. The required core path (audience → design → send) drives
   // the progress bar and is achievable on the shared domain; the optional group
@@ -220,7 +226,7 @@ export default function DashboardHome() {
       description:
         "Upload a CSV or Excel list — we validate, dedupe, and clean it as it comes in. This is who your campaigns go to.",
       href: "/dashboard/audience?import=1",
-      cta: "Add contacts",
+      cta: "Import contacts",
       icon: UsersIcon,
     },
     {
@@ -230,11 +236,11 @@ export default function DashboardHome() {
       title: "Design your first email",
       done: services.templatesTotal > 0 || services.campaignsTotal > 0,
       time: "10 min",
-      heading: "Build an email in the editor",
+      heading: "Design an email",
       description:
-        "Drag blocks onto the canvas to design a responsive, email-safe newsletter — or start from a ready-made template.",
+        "Start from a ready-made template, then drag blocks around in the editor to make it yours. Save it as a template to reuse it.",
       href: "/dashboard/templates",
-      cta: "Open the editor",
+      cta: "Browse templates",
       icon: PenLineIcon,
     },
     {
@@ -245,7 +251,7 @@ export default function DashboardHome() {
       heading: "Launch a campaign",
       description:
         "Pick your audience, choose a design, and send now or schedule it for later. You can start on our shared domain right away.",
-      href: "/dashboard/campaigns",
+      href: "/dashboard/campaigns?create=1",
       cta: "Create a campaign",
       icon: SendIcon,
     },
@@ -258,7 +264,7 @@ export default function DashboardHome() {
       description:
         "Authenticate a custom domain for the strongest deliverability and branding. Optional — the shared domain works out of the box.",
       href: "/dashboard/domains",
-      cta: "Add a domain",
+      cta: "Set up a domain",
       icon: GlobeIcon,
     },
     {
@@ -269,7 +275,7 @@ export default function DashboardHome() {
       heading: "Add a signup form to your site",
       description:
         "Create an embeddable form so visitors can subscribe from anywhere — new signups flow straight into your audience.",
-      href: "/dashboard/forms",
+      href: "/dashboard/forms?create=1",
       cta: "Create a form",
       icon: MailPlusIcon,
     },
@@ -317,10 +323,12 @@ export default function DashboardHome() {
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Welcome back, {firstName}! 👋
+            {isNewWorkspace ? `Welcome, ${firstName}!` : `Welcome back, ${firstName}!`}
           </h1>
           <p className="mt-1.5 text-sm sm:text-base text-muted-foreground font-medium">
-            Here&apos;s how your newsletters are doing.
+            {isNewWorkspace
+              ? "Let’s get your first newsletter out."
+              : "Here’s how your newsletters are doing."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -328,9 +336,9 @@ export default function DashboardHome() {
             {today}
           </span>
           <Button asChild>
-            <Link href="/dashboard/campaigns">
+            <Link href="/dashboard/campaigns?create=1">
               <PlusIcon data-icon="inline-start" />
-              New Email
+              New campaign
             </Link>
           </Button>
         </div>
