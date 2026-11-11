@@ -31,6 +31,7 @@ import {
 import { invoiceFileName, renderInvoicePdf } from "@/lib/invoices/render";
 import { sendInvoiceEmail } from "@/lib/invoices/send-invoice";
 import { supplier, supplierSuggestions } from "@/lib/invoices/supplier";
+import { labGuard } from "@/lib/lab/dev-only";
 
 // @react-pdf renders with Node APIs — this can't run on the Edge runtime.
 export const runtime = "nodejs";
@@ -52,6 +53,8 @@ type PaymentRow = {
 };
 
 export async function GET(request: Request) {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   const url = new URL(request.url);
   const sendTo = url.searchParams.get("send");
   const paymentId = url.searchParams.get("payment");

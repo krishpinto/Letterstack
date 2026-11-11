@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { labGuard } from "@/lib/lab/dev-only";
 
 export const runtime = "nodejs";
 
 export async function POST() {
+  const blocked = labGuard();
+  if (blocked) return blocked;
   return NextResponse.json(
     {
       ok: false,
