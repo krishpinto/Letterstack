@@ -5,14 +5,14 @@ import { cn } from "@/lib/utils";
 
 const TESTIMONIALS = [
   {
-    quote: "We built Letterstack to give developers a single, robust API that handles email delivery, authentication, and inbox placement automatically.",
+    quote: "We built Letterstack so an organisation can design a newsletter, send it from its own domain, and see what happened to every email, without stitching three services together.",
     name: "Ethan Rodrigues",
     role: "Co-Founder & CTO, Letterstack",
     initials: "ER",
     gradient: "from-[#6366F1] to-[#D946EF]"
   },
   {
-    quote: "Instead of hacking together template engines, bounce monitors, and routing services, Letterstack manages your entire email delivery pipeline in one fast tool.",
+    quote: "The editor, the contact list, the sending and the bounce handling live in one place, so a bad address is suppressed before it can hurt your next send.",
     name: "Krish Pinto",
     role: "Co-Founder & CEO, Letterstack",
     initials: "KP",
