@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   ChevronDownIcon,
-  HelpCircleIcon,
   LogOutIcon,
   PlusIcon,
   SearchIcon,
@@ -25,11 +24,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { dispatchOrganizationChanged } from "@/lib/dashboard-events";
 import { PLAN_LIMITS, type PlanKey } from "@/lib/plans/limits";
 import { type PlanNotice } from "@/lib/plans/notice";
+import { CommandPalette } from "./command-palette";
 import { CreateWorkspaceScreen } from "./create-workspace-screen";
+import { HelpMenu, useModifierKey } from "./help-menu";
 import { NotificationsMenu } from "./notifications-menu";
 import { InviteMembersDialog } from "./invite-members-dialog";
 
@@ -85,6 +86,8 @@ export function TopNavbar({
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const modifierKey = useModifierKey();
 
   const orgInitial = activeOrg.name.trim().slice(0, 1).toUpperCase() || "L";
   const userInitial = userName.trim().slice(0, 1).toUpperCase() || "U";
@@ -268,18 +271,41 @@ export function TopNavbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* ── Center: search ── */}
-      <div className="flex flex-1 justify-center">
-        <div className="relative w-full max-w-md">
-          <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Search..."
-            className="h-8 rounded-lg border-transparent bg-muted/50 pl-8 text-sm placeholder:text-muted-foreground/60 focus-visible:border-border focus-visible:bg-background focus-visible:ring-0"
-          />
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex">
-            ⌘K
-          </kbd>
-        </div>
+      <CommandPalette
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        organizations={orgs}
+        activeOrganizationId={activeOrg.id}
+        onSwitchOrganization={(id) => void selectOrganization(id)}
+        onCreateWorkspace={() => setCreateOpen(true)}
+        onInviteMembers={() => setInviteOpen(true)}
+      />
+
+      {/* ── Center: search — opens the command palette ── */}
+      <div className="flex flex-1 justify-end sm:justify-center">
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          aria-keyshortcuts="Meta+K Control+K"
+          className="hidden h-8 w-full max-w-md items-center gap-2 rounded-lg bg-muted/50 px-2.5 text-sm text-muted-foreground/70 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+        >
+          <SearchIcon className="size-3.5 text-muted-foreground" />
+          <span className="flex-1 text-left">Search…</span>
+          <KbdGroup>
+            <Kbd>{modifierKey}</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-lg text-muted-foreground hover:text-foreground sm:hidden"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
       </div>
 
       {/* ── Right: actions ── */}
@@ -290,21 +316,15 @@ export function TopNavbar({
           className="hidden h-7 gap-1.5 rounded-lg border-border/60 px-2.5 text-xs font-medium sm:flex"
           asChild
         >
-          <Link href="/dashboard/campaigns">
-            <ZapIcon className="size-3" />
-            Get started
+          <Link href="/dashboard/campaigns?create=1">
+            <PlusIcon className="size-3" />
+            New campaign
           </Link>
         </Button>
 
         <NotificationsMenu notice={planNotice} />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
-        >
-          <HelpCircleIcon className="size-4" />
-        </Button>
+        <HelpMenu onOpenSearch={() => setSearchOpen(true)} />
 
         {/* User avatar */}
         <DropdownMenu>
@@ -371,9 +391,9 @@ export function TopNavbar({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/settings">
+              <Link href="/dashboard/settings?section=appearance">
                 <SlidersHorizontalIcon />
-                Preferences
+                Appearance
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
