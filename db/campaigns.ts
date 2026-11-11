@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./client";
 import { campaignRecipients, campaigns, organizationMembers } from "./schema";
 import { getDefaultOrganizationForUser } from "./organizations";
@@ -187,11 +187,38 @@ export async function cancelCampaignSchedule(id: string) {
   return row ?? null;
 }
 
-export async function markCampaignSending(id: string) {
-  await db
+/**
+ * Claim the right to send this campaign: move it to "sending" only if it is
+ * still in one of `from`. Returns whether THIS call made the move.
+ *
+ * This guarded UPDATE is the only thing that decides who sends. Two "Send
+ * now" clicks a second apart, or "Send now" racing the scheduled dispatch,
+ * both read "draft" or "scheduled"; Postgres serialises the two UPDATEs on
+ * the row lock and re-checks the WHERE for the second, so exactly one of them
+ * gets a row back. The loser must not publish anything.
+ */
+export async function claimCampaignForSending(
+  id: string,
+  from: readonly string[],
+): Promise<boolean> {
+  const rows = await db
     .update(campaigns)
     .set({ status: "sending", sentAt: new Date() })
-    .where(eq(campaigns.id, id));
+    .where(and(eq(campaigns.id, id), inArray(campaigns.status, [...from])))
+    .returning({ id: campaigns.id });
+  return rows.length > 0;
+}
+
+/**
+ * Undo claimCampaignForSending when not a single batch could be queued, so
+ * the campaign is back where it was and can be sent again. Guarded on
+ * "sending" so it can never pull a campaign back out of "sent".
+ */
+export async function revertCampaignClaim(id: string, to: string): Promise<void> {
+  await db
+    .update(campaigns)
+    .set({ status: to, sentAt: null })
+    .where(and(eq(campaigns.id, id), eq(campaigns.status, "sending")));
 }
 
 /**

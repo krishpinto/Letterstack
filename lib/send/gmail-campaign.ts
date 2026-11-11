@@ -1,13 +1,6 @@
-import { getCampaign, markCampaignSending } from "@/db/campaigns";
-import { markCampaignRecipient, prepareCampaignAudience } from "@/db/campaign-recipients";
+import { markCampaignRecipient } from "@/db/campaign-recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
-import { getSendUsage, tryReserveSendQuota } from "@/db/organizations";
-import {
-  getMailbox,
-  getMailboxSendUsage,
-  releaseMailboxQuota,
-  tryReserveMailboxQuota,
-} from "@/db/connected-mailboxes";
+import { getMailbox } from "@/db/connected-mailboxes";
 import { getValidAccessToken, MailboxReauthRequiredError } from "./gmail-auth";
 import { sendGmailMessage } from "./gmail";
 import { appBaseUrl, publishQstashJSON } from "./qstash";
@@ -30,7 +23,7 @@ import type { FrozenContent } from "./send-campaign";
 
 // Gmail's real constraint is roughly 1 message/second per account — a short
 // gap between sends, not a batch size, since (unlike SES) there's no
-// multi-message fan-out for a Gmail campaign at all; see startGmailCampaign.
+// multi-message fan-out for a Gmail campaign at all; see publishGmailRun.
 const SEND_GAP_MS = 1100;
 const RATE_LIMIT_BACKOFF_MS = 3000;
 
@@ -65,7 +58,7 @@ export async function sendGmailCampaignBatch(
 
   const mailbox = await getMailbox(mailboxId);
   if (!mailbox) {
-    // Shouldn't happen — startGmailCampaign already checked it exists — but
+    // Shouldn't happen — dispatchCampaign already checked it exists — but
     // leaving everything pending is the safe failure mode either way.
     return { sent, failed, haltedForReconnect: false };
   }
@@ -135,85 +128,30 @@ export async function sendGmailCampaignBatch(
   return { sent, failed, haltedForReconnect: false };
 }
 
-export async function startGmailCampaign(campaignId: string) {
-  const campaign = await getCampaign(campaignId);
-  if (!campaign) throw new Error("Campaign not found");
-  if (campaign.senderType !== "mailbox" || !campaign.mailboxId) {
-    throw new Error("This campaign isn't set to send through a connected Gmail account");
-  }
-
-  const mailbox = await getMailbox(campaign.mailboxId);
-  if (!mailbox || mailbox.organizationId !== campaign.organizationId) {
-    throw new Error("The connected Gmail account for this campaign was not found");
-  }
-  if (mailbox.status !== "active") {
-    throw new Error(
-      mailbox.status === "revoked"
-        ? "This Gmail account is no longer connected. Reconnect it or choose a different sender."
-        : "This Gmail account needs to be reconnected before it can send.",
-    );
-  }
-
-  const audience = await prepareCampaignAudience(campaignId, campaign.organizationId);
-  if (audience.length === 0) {
-    throw new Error("Add at least one recipient before sending");
-  }
-
-  // Two ceilings, both enforced: the mailbox's own daily cap (checked and
-  // reserved first — cheaper to fail, no rollback needed) and the org's
-  // monthly plan allowance (same as every other channel). Skipping the
-  // second would let one connected mailbox send far more per month than
-  // the org's plan actually allows — see the Gmail Sending plan's quota
-  // section for the numbers behind why this matters.
-  const mailboxReserved = await tryReserveMailboxQuota(mailbox.id, audience.length);
-  if (!mailboxReserved) {
-    const usage = await getMailboxSendUsage(mailbox.id);
-    const remaining = Math.max(0, usage.limit - usage.used);
-    throw new Error(
-      `This send is ${audience.length.toLocaleString()} emails but your Gmail account can only send ` +
-        `${remaining.toLocaleString()} more today (its own ${usage.limit.toLocaleString()}/day limit). ` +
-        `Try a smaller list, or send the rest tomorrow.`,
-    );
-  }
-
-  const orgReserved = await tryReserveSendQuota(campaign.organizationId, audience.length);
-  if (!orgReserved) {
-    await releaseMailboxQuota(mailbox.id, audience.length);
-    const usage = await getSendUsage(campaign.organizationId);
-    const remaining = Math.max(0, usage.limit - usage.used);
-    throw new Error(
-      `This send is ${audience.length.toLocaleString()} emails but only ${remaining.toLocaleString()} of your ${usage.limit.toLocaleString()} monthly emails are left. ` +
-        `Upgrade in Settings → Billing, or send to a smaller group.`,
-    );
-  }
-
-  await markCampaignSending(campaignId);
-
-  const content: FrozenContent = {
-    subject: campaign.subject,
-    html: campaign.htmlSnapshot,
-    text: campaign.textSnapshot,
-    fromName: campaign.fromName,
-    fromEmail: mailbox.email,
-    replyTo: campaign.replyTo ?? undefined,
-  };
-
-  // No batch fan-out, one QStash message for the whole (already
-  // quota-capped) audience — Gmail's real constraint is roughly 1/sec on
-  // one account, and QStash gives no guarantee against two fanned-out
-  // batches for the same mailbox running concurrently, which would defeat
-  // the serial pacing entirely. One message, one worker invocation, a loop.
+/**
+ * Queue a Gmail campaign's audience as one QStash message. No batch fan-out:
+ * Gmail's real constraint is roughly 1/sec on one account, and QStash gives
+ * no guarantee against two fanned-out batches for the same mailbox running
+ * concurrently, which would defeat the serial pacing entirely.
+ */
+export async function publishGmailRun(input: {
+  content: FrozenContent;
+  userId: string;
+  organizationId: string;
+  mailboxId: string;
+  campaignId: string;
+  recipientIds: string[];
+}) {
   await publishQstashJSON({
     url: `${appBaseUrl()}/api/send/gmail-campaign-worker`,
     body: {
-      content,
-      userId: campaign.userId,
-      organizationId: campaign.organizationId,
-      mailboxId: mailbox.id,
-      campaignId,
-      campaignRecipientIds: audience.map((row) => row.id),
+      content: input.content,
+      userId: input.userId,
+      organizationId: input.organizationId,
+      mailboxId: input.mailboxId,
+      campaignId: input.campaignId,
+      campaignRecipientIds: input.recipientIds,
     },
   });
-
-  return { total: audience.length, batches: 1 };
+  return { batches: 1 };
 }

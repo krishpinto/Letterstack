@@ -1,14 +1,5 @@
 import { isSuppressedForOrganization } from "@/db/suppression";
-import { getCampaign, markCampaignSending } from "@/db/campaigns";
-import {
-  markCampaignRecipient,
-  prepareCampaignAudience,
-} from "@/db/campaign-recipients";
-import {
-  getSendUsage,
-  startTrialClockOnFirstSend,
-  tryReserveSendQuota,
-} from "@/db/organizations";
+import { markCampaignRecipient } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
 import {
@@ -88,70 +79,40 @@ export async function sendCampaignBatch(
   return { sent, failed };
 }
 
-export async function startCampaign(campaignId: string) {
-  const campaign = await getCampaign(campaignId);
-  if (!campaign) throw new Error("Campaign not found");
-
-  const audience = await prepareCampaignAudience(campaignId, campaign.organizationId);
-  if (audience.length === 0) {
-    throw new Error("Add at least one recipient before sending");
-  }
-
-  // The plan's monthly send allowance. All-or-nothing: reserve the whole
-  // batch up front so a campaign never gets cut off partway through
-  // recipients arbitrarily. Reservation is atomic (a guarded UPDATE), so this
-  // is also what stays correct if "Send now" and "Resume" race each other.
-  const reserved = await tryReserveSendQuota(campaign.organizationId, audience.length);
-  if (!reserved) {
-    // Read usage only on the refusal path, so the happy path stays one query.
-    // The message names the real numbers — "limit reached" alone leaves
-    // someone guessing which limit and by how much.
-    const usage = await getSendUsage(campaign.organizationId);
-    const remaining = Math.max(0, usage.limit - usage.used);
-    throw new Error(
-      `This send is ${audience.length.toLocaleString()} emails but only ${remaining.toLocaleString()} of your ${usage.limit.toLocaleString()} monthly emails are left. ` +
-        `Upgrade in Settings → Billing, or send to a smaller group.`,
-    );
-  }
-
-  // First send starts the free Pro countdown. After the first, this is a
-  // no-op — the guard lives in the statement, so it costs one cheap UPDATE
-  // rather than a read to decide whether to write.
-  await startTrialClockOnFirstSend(campaign.organizationId);
-
-  await markCampaignSending(campaignId);
-
-  const content: FrozenContent = {
-    subject: campaign.subject,
-    html: campaign.htmlSnapshot,
-    text: campaign.textSnapshot,
-    fromName: campaign.fromName,
-    fromEmail: campaign.fromEmail,
-  };
-
+/**
+ * Queue one campaign's audience as QStash batches of BATCH_SIZE, each
+ * delayed one stagger interval more than the last.
+ */
+export async function publishSesBatches(input: {
+  content: FrozenContent;
+  userId: string;
+  organizationId: string;
+  campaignId: string;
+  recipientIds: string[];
+}) {
   const appUrl = appBaseUrl();
-  const batches = chunk(audience, BATCH_SIZE);
+  const batches = chunk(input.recipientIds, BATCH_SIZE);
 
   const now = Date.now();
   await Promise.all(
-    batches.map((batch, index) =>
+    batches.map((ids, index) =>
       publishQstashJSON({
         url: `${appUrl}/api/send/campaign-worker`,
         // First batch fires immediately; each one after waits another stagger
         // interval so worker invocations land staggered, not all at once.
         notBefore: index === 0 ? undefined : qstashNotBefore(now + index * BATCH_STAGGER_MS),
         body: {
-          content,
-          userId: campaign.userId,
-          organizationId: campaign.organizationId,
-          campaignId,
-          campaignRecipientIds: batch.map((row) => row.id),
+          content: input.content,
+          userId: input.userId,
+          organizationId: input.organizationId,
+          campaignId: input.campaignId,
+          campaignRecipientIds: ids,
         },
       }),
     ),
   );
 
-  return { total: audience.length, batches: batches.length };
+  return { batches: batches.length };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

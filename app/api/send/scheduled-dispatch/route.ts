@@ -71,7 +71,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, hopped: true });
     }
 
-    const result = await dispatchCampaign(campaignId);
+    const result = await dispatchCampaign(campaignId, "schedule");
+    if (result.outcome === "already_sending") {
+      // "Send now" claimed it between our read and our claim.
+      return NextResponse.json({ ok: true, skipped: "already sending" });
+    }
     console.log(
       `scheduled-dispatch: campaign ${campaignId} started - ${result.total} recipients in ${result.batches} batches`,
     );

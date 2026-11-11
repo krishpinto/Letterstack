@@ -1,14 +1,11 @@
-// POST — send a draft campaign now, or resume one stuck mid-send. Freezes the
-// audience from the campaign's current snapshot and hands batches to QStash.
-// Idempotent: startCampaign only ever picks up recipients still "pending", so
-// calling it again (a "sending" campaign whose batches stalled — e.g. a QStash
-// batch exhausted its retries) just re-dispatches what never went out, and
-// never re-sends to anyone already marked sent/failed.
+// POST — send a draft (or scheduled) campaign now. Reads the pending
+// audience, reserves quota for it, then claims the campaign with one guarded
+// UPDATE; only the request that wins the claim queues batches. A second click,
+// or the scheduled dispatch firing at the same moment, gets 409.
 
 import { NextResponse } from "next/server";
 import { getCampaignForUser } from "@/db/campaigns";
-import { countPendingForCampaign } from "@/db/campaign-recipients";
-import { dispatchCampaign } from "@/lib/send/dispatch-campaign";
+import { dispatchCampaign, SendRefusedError } from "@/lib/send/dispatch-campaign";
 import { currentUserId } from "@/lib/auth-helpers";
 
 export const runtime = "nodejs";
@@ -25,23 +22,33 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     if (!campaign) {
       return NextResponse.json({ ok: false, error: "Campaign not found" }, { status: 404 });
     }
+    if (campaign.status === "sending") {
+      return NextResponse.json(
+        { ok: false, error: "This campaign is already sending" },
+        { status: 409 },
+      );
+    }
     // "scheduled" is sendable too — Send now overrides the schedule, and the
-    // delayed dispatch message no-ops once the status leaves "scheduled".
-    // "sending" is resumable, but only if it actually stalled — otherwise a
-    // second click while a send is genuinely in flight would double-dispatch
-    // batches for recipients whose worker just hasn't reported back yet.
-    const resumable =
-      campaign.status === "sending" && (await countPendingForCampaign(id)) > 0;
-    if (campaign.status !== "draft" && campaign.status !== "scheduled" && !resumable) {
+    // delayed dispatch message loses the claim when it arrives.
+    if (campaign.status !== "draft" && campaign.status !== "scheduled") {
       return NextResponse.json(
         { ok: false, error: "Campaign has already been sent" },
         { status: 400 },
       );
     }
 
-    const result = await dispatchCampaign(id);
+    const result = await dispatchCampaign(id, "now");
+    if (result.outcome === "already_sending") {
+      return NextResponse.json(
+        { ok: false, error: "This campaign is already sending" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ ok: true, id, ...result });
   } catch (err) {
+    if (err instanceof SendRefusedError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
