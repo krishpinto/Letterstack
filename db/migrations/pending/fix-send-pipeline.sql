@@ -16,6 +16,6 @@ alter table campaigns add column if not exists failure_reason text;
 -- Fixed-window counters, first used to cap test sends per user.
 create table if not exists rate_limits (
   key text primary key,
-  window_start timestamp not null,
+  window_start timestamptz not null,
   count integer not null
 );

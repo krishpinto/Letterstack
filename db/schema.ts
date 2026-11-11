@@ -646,6 +646,6 @@ export const notificationPreferences = pgTable(
 // db/rate-limits.ts.
 export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),
-  windowStart: timestamp("window_start").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
   count: integer("count").notNull(),
 });
