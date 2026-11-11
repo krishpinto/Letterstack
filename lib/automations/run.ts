@@ -298,7 +298,7 @@ async function executeSendEmail(
   const base = appBaseUrl();
   const personalized = personalizeUnsubscribe(
     { html: compiled.html, text: compiled.text },
-    unsubscribePageUrl(base, contact.userId, contact.email),
+    unsubscribePageUrl(base, organizationId, contact.userId, contact.email),
   );
 
   await sendEmail({
@@ -308,7 +308,7 @@ async function executeSendEmail(
     text: personalized.text,
     fromName: config.fromName || "LetterStack",
     fromEmail: config.fromEmail,
-    listUnsubscribeUrl: unsubscribeOneClickUrl(base, contact.userId, contact.email),
+    listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, contact.userId, contact.email),
     tags: [{ name: "automationId", value: automationId }],
   });
 

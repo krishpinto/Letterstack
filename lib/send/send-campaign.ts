@@ -60,7 +60,7 @@ export async function sendCampaignBatch(
 
       const personalized = personalizeUnsubscribe(
         content,
-        unsubscribePageUrl(base, userId, row.email),
+        unsubscribePageUrl(base, organizationId, userId, row.email),
       );
       await sendEmail({
         to: row.email,
@@ -70,7 +70,7 @@ export async function sendCampaignBatch(
         fromName: content.fromName,
         fromEmail: content.fromEmail,
         replyTo: content.replyTo,
-        listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, row.email),
+        listUnsubscribeUrl: unsubscribeOneClickUrl(base, organizationId, userId, row.email),
         tags,
       });
       await markCampaignRecipient(row.id, "sent");

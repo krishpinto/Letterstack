@@ -57,7 +57,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     for (const email of emails) {
       const personalized = personalizeUnsubscribe(
         { html: campaign.htmlSnapshot, text: campaign.textSnapshot },
-        unsubscribePageUrl(base, userId, email),
+        unsubscribePageUrl(base, campaign.organizationId, userId, email),
       );
       await sendEmail({
         to: email,
@@ -66,7 +66,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
         text: personalized.text,
         fromName: campaign.fromName,
         fromEmail: campaign.fromEmail,
-        listUnsubscribeUrl: unsubscribeOneClickUrl(base, userId, email),
+        listUnsubscribeUrl: unsubscribeOneClickUrl(base, campaign.organizationId, userId, email),
       });
     }
     return NextResponse.json({ ok: true, count: emails.length });
