@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { decideCampaignOutcome, planBatches, type RecipientState } from "./send-policy";
+import {
+  classifySendError,
+  decideCampaignOutcome,
+  planBatches,
+  type RecipientState,
+} from "./send-policy";
 
 const counts = (over: Partial<Parameters<typeof decideCampaignOutcome>[0]>) => ({
   pending: 0,
@@ -73,5 +78,42 @@ describe("planBatches", () => {
     const shuffled = [ordered[4], ordered[0], ordered[5], ordered[2], ordered[1], ordered[3]];
 
     expect(plan(shuffled)).toEqual(plan(ordered));
+  });
+});
+
+describe("classifySendError", () => {
+  const awsError = (name: string, httpStatusCode: number, message = name) =>
+    Object.assign(new Error(message), { name, $metadata: { httpStatusCode } });
+
+  it("retries SES throttling and server errors", () => {
+    expect(classifySendError(awsError("TooManyRequestsException", 429)).retryable).toBe(true);
+    expect(classifySendError(awsError("ThrottlingException", 400)).retryable).toBe(true);
+    expect(classifySendError(awsError("LimitExceededException", 400)).retryable).toBe(true);
+    expect(classifySendError(awsError("InternalFailure", 500)).retryable).toBe(true);
+    expect(classifySendError(awsError("Whatever", 503)).retryable).toBe(true);
+  });
+
+  it("retries network failures", () => {
+    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    expect(classifySendError(reset).retryable).toBe(true);
+  });
+
+  it("retries Gmail rate limits and 5xx by status", () => {
+    expect(classifySendError(Object.assign(new Error("Rate limit"), { status: 429 })).retryable).toBe(true);
+    expect(classifySendError(Object.assign(new Error("Backend"), { code: 500 })).retryable).toBe(true);
+  });
+
+  it("fails permanently on rejections, with the provider's message", () => {
+    const rejected = awsError("MessageRejected", 400, "Email address is not verified.");
+    expect(classifySendError(rejected)).toEqual({
+      retryable: false,
+      reason: "Email address is not verified.",
+    });
+    expect(classifySendError(awsError("MailFromDomainNotVerifiedException", 400)).retryable).toBe(false);
+    expect(classifySendError(awsError("BadRequestException", 400)).retryable).toBe(false);
+  });
+
+  it("treats an unknown throw as permanent", () => {
+    expect(classifySendError("boom")).toEqual({ retryable: false, reason: "Unknown error" });
   });
 });

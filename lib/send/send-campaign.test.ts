@@ -25,7 +25,7 @@ import {
 } from "@/db/campaign-recipients";
 import { isSuppressedForOrganization } from "@/db/suppression";
 import { sendEmail } from "./ses";
-import { sendCampaignBatch, type FrozenContent } from "./send-campaign";
+import { RetryableSendError, sendCampaignBatch, type FrozenContent } from "./send-campaign";
 
 const content: FrozenContent = {
   subject: "Hello",
@@ -106,5 +106,40 @@ describe("sendCampaignBatch", () => {
     );
     expect(returnCampaignRecipientToPending).toHaveBeenCalledWith("r1");
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("puts a throttled row back and stops the batch so QStash retries it", async () => {
+    claimOnce({ r1: "a@x.test", r2: "b@x.test", r3: "c@x.test" });
+    const throttled = Object.assign(new Error("Maximum sending rate exceeded."), {
+      name: "TooManyRequestsException",
+      $metadata: { httpStatusCode: 429 },
+    });
+    vi.mocked(sendEmail).mockResolvedValueOnce("m1").mockRejectedValueOnce(throttled);
+
+    const attempt = sendCampaignBatch(content, ["r1", "r2", "r3"], "u1", "org1", "c1");
+
+    await expect(attempt).rejects.toBeInstanceOf(RetryableSendError);
+    expect(returnCampaignRecipientToPending).toHaveBeenCalledWith("r2");
+    expect(finishCampaignRecipient).not.toHaveBeenCalledWith("r2", "failed", expect.anything());
+    // r3 was never claimed, so it is still pending for the retry.
+    expect(claimCampaignRecipient).not.toHaveBeenCalledWith("r3");
+  });
+
+  it("fails a rejected address with the provider's reason and carries on", async () => {
+    claimOnce({ r1: "a@x.test", r2: "b@x.test" });
+    const rejected = Object.assign(new Error("Email address is not verified."), {
+      name: "MessageRejected",
+      $metadata: { httpStatusCode: 400 },
+    });
+    vi.mocked(sendEmail).mockRejectedValueOnce(rejected).mockResolvedValueOnce("m2");
+
+    const result = await sendCampaignBatch(content, ["r1", "r2"], "u1", "org1", "c1");
+
+    expect(finishCampaignRecipient).toHaveBeenCalledWith(
+      "r1",
+      "failed",
+      "Email address is not verified.",
+    );
+    expect(result).toMatchObject({ sent: 1, failed: 1 });
   });
 });

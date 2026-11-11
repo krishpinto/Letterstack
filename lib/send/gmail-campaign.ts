@@ -16,6 +16,7 @@ import {
 import {
   recordSent,
   releaseClaimAndThrow,
+  settleProviderError,
   type FrozenContent,
   type QueueResult,
 } from "./send-campaign";
@@ -134,10 +135,14 @@ export async function sendGmailCampaignBatch(
         await returnCampaignRecipientToPending(row.id);
         return { sent, failed, unrecorded, haltedForReconnect: true };
       }
-      await finishCampaignRecipient(
+      // Still rate-limited after the backoff above, a 5xx, or a network
+      // failure: the row goes back to pending and QStash retries the run.
+      // Anything else fails this one recipient with Gmail's reason.
+      await settleProviderError(
         row.id,
-        "failed",
-        err instanceof Error ? err.message : "Unknown error",
+        err,
+        { sent, failed, unrecorded },
+        { retryable: isRateLimitError(err) },
       );
       failed++;
       await sleep(SEND_GAP_MS);

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { countSendingAmong } from "@/db/campaign-recipients";
-import { sendCampaignBatch, type FrozenContent } from "@/lib/send/send-campaign";
+import {
+  RetryableSendError,
+  sendCampaignBatch,
+  type FrozenContent,
+} from "@/lib/send/send-campaign";
 import {
   scheduleSettleCheck,
   settleCampaign,
@@ -58,6 +62,12 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
+    if (err instanceof RetryableSendError) {
+      // Not a failure of this batch: QStash retries it with backoff, and the
+      // retry skips every row already sent.
+      console.warn(`campaign-worker: retrying later - ${err.message}`);
+      return NextResponse.json({ ok: false, retry: true, error: err.message }, { status: 503 });
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }

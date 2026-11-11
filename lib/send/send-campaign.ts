@@ -6,7 +6,7 @@ import {
 } from "@/db/campaign-recipients";
 import { sendEmail } from "./ses";
 import { appBaseUrl, publishQstashJSON, qstashNotBefore } from "./qstash";
-import { planBatches, type RecipientState } from "./send-policy";
+import { classifySendError, planBatches, type RecipientState } from "./send-policy";
 import {
   personalizeUnsubscribe,
   unsubscribeOneClickUrl,
@@ -35,6 +35,45 @@ export type BatchResult = {
   /** Rows the provider accepted but we could not mark "sent"; see recordSent. */
   unrecorded: number;
 };
+
+/**
+ * The provider said "not now" (throttling, 5xx, a dropped connection). The
+ * row that hit it is back to "pending" and the rest of the batch was never
+ * claimed; the worker answers 503 so QStash retries the whole batch with
+ * its own backoff, and the retry skips everyone this attempt finished.
+ */
+export class RetryableSendError extends Error {
+  constructor(
+    reason: string,
+    public partial: BatchResult,
+  ) {
+    super(`Provider asked us to retry later: ${reason}`);
+    this.name = "RetryableSendError";
+  }
+}
+
+/**
+ * After a provider error on a claimed row: put it back and stop the batch
+ * if the error is retryable, otherwise fail just this row with the
+ * provider's reason. Shared by the SES and Gmail loops.
+ */
+export async function settleProviderError(
+  id: string,
+  err: unknown,
+  progress: BatchResult,
+  options: { retryable?: boolean } = {},
+): Promise<void> {
+  const verdict = classifySendError(err);
+  if (verdict.retryable || options.retryable) {
+    try {
+      await returnCampaignRecipientToPending(id);
+    } catch {
+      // Left "sending"; the claim timeout settles it. Never re-sent.
+    }
+    throw new RetryableSendError(verdict.reason, progress);
+  }
+  await finishCampaignRecipient(id, "failed", verdict.reason);
+}
 
 /**
  * Mark a recipient "sent" after the provider accepted the message.
@@ -124,11 +163,7 @@ export async function sendCampaignBatch(
         tags,
       });
     } catch (err) {
-      await finishCampaignRecipient(
-        row.id,
-        "failed",
-        err instanceof Error ? err.message : "Unknown error",
-      );
+      await settleProviderError(row.id, err, { sent, failed, unrecorded });
       failed++;
       continue;
     }

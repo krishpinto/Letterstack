@@ -140,3 +140,81 @@ export function pendingIdsInOrder(recipients: RecipientState[]): string[] {
     .map((row) => row.id)
     .sort();
 }
+
+// Provider errors that say "not now" rather than "never". SES's own names
+// (ThrottlingException, TooManyRequestsException for the per-second rate,
+// LimitExceededException for the daily quota, SendingPausedException while
+// the account is paused) plus the AWS SDK's generic server-side ones.
+const RETRYABLE_ERROR_NAMES = new Set([
+  "Throttling",
+  "ThrottlingException",
+  "TooManyRequestsException",
+  "LimitExceededException",
+  "SendingPausedException",
+  "ServiceUnavailable",
+  "ServiceUnavailableException",
+  "InternalFailure",
+  "InternalServiceErrorException",
+  "RequestTimeout",
+  "RequestTimeoutException",
+  "TimeoutError",
+]);
+
+// Node and undici network failures: the request may never have left.
+const RETRYABLE_ERROR_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ENETUNREACH",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+export type SendErrorVerdict = { retryable: boolean; reason: string };
+
+/**
+ * Whether a provider error is worth trying again later, for SES and Gmail
+ * alike.
+ *
+ * Retryable: throttling, 429, any 5xx, and network failures. The row goes
+ * back to "pending" and QStash retries the batch with its own backoff, so a
+ * busy minute at SES no longer fails recipients for good.
+ *
+ * Permanent: everything else — MessageRejected, an unverified sending
+ * identity, a malformed address, any other 4xx. The row is failed with the
+ * provider's message, which is what the campaign report shows.
+ *
+ * A timeout can in rare cases come after the provider accepted the message,
+ * so retrying it can duplicate one email. The AWS SDK already retries these
+ * internally on the same terms; we accept the same trade-off one level up
+ * rather than failing a recipient over a dropped connection.
+ */
+export function classifySendError(err: unknown): SendErrorVerdict {
+  const e = (err ?? {}) as {
+    name?: unknown;
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+    $retryable?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+    response?: { status?: unknown };
+  };
+  const name = typeof e.name === "string" ? e.name : "";
+  const message = typeof e.message === "string" && e.message ? e.message : name || "Unknown error";
+
+  const status = [e.$metadata?.httpStatusCode, e.status, e.response?.status, e.code].find(
+    (value): value is number => typeof value === "number",
+  );
+
+  const retryable =
+    RETRYABLE_ERROR_NAMES.has(name) ||
+    Boolean(e.$retryable) ||
+    (typeof e.code === "string" && RETRYABLE_ERROR_CODES.has(e.code)) ||
+    status === 429 ||
+    (status !== undefined && status >= 500);
+
+  return { retryable, reason: message };
+}
