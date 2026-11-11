@@ -51,7 +51,7 @@ export const users = pgTable("users", {
     name: "users_access_decided_by_user_id_fkey",
     columns: [table.accessDecidedByUserId],
     foreignColumns: [table.id],
-  }),
+  }).onDelete("set null"),
 ]);
 
 export const passwordResets = pgTable("password_resets", {
@@ -224,7 +224,9 @@ export const connectedMailboxes = pgTable(
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id").notNull(),
-  userId: uuid("user_id").notNull(),
+  // Who paid. A payment is a financial record and outlives the account that
+  // made it: deleting the user nulls this rather than deleting the row.
+  userId: uuid("user_id"),
   razorpayOrderId: text("razorpay_order_id")
     .notNull()
     .unique("payments_razorpay_order_id_key"),
@@ -248,7 +250,7 @@ export const payments = pgTable("payments", {
     name: "payments_user_id_fkey",
     columns: [table.userId],
     foreignColumns: [users.id],
-  }).onDelete("cascade"),
+  }).onDelete("set null"),
 ]);
 
 // One row per invoice actually issued. The serial is stored in parts as well
@@ -345,9 +347,11 @@ export const recipients = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    // Who added the contact. Restrict, not cascade: the contact belongs to
+    // the workspace, and deleteUserAccount hands it to the owner first.
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     email: text("email").notNull(),
     name: text("name"),
     sentAt: timestamp("sent_at"),
@@ -366,9 +370,9 @@ export const suppressedEmails = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    // Who added it. Nulled, never cascaded, when that account is deleted:
+    // losing the row would make a bounced or complained address mailable.
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     email: text("email").notNull(),
     reason: text("reason").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -392,9 +396,10 @@ export const campaigns = pgTable("campaigns", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
+  // Restrict: deleteUserAccount hands the campaign to the workspace owner.
   userId: uuid("user_id")
     .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => users.id, { onDelete: "restrict" }),
   name: text("name").notNull(),
   subject: text("subject").notNull(),
   fromName: text("from_name").notNull(),
@@ -495,11 +500,12 @@ export const automations = pgTable("automations", {
     columns: [table.organizationId],
     foreignColumns: [organizations.id],
   }).onDelete("cascade"),
+  // Restrict: deleteUserAccount hands the automation to the workspace owner.
   foreignKey({
     name: "automations_user_id_fkey",
     columns: [table.userId],
     foreignColumns: [users.id],
-  }).onDelete("cascade"),
+  }).onDelete("restrict"),
 ]);
 
 export const emailTemplates = pgTable("email_templates", {
@@ -568,11 +574,13 @@ export const signupForms = pgTable("signup_forms", {
     columns: [table.organizationId],
     foreignColumns: [organizations.id],
   }).onDelete("cascade"),
+  // Restrict: deleteUserAccount hands the form to the workspace owner, so a
+  // live embed on a customer's site keeps working.
   foreignKey({
     name: "signup_forms_user_id_fkey",
     columns: [table.userId],
     foreignColumns: [users.id],
-  }).onDelete("cascade"),
+  }).onDelete("restrict"),
 ]);
 
 // Append-only ledger of every model call the agent makes. This is both the
@@ -677,11 +685,14 @@ export const apiKeys = pgTable(
       columns: [table.organizationId],
       foreignColumns: [organizations.id],
     }).onDelete("cascade"),
+    // Restrict: deleteUserAccount hands the key to the workspace owner, so a
+    // member deleting their account can't break the workspace's
+    // integrations (the key belongs to the org, as above).
     foreignKey({
       name: "api_keys_created_by_user_id_fkey",
       columns: [table.createdByUserId],
       foreignColumns: [users.id],
-    }).onDelete("cascade"),
+    }).onDelete("restrict"),
   ],
 );
 

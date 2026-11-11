@@ -112,3 +112,25 @@ Known differences that are not drift:
   repository. It is declared so diffs do not drop it.
 - `signup_forms.success_message` defaults to the old double-opt-in text in
   the database. The app always writes the column.
+
+## What deleting a user account does
+
+`deleteUserAccount` (`db/users.ts`) refuses while the user owns a workspace
+that has other members. Otherwise, in one batch (one transaction):
+
+1. Workspaces the user owns alone are deleted, with everything in them
+   (see the next section for what survives a workspace).
+2. Every contact, campaign, signup form, automation and API key the user
+   created in any other workspace, including ones they have left, is
+   handed to that workspace's owner.
+3. The user row is deleted.
+
+Every foreign key to `users` has a recorded decision in
+`db/account-deletion.ts`, and `db/account-deletion.test.ts` fails when a new
+one appears without one:
+
+| On user deletion | Columns |
+| --- | --- |
+| `RESTRICT` (handed to the owner first) | `recipients.user_id`, `campaigns.user_id`, `signup_forms.user_id`, `automations.user_id`, `api_keys.created_by_user_id` |
+| `SET NULL` (row kept) | `payments.user_id`, `suppressed_emails.user_id`, `users.access_decided_by_user_id` |
+| `CASCADE` (personal to the user) | `password_resets`, `organization_members`, `notification_preferences`, `connected_mailboxes`, `ai_budgets`, `ai_usage`, `organization_invites.invited_by_user_id` |
