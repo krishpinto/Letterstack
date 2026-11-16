@@ -12,9 +12,7 @@ const bricolage = Bricolage_Grotesque({
 export default function HeroLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className={bricolage.variable}>
-      {/* Keep the bottom blur off the hero — it only looks right once the
-          reader has scrolled into the sections below it. */}
-      <MarketingShell hideBottomBlurUntilSelector="[data-hero-section]">
+      <MarketingShell>
         {children}
       </MarketingShell>
     </div>

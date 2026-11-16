@@ -18,7 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // /pricing is the one that proved it: its section carries dark: variants,
   // but the navbar and footer wrapping it are hardcoded light, so being left
   // off this list rendered a near-black slab butting straight into a white
-  // footer — and PageBlur fading dark over it.
+  // footer.
   // Anything rendered inside the app/(hero) marketing group goes in this
   // list. There is no way to read the route group from usePathname, so it
   // has to be kept by hand — add the path here in the same commit that adds
