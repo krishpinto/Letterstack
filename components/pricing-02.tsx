@@ -147,10 +147,9 @@ export function Pricing02() {
   }, [billingCycle]);
 
   return (
-    // Extra top padding, not the symmetric py-20 this had as a standalone
-    // route: it now renders under the marketing shell's fixed navbar, whose
-    // pill reaches ~60px down the viewport.
-    <section className="pricing-02 relative min-h-screen overflow-hidden bg-white px-4 pb-20 pt-28 text-[#172033] transition-colors duration-300 dark:bg-[#101010] dark:text-white sm:px-6 lg:px-8 lg:pb-28 lg:pt-36">
+    // The marketing shell's navbar is sticky and takes its own space, so the
+    // top padding here is only breathing room.
+    <section className="pricing-02 relative min-h-screen overflow-hidden bg-white px-4 pb-20 pt-12 text-[#172033] transition-colors duration-300 dark:bg-[#101010] dark:text-white sm:px-6 lg:px-8 lg:pb-28 lg:pt-20">
       <style>{`
         .pricing-02 {
           --digit-dur: 500ms;

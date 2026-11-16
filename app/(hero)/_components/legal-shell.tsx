@@ -84,8 +84,10 @@ export function LegalShell({
   sections: LegalSection[];
 }) {
   return (
-    <div className="flex flex-1 flex-col bg-white font-sans">
-      <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-32 lg:px-0 lg:pt-40">
+    // overflow-wrap: long unbroken strings (URLs, scope names) wrap instead of
+    // pushing the page wider than a small phone.
+    <div className="flex flex-1 flex-col bg-white font-sans [overflow-wrap:anywhere]">
+      <div className="mx-auto w-full max-w-3xl px-6 pb-20 pt-16 lg:px-0 lg:pt-24">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#A1A1AA]">
           Legal
         </p>
@@ -116,7 +118,7 @@ export function LegalShell({
         </nav>
 
         {sections.map((section, i) => (
-          <section key={section.id} id={section.id} className="scroll-mt-28 pt-12">
+          <section key={section.id} id={section.id} className="scroll-mt-14 pt-12">
             <h2 className="text-xl font-semibold tracking-[-0.01em] text-[#0A0A0A]">
               <span className="tabular-nums text-[#A1A1AA]">{i + 1}.</span>{" "}
               {section.heading}

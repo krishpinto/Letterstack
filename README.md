@@ -13,7 +13,7 @@ Block-based editor, email-safe HTML, delivery through Amazon SES from your own d
 
 </div>
 
-![LetterStack dashboard](public/image-hero.png)
+![LetterStack dashboard](public/product/app-dashboard.webp)
 
 ## About
 

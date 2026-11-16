@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CircleCheckIcon,
   MailCheckIcon,
@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { CONTACT_HASH, OPEN_CONTACT_EVENT } from "@/components/marketing/contact-link";
+import { cn } from "@/lib/utils";
+
+import { button, displayFont } from "./landing-ui";
 
 // Linear-style "Contact sales" takeover: the pill button in the CTA band is
 // the morph origin, and the screen expands out of it (same pattern as the
@@ -45,6 +49,25 @@ const TALKING_POINTS = [
   "Get help with onboarding and your first send",
 ];
 
+/**
+ * Opens the form when something elsewhere asks for it: the navbar's Contact
+ * link fires OPEN_CONTACT_EVENT, and links from other pages arrive with
+ * CONTACT_HASH in the URL.
+ */
+function OpenOnRequest() {
+  const { expand } = useExpandableScreen();
+  useEffect(() => {
+    window.addEventListener(OPEN_CONTACT_EVENT, expand);
+    if (window.location.hash === CONTACT_HASH) {
+      // Drop the hash so a reload or a later visit doesn't reopen the form.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      expand();
+    }
+    return () => window.removeEventListener(OPEN_CONTACT_EVENT, expand);
+  }, [expand]);
+  return null;
+}
+
 function CloseButton({ onClose }: { onClose: () => void }) {
   const { collapse } = useExpandableScreen();
   return (
@@ -63,7 +86,12 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function ContactSalesScreen() {
+export function ContactSalesScreen({
+  triggerClassName,
+}: {
+  /** Extra classes for the "Contact us" button, e.g. to restyle it on a dark background. */
+  triggerClassName?: string;
+} = {}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [companySize, setCompanySize] = useState("");
@@ -126,16 +154,19 @@ export function ContactSalesScreen() {
     <ExpandableScreen
       layoutId="contact-sales-screen"
       animationDuration={0.35}
+      triggerRadius="8px"
       contentRadius="14px"
     >
+      <OpenOnRequest />
       <ExpandableScreenTrigger>
-        <Button size="lg" variant="outline" className="rounded-full">
+        <button type="button" className={cn(button.secondary, triggerClassName)}>
           Contact us
-        </Button>
+        </button>
       </ExpandableScreenTrigger>
 
       <ExpandableScreenContent
         showCloseButton={false}
+        label="Contact the LetterStack team"
         className="border border-border bg-background"
       >
         {/* text-left: the trigger lives in a text-center CTA band, and the
@@ -153,9 +184,10 @@ export function ContactSalesScreen() {
           {/* ── Two columns: pitch left, form right ── */}
           <div className="mx-auto grid w-full max-w-5xl flex-1 gap-12 pb-16 pt-[10vh] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-20">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              {/* h2: the page behind already has the one h1. */}
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl" style={displayFont}>
                 Talk to the team
-              </h1>
+              </h2>
               <ul className="mt-8 flex flex-col gap-4">
                 {TALKING_POINTS.map((point) => (
                   <li key={point} className="flex items-center gap-3 text-sm">
@@ -182,8 +214,8 @@ export function ContactSalesScreen() {
                 </span>
                 <h2 className="text-lg font-semibold">Message sent</h2>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Thanks {name.trim().split(" ")[0] || "there"} — we read every
-                  message and will get back to you at {email.trim()} soon.
+                  Thanks, {name.trim().split(" ")[0] || "there"}. We read every message
+                  and will get back to you at {email.trim()} soon.
                 </p>
               </div>
             ) : (
@@ -198,33 +230,35 @@ export function ContactSalesScreen() {
                     id="contact-name"
                     value={name}
                     disabled={sending}
-                    placeholder="Kevin Flynn"
+                    placeholder="Your name"
                     onChange={(event) => setName(event.target.value)}
                   />
                 </div>
 
                 <div className="grid gap-2">
                   <label htmlFor="contact-email" className="text-sm">
-                    Work email
+                    Email
                   </label>
                   <Input
                     id="contact-email"
                     type="email"
                     value={email}
                     disabled={sending}
-                    placeholder="kevin@encom.com"
+                    placeholder="you@yourclub.org"
                     onChange={(event) => setEmail(event.target.value)}
                   />
                 </div>
 
                 <div className="grid gap-2">
-                  <span className="text-sm">Company size</span>
+                  <span id="contact-size-label" className="text-sm">
+                    Organisation size
+                  </span>
                   <Select
                     value={companySize}
                     onValueChange={setCompanySize}
                     disabled={sending}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full" aria-labelledby="contact-size-label">
                       <SelectValue placeholder="Select a size" />
                     </SelectTrigger>
                     <SelectContent>
@@ -251,10 +285,19 @@ export function ContactSalesScreen() {
                   />
                 </div>
 
-                {error && <p className="text-sm text-destructive">{error}</p>}
+                {/* role="alert": read out as soon as it appears. */}
+                {error && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-4 pt-1">
-                  <Button type="submit" disabled={sending}>
+                  <Button
+                    type="submit"
+                    disabled={sending}
+                    className="h-10 rounded-lg bg-neutral-950 px-5 text-white hover:bg-neutral-800"
+                  >
                     {sending && <Spinner data-icon="inline-start" />}
                     {sending ? "Sending..." : "Send message"}
                   </Button>
